@@ -106,32 +106,33 @@ function handleKeydown(e: KeyboardEvent) {
       <!-- 底部控制栏 -->
       <div class="flex items-center gap-2 mt-2">
         <!-- 深度思考切换按钮 -->
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
-          :class="
-            enableThinking
-              ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300'
-              : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300'
-          "
-          :title="enableThinking ? '深度思考已开启（更准但较慢）' : '快速模式（关闭深度思考）'"
-          @click="emit('update:enableThinking', !enableThinking)"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="w-3.5 h-3.5"
+        <UTooltip :text="enableThinking ? '深度思考已开启（更准但较慢）' : '快速模式（关闭深度思考）'">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
+            :class="
+              enableThinking
+                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300'
+            "
+            @click="emit('update:enableThinking', !enableThinking)"
           >
-            <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
-            <path d="M12 12V2a10 10 0 0 1 8.66 14.34" />
-          </svg>
-          思考
-        </button>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-3.5 h-3.5"
+            >
+              <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
+              <path d="M12 12V2a10 10 0 0 1 8.66 14.34" />
+            </svg>
+            思考
+          </button>
+        </UTooltip>
 
         <!-- 模型选择下拉框 -->
         <select
