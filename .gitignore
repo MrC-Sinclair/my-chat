@@ -1,0 +1,12 @@
+node_modules
+.nuxt
+.output
+.env
+.env.local
+*.log
+.DS_Store
+coverage/
+test-results/
+playwright-report/
+drizzle/
+CLAUDE.local.md

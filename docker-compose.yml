@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: sw_pad
+      POSTGRES_PASSWORD: sw_pad_2026
+      POSTGRES_DB: sw_pad
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sw_pad"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  test-postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: sw_pad_test
+      POSTGRES_PASSWORD: sw_pad_test
+      POSTGRES_DB: sw_pad_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - test-pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+  test-pgdata:
