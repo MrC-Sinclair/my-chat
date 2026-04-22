@@ -29,7 +29,6 @@
   "dependencies": {
     "@ai-sdk/openai": "^1.2.0",
     "@ai-sdk/vue": "^1.1.0",
-    "@nuxt/ui": "^2.22.3",
     "ai": "^4.1.0",
     "drizzle-orm": "^0.36.0",
     "nuxt": "^3.15.0",

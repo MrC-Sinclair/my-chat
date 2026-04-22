@@ -167,19 +167,14 @@ function submitEditing(index: number) {
         data-testid="chat-header"
         class="flex items-center gap-3 px-6 py-3 border-b border-gray-200 bg-white shrink-0"
       >
-        <UTooltip :text="showSidebar ? '收起侧边栏' : '展开侧边栏'">
-          <button
-            class="p-1.5 text-gray-500 hover:text-gray-800 rounded hover:bg-gray-100 transition-colors"
-            :class="{ 'rotate-180': !showSidebar }"
-            @click="showSidebar = !showSidebar"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
-          </button>
-        </UTooltip>
+        <button
+          class="p-1.5 text-gray-500 hover:text-gray-800 rounded hover:bg-gray-100 transition-colors"
+          :class="{ 'rotate-180': !showSidebar }"
+          @click="showSidebar = !showSidebar"
+          :title="showSidebar ? '收起侧边栏' : '展开侧边栏'"
+        >
+          ☰
+        </button>
         <h1 class="text-xl font-semibold text-gray-800">
           {{ $config.public.appTitle }}
         </h1>
@@ -254,17 +249,16 @@ function submitEditing(index: number) {
                 <div class="whitespace-pre-wrap leading-relaxed">{{ msg.content }}</div>
                 <!-- 编辑按钮：鼠标悬停时显示 -->
                 <div class="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <UTooltip text="编辑消息">
-                    <button
-                      class="p-1 text-blue-200 hover:text-white rounded transition-colors"
-                      @click="startEditing(index, msg.content)"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
-                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                        <path d="m15 5 4 4" />
-                      </svg>
-                    </button>
-                  </UTooltip>
+                  <button
+                    class="p-1 text-blue-200 hover:text-white rounded transition-colors"
+                    title="编辑消息"
+                    @click="startEditing(index, msg.content)"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                      <path d="m15 5 4 4" />
+                    </svg>
+                  </button>
                 </div>
               </div>
             </template>
@@ -303,20 +297,19 @@ function submitEditing(index: number) {
                 v-if="msg.content"
                 class="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200"
               >
-                <UTooltip text="重新生成">
-                  <button
-                    class="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors"
-                    :disabled="isLoading"
-                    @click="() => reload()"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
-                      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                      <path d="M3 3v5h5" />
-                      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                      <path d="M16 16h5v5" />
-                    </svg>
-                  </button>
-                </UTooltip>
+                <button
+                  class="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors"
+                  title="重新生成"
+                  :disabled="isLoading"
+                  @click="() => reload()"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                    <path d="M16 16h5v5" />
+                  </svg>
+                </button>
               </div>
             </template>
           </div>

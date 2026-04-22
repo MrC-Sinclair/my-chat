@@ -79,20 +79,21 @@ async function handleCopy() {
       <!-- 显示编程语言名称 -->
       <span class="text-xs text-gray-400 font-mono">{{ language || 'text' }}</span>
       <!-- 复制按钮 -->
-      <UTooltip :text="copied ? '已复制' : '复制代码'">
-        <button
-          class="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white rounded transition-colors"
-          @click="handleCopy"
-        >
-          <svg v-if="!copied" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-          </svg>
-          <svg v-else class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-          </svg>
-          {{ copied ? '已复制' : '复制' }}
-        </button>
-      </UTooltip>
+      <button
+        class="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white rounded transition-colors"
+        @click="handleCopy"
+        :title="copied ? '已复制' : '复制代码'"
+      >
+        <!-- 复制图标（未复制状态） -->
+        <svg v-if="!copied" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+        </svg>
+        <!-- 已复制图标（绿色勾） -->
+        <svg v-else class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg>
+        {{ copied ? '已复制' : '复制' }}
+      </button>
     </div>
     <!-- 代码内容区域，使用 v-html 渲染高亮后的 HTML -->
     <pre class="p-4 overflow-x-auto"><code

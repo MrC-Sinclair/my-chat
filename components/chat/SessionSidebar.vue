@@ -78,17 +78,13 @@ function handleDelete(sessionId: string, event: Event) {
           <div class="text-sm font-medium truncate">{{ session.title }}</div>
           <div class="text-xs text-gray-400 mt-0.5">{{ session.messageCount || 0 }} 条消息</div>
         </div>
-        <UTooltip text="删除会话">
-          <button
-            class="opacity-0 group-hover:opacity-100 ml-2 p-1 text-red-500 hover:text-red-700 rounded transition-all"
-            @click="handleDelete(session.id, $event)"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
-            </svg>
-          </button>
-        </UTooltip>
+        <button
+          class="opacity-0 group-hover:opacity-100 ml-2 p-1 text-red-500 hover:text-red-700 rounded transition-all"
+          @click="handleDelete(session.id, $event)"
+          title="删除会话"
+        >
+          ✕
+        </button>
       </div>
     </div>
   </aside>

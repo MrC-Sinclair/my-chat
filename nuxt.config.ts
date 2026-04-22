@@ -60,7 +60,7 @@ export default defineNuxtConfig({
    *   - @nuxtjs/tailwindcss：集成 Tailwind CSS，自动扫描组件中的类名并生成样式
    *   - @pinia/nuxt：集成 Pinia 状态管理库，提供全局状态存储
    */
-  modules: ['@nuxt/ui', '@pinia/nuxt'],
+  modules: ['@nuxtjs/tailwindcss', '@pinia/nuxt'],
 
   /**
    * Vite 配置
