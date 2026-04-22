@@ -80,8 +80,8 @@ function handleDelete(sessionId: string, event: Event) {
         </div>
         <button
           class="opacity-0 group-hover:opacity-100 ml-2 p-1 text-red-500 hover:text-red-700 rounded transition-all"
+          v-tooltip="'删除会话'"
           @click="handleDelete(session.id, $event)"
-          title="删除会话"
         >
           ✕
         </button>

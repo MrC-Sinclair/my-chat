@@ -169,11 +169,10 @@ function submitEditing(index: number) {
       >
         <button
           class="p-1.5 text-gray-500 hover:text-gray-800 rounded hover:bg-gray-100 transition-colors"
-          :class="{ 'rotate-180': !showSidebar }"
+          v-tooltip:bottom="showSidebar ? '收起侧边栏' : '展开侧边栏'"
           @click="showSidebar = !showSidebar"
-          :title="showSidebar ? '收起侧边栏' : '展开侧边栏'"
         >
-          ☰
+          <span :class="{ 'rotate-180': !showSidebar }" class="inline-block transition-transform duration-200">☰</span>
         </button>
         <h1 class="text-xl font-semibold text-gray-800">
           {{ $config.public.appTitle }}
@@ -251,7 +250,7 @@ function submitEditing(index: number) {
                 <div class="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     class="p-1 text-blue-200 hover:text-white rounded transition-colors"
-                    title="编辑消息"
+                    v-tooltip="'编辑消息'"
                     @click="startEditing(index, msg.content)"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
@@ -299,7 +298,7 @@ function submitEditing(index: number) {
               >
                 <button
                   class="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors"
-                  title="重新生成"
+                  v-tooltip="'重新生成'"
                   :disabled="isLoading"
                   @click="() => reload()"
                 >

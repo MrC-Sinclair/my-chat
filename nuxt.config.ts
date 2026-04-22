@@ -62,6 +62,8 @@ export default defineNuxtConfig({
    */
   modules: ['@nuxtjs/tailwindcss', '@pinia/nuxt'],
 
+  css: ['~/assets/css/tooltip.css'],
+
   /**
    * Vite 配置
    *
