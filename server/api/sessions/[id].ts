@@ -57,6 +57,19 @@ export default defineEventHandler(async (event) => {
     return { success: true }
   }
 
-  /** 其他 HTTP 方法返回 405 错误 */
+  if (method === 'PATCH') {
+    const body = await readBody(event)
+    const newTitle = body?.title
+    if (!newTitle || typeof newTitle !== 'string' || !newTitle.trim()) {
+      throw createError({ statusCode: 400, statusMessage: '标题不能为空' })
+    }
+    await db
+      .update(sessions)
+      .set({ title: newTitle.trim(), updatedAt: new Date() })
+      .where(eq(sessions.id, sessionId))
+
+    return { success: true }
+  }
+
   throw createError({ statusCode: 405, statusMessage: '方法不允许' })
 })

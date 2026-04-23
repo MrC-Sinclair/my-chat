@@ -1,17 +1,6 @@
-/**
- * @file 会话管理 Composable
- *
- * 从 ai-chat.vue 中抽离的会话管理逻辑，负责：
- *   - 加载会话列表
- *   - 创建新会话
- *   - 切换会话（加载历史消息）
- *   - 删除会话
- *
- * 使用方式：
- *   const { sessionsList, currentSessionId, loadSessions, createNewSession, ... } = useChatSession(setMessages)
- */
+import { useToast } from '~/composables/useToast'
+import { useConfirmDialog } from '~/composables/useConfirmDialog'
 
-/** 会话项的类型定义，对应数据库 sessions 表 + 关联消息数量 */
 export interface SessionItem {
   id: string
   title: string
@@ -20,7 +9,6 @@ export interface SessionItem {
   messageCount?: number | bigint
 }
 
-/** 消息记录的类型定义，对应数据库 messages 表 */
 export interface MessageRecord {
   id: string
   sessionId: string
@@ -29,47 +17,39 @@ export interface MessageRecord {
   createdAt: string
 }
 
-/**
- * 会话管理 Composable
- *
- * @param setMessages - useChat 提供的 setMessages 函数，用于加载历史消息到聊天界面
- * @returns 会话管理相关的响应式状态和方法
- */
 export function useChatSession(
   setMessages: (msgs: Array<{ id: string; role: 'user' | 'assistant' | 'system'; content: string }>) => void
 ) {
-  /** 会话列表数据 */
   const sessionsList = ref<SessionItem[]>([])
-
-  /** 当前活跃的会话 ID，空字符串表示没有选中任何会话 */
   const currentSessionId = ref<string>('')
+  const toast = useToast()
+  const dialog = useConfirmDialog()
 
-  /** 加载会话列表 */
   async function loadSessions() {
     try {
       const data = await $fetch<SessionItem[]>('/api/sessions')
       sessionsList.value = data
     } catch (err) {
       console.error('加载会话列表失败:', err)
+      toast.error('加载会话列表失败')
     }
   }
 
-  /** 创建新会话 */
   async function createNewSession() {
-    const res = await $fetch<SessionItem>('/api/sessions', {
-      method: 'POST',
-      body: { title: `新对话 ${new Date().toLocaleString('zh-CN')}` }
-    })
-    currentSessionId.value = res.id
-    setMessages([])
-    await loadSessions()
+    try {
+      const res = await $fetch<SessionItem>('/api/sessions', {
+        method: 'POST',
+        body: { title: `新对话 ${new Date().toLocaleString('zh-CN')}` }
+      })
+      currentSessionId.value = res.id
+      setMessages([])
+      await loadSessions()
+    } catch (err) {
+      console.error('创建会话失败:', err)
+      toast.error('创建会话失败')
+    }
   }
 
-  /**
-   * 切换到指定会话
-   *
-   * @param sessionId - 要切换到的会话 ID
-   */
   async function switchSession(sessionId: string) {
     currentSessionId.value = sessionId
     try {
@@ -87,24 +67,44 @@ export function useChatSession(
       }
     } catch (err) {
       console.error('加载会话消息失败:', err)
+      toast.error('加载会话消息失败')
     }
   }
 
-  /**
-   * 删除指定会话
-   *
-   * @param sessionId - 要删除的会话 ID
-   * @param event - 原生 DOM 事件，用于阻止事件冒泡
-   */
   async function deleteSession(sessionId: string, event?: Event) {
     event?.stopPropagation()
-    if (!confirm('确定删除该会话？')) return
-    await $fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
-    if (currentSessionId.value === sessionId) {
-      currentSessionId.value = ''
-      setMessages([])
+    const confirmed = await dialog.open({
+      title: '删除会话',
+      message: '确定删除该会话？删除后无法恢复。'
+    })
+    if (!confirmed) return
+
+    try {
+      await $fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+      if (currentSessionId.value === sessionId) {
+        currentSessionId.value = ''
+        setMessages([])
+      }
+      await loadSessions()
+      toast.success('会话已删除')
+    } catch (err) {
+      console.error('删除会话失败:', err)
+      toast.error('删除会话失败')
     }
-    await loadSessions()
+  }
+
+  async function renameSession(sessionId: string, newTitle: string) {
+    try {
+      await $fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: { title: newTitle }
+      })
+      await loadSessions()
+      toast.success('重命名成功')
+    } catch (err) {
+      console.error('重命名会话失败:', err)
+      toast.error('重命名失败')
+    }
   }
 
   return {
@@ -113,6 +113,7 @@ export function useChatSession(
     loadSessions,
     createNewSession,
     switchSession,
-    deleteSession
+    deleteSession,
+    renameSession
   }
 }

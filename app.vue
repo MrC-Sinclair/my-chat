@@ -11,7 +11,11 @@
     app.vue → default.vue(布局) → ai-chat.vue(页面)
 -->
 <template>
-  <NuxtLayout>
-    <NuxtPage />
-  </NuxtLayout>
+  <ToastProvider>
+    <ConfirmDialogProvider>
+      <NuxtLayout>
+        <NuxtPage />
+      </NuxtLayout>
+    </ConfirmDialogProvider>
+  </ToastProvider>
 </template>

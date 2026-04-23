@@ -88,30 +88,39 @@ export default defineEventHandler(async (event) => {
   const thinkingEnabled = enable_thinking ?? DEFAULT_ENABLE_THINKING
   const useModel = ALLOWED_MODEL_VALUES.has(model) ? model : DEFAULT_LLM_MODEL
 
-  return streamText({
-    model: llmProvider(useModel),
-    system: DEFAULT_SYSTEM_PROMPT,
-    messages,
-    tools: {
-      weather: weatherTool,
-      webSearch: webSearchTool
-    },
-    maxSteps: 5,
-    ...(thinkingEnabled
-      ? {
-          enableThinking: true,
-          thinkingBudget: thinking_budget || 4096
+  try {
+    const result = streamText({
+      model: llmProvider(useModel),
+      system: DEFAULT_SYSTEM_PROMPT,
+      messages,
+      tools: {
+        weather: weatherTool,
+        webSearch: webSearchTool
+      },
+      maxSteps: 5,
+      ...(thinkingEnabled
+        ? {
+            enableThinking: true,
+            thinkingBudget: thinking_budget || 4096
+          }
+        : {}),
+      onFinish: async ({ text }) => {
+        if (!sessionId) return
+        try {
+          await saveMessagesToDb(sessionId, messages, text)
+        } catch (err) {
+          console.error('保存消息到数据库失败:', err)
         }
-      : {}),
-    onFinish: async ({ text }) => {
-      if (!sessionId) return
-      try {
-        await saveMessagesToDb(sessionId, messages, text)
-      } catch (err) {
-        console.error('保存消息到数据库失败:', err)
       }
-    }
-  }).toDataStreamResponse()
+    })
+    return result.toDataStreamResponse()
+  } catch (err) {
+    console.error('streamText 调用失败:', err)
+    throw createError({
+      statusCode: 500,
+      statusMessage: `AI 调用失败: ${err instanceof Error ? err.message : String(err)}`
+    })
+  }
 })
 
 /**

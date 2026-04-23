@@ -62,7 +62,7 @@ export default defineNuxtConfig({
    */
   modules: ['@nuxtjs/tailwindcss', '@pinia/nuxt'],
 
-  css: ['~/assets/css/tooltip.css'],
+  css: ['~/assets/css/main.css', '~/assets/css/tooltip.css'],
 
   /**
    * Vite 配置
@@ -79,38 +79,47 @@ export default defineNuxtConfig({
             server.middlewares.use(
               (req: IncomingMessage, res: ServerResponse, next: () => void) => {
                 const originalSetHeader = res.setHeader.bind(res)
+                const originalWrite = res.write.bind(res)
+                const originalEnd = res.end.bind(res)
                 let body = ''
+                let isHtmlResponse = false
 
-                const _originalWrite = res.write
-                res.write = function (chunk: any, ..._rest: any[]) {
-                  if (typeof chunk === 'string') {
-                    body += chunk
-                  } else if (Buffer.isBuffer(chunk)) {
-                    body += chunk.toString('utf-8')
+                const patchedSetHeader = function (name: string, value: any) {
+                  if (name.toLowerCase() === 'content-type' && typeof value === 'string') {
+                    isHtmlResponse = value.includes('text/html')
                   }
-                  return true
+                  return originalSetHeader(name, value)
+                }
+                res.setHeader = patchedSetHeader
+
+                res.write = function (chunk: any, ...rest: any[]) {
+                  if (isHtmlResponse) {
+                    if (typeof chunk === 'string') {
+                      body += chunk
+                    } else if (Buffer.isBuffer(chunk)) {
+                      body += chunk.toString('utf-8')
+                    }
+                    return true
+                  }
+                  return originalWrite(chunk, ...rest)
                 } as any
 
-                const originalEnd = res.end
                 res.end = function (chunk: any, ...rest: any[]) {
-                  if (typeof chunk === 'string') {
-                    body += chunk
-                  } else if (Buffer.isBuffer(chunk)) {
-                    body += chunk.toString('utf-8')
-                  }
-
-                  const contentType = res.getHeader('content-type') as string
-                  if (contentType?.includes('text/html') && body.includes(brokenPrefix)) {
-                    const fixed = fixHtml(body)
-                    originalSetHeader('content-length', Buffer.byteLength(fixed))
-                    originalEnd.call(res, fixed)
-                  } else {
-                    if (body) {
-                      originalEnd.call(res, body)
-                    } else {
-                      originalEnd.call(res, chunk, ...rest)
+                  if (isHtmlResponse) {
+                    if (typeof chunk === 'string') {
+                      body += chunk
+                    } else if (Buffer.isBuffer(chunk)) {
+                      body += chunk.toString('utf-8')
                     }
+
+                    if (body.includes(brokenPrefix)) {
+                      const fixed = fixHtml(body)
+                      originalSetHeader('content-length', Buffer.byteLength(fixed))
+                      return originalEnd(fixed)
+                    }
+                    return originalEnd(body)
                   }
+                  return originalEnd(chunk, ...rest)
                 } as any
 
                 next()

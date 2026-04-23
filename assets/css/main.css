@@ -1,13 +1,32 @@
 /**
  * 全局样式入口文件
  *
- * 本文件是 Tailwind CSS 的入口点，通过 @import 引入 Tailwind 的所有工具类。
+ * 本文件是 Tailwind CSS 的入口点，通过 @tailwind 指令引入 Tailwind 的所有工具类。
  *
  * Tailwind CSS 工作原理：
  *   1. 扫描项目中的所有 .vue 和 .ts 文件
  *   2. 提取其中使用的 Tailwind 类名（如 "flex", "bg-blue-600", "text-sm"）
  *   3. 只生成用到的 CSS 规则，避免样式冗余
  *
- * 本文件只需一行 @import，其他样式由各组件的 <style> 块自行管理。
+ * 本文件使用 @tailwind 指令，其他样式由各组件的 <style> 块自行管理。
  */
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * 光标闪烁动画
+ * 用于 AI 回复时的打字机效果
+ */
+@keyframes cursor-blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+.cursor-blink {
+  animation: cursor-blink 1s infinite;
+}

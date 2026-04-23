@@ -35,7 +35,8 @@ pnpm db:studio        # Drizzle Studio 可视化数据库
 ```
 pages/              → Nuxt 3 文件路由（ai-chat.vue 核心页面）
 components/chat/    → Vue 组件（ChatInput, MarkdownRenderer, CodeBlock, SessionSidebar, ThinkingProcess, ToolInvocation）
-composables/        → 组合式函数（useChatConfig, useChatSession）
+components/         → 全局组件（ToastProvider, ConfirmDialogProvider）
+composables/        → 组合式函数（useChatConfig, useChatSession, useToast, useConfirmDialog, useTooltip）
 utils/              → 工具函数（markdown.ts 渲染管线, katex.ts 公式渲染）
 server/api/         → API 路由（chat.post.ts, sessions.ts, sessions/[id].ts, models.ts）
 server/tools/       → AI 工具（weather.ts, web-search.ts）
@@ -71,7 +72,52 @@ sessions (1:N) → messages (1:N) → feedbacks（均级联删除）
 - **状态切换**：展开/折叠、选中/未选中使用 `transition` 过渡，禁止瞬间跳变
 - **加载状态**：异步操作显示 loading 指示器（spinner 或骨架屏），禁止无反馈的等待
 - **过渡时长**：微交互 150-200ms，页面级动画 200-300ms，不超过 500ms
-- **图标按钮提示**：纯图标按钮（无文字）必须用 `<UTooltip>` 包裹提供文字提示，禁止使用原生 `title` 属性
+- **图标按钮提示**：纯图标按钮（无文字）必须用 `v-tooltip` 包裹提供文字提示，禁止使用原生 `title` 属性
+
+## Interaction & UX Optimization Rules
+
+以下规则基于实际优化经验总结，新增功能时必须遵守：
+
+### 触摸设备适配（Android 平板 WebView）
+
+- **操作按钮必须触摸可达**：hover-only 的按钮（`opacity-0 group-hover:opacity-100`）在触摸设备上不可见，必须同时加 `focus-within:opacity-100` 或始终显示关键操作按钮
+- **禁止使用浏览器原生对话框**：`confirm()`、`alert()`、`prompt()` 在 WebView 中风格不协调且可能被拦截，必须使用自定义 `ConfirmDialogProvider` + `useConfirmDialog()` composable
+- **按钮点击反馈**：所有可点击元素必须加 `active:scale-95` 或 `active:scale-[0.98]`，提供触觉反馈感
+
+### 动画与过渡
+
+- **侧边栏/面板切换**：必须用 `<Transition>` 包裹，使用 `margin-left` + `opacity` 组合实现滑入滑出，禁止 `v-if` 硬切
+- **消息列表动画**：使用 `<TransitionGroup>` 包裹消息列表，入场动画 `translateY(12px)` + `opacity`，时长 300ms
+- **折叠/展开区域**：禁止用 `v-if` 直接切换，必须用 `max-height` + `overflow: hidden` + `transition` 实现平滑高度过渡
+- **自动滚动**：聊天消息区域必须在消息数量变化和 AI 流式输出时自动滚动到底部，使用 `scrollTo({ behavior: 'smooth' })`
+
+### 用户反馈系统
+
+- **错误提示**：所有 API 请求失败必须通过 `useToast()` 向用户展示错误信息，禁止仅 `console.error` 静默处理
+- **操作成功提示**：删除、重命名等操作成功后用 `toast.success()` 反馈
+- **Toast 系统**：通过 `ToastProvider`（在 `app.vue` 中注册）+ `useToast()` composable 使用，支持 `success`/`error`/`info` 三种类型
+
+### 输入体验
+
+- **多行输入框自动增高**：textarea 必须监听 input 变化动态调整 `scrollHeight`，设置 `min-h` 和 `max-h` 约束
+- **Enter 发送 / Shift+Enter 换行**：聊天输入框的标准交互模式
+
+### 信息展示
+
+- **时间显示**：会话列表等场景必须显示相对时间（"刚刚"、"3 分钟前"、"2 天前"），超过 7 天显示日期
+- **搜索结果**：必须显示摘要（snippet），不能只显示标题，用户需要预判内容相关性
+- **AI 消息操作栏**：每条 AI 回复必须提供"复制"和"重新生成"按钮，复制成功后图标切换 + Toast 提示
+
+### 图标与视觉
+
+- **统一使用 SVG 图标**：禁止使用 Unicode 字符（如 ☰、✕）作为图标，全部替换为内联 SVG，保持视觉一致性
+- **行内代码颜色**：使用柔和的紫色（`#7c3aed`），禁止使用刺眼的红色（`#e11d48`），避免打断阅读节奏
+- **消息气泡宽度**：用户消息 `max-w-[85%]`，AI 消息 `max-w-[90%]`，在横屏平板上为代码和公式留足空间
+
+### 会话管理
+
+- **会话重命名**：支持双击标题或点击编辑图标进入编辑模式，Enter 确认、Escape 取消、blur 自动确认
+- **删除确认**：必须通过 `useConfirmDialog()` 弹窗确认，禁止无确认直接删除
 
 ## Code Style
 

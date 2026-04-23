@@ -202,7 +202,7 @@ function renderCodeBlocks() {
   border-radius: 4px;
   font-size: 0.875em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  color: #e11d48;
+  color: #7c3aed;
 }
 
 /** 块级公式（$$...$$）样式：允许横向滚动 */
