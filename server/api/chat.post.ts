@@ -68,6 +68,9 @@ const DEFAULT_SYSTEM_PROMPT =
 
 搜索后请综合搜索结果给出准确回答，并注明信息来源。`
 
+const MAX_MESSAGE_LENGTH = 10_00
+const MAX_MESSAGES_COUNT = 10
+
 /**
  * POST /api/chat 的事件处理器
  *
@@ -83,6 +86,22 @@ export default defineEventHandler(async (event) => {
       statusCode: 400,
       statusMessage: 'messages 参数缺失或格式错误'
     })
+  }
+
+  if (messages.length > MAX_MESSAGES_COUNT) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `消息数量超过限制（最多 ${MAX_MESSAGES_COUNT} 条）`
+    })
+  }
+
+  for (const msg of messages) {
+    if (typeof msg.content === 'string' && msg.content.length > MAX_MESSAGE_LENGTH) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `单条消息长度超过限制（最多 ${MAX_MESSAGE_LENGTH} 字符）`
+      })
+    }
   }
 
   const thinkingEnabled = enable_thinking ?? DEFAULT_ENABLE_THINKING
