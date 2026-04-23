@@ -79,47 +79,55 @@ export default defineNuxtConfig({
             server.middlewares.use(
               (req: IncomingMessage, res: ServerResponse, next: () => void) => {
                 const originalSetHeader = res.setHeader.bind(res)
-                const originalWrite = res.write.bind(res)
-                const originalEnd = res.end.bind(res)
                 let body = ''
-                let isHtmlResponse = false
+                let isHtml = false
+                let bypassed = false
 
-                const patchedSetHeader = function (name: string, value: any) {
-                  if (name.toLowerCase() === 'content-type' && typeof value === 'string') {
-                    isHtmlResponse = value.includes('text/html')
-                  }
-                  return originalSetHeader(name, value)
-                }
-                res.setHeader = patchedSetHeader
-
+                const originalWrite = res.write
                 res.write = function (chunk: any, ...rest: any[]) {
-                  if (isHtmlResponse) {
-                    if (typeof chunk === 'string') {
-                      body += chunk
-                    } else if (Buffer.isBuffer(chunk)) {
-                      body += chunk.toString('utf-8')
-                    }
-                    return true
+                  if (bypassed) {
+                    return (originalWrite as any).call(res, chunk, ...rest)
                   }
-                  return originalWrite(chunk, ...rest)
+                  if (!isHtml) {
+                    const contentType = res.getHeader('content-type') as string
+                    if (contentType?.includes('text/html')) {
+                      isHtml = true
+                    } else {
+                      bypassed = true
+                      if (body) {
+                        ;(originalWrite as any).call(res, body)
+                        body = ''
+                      }
+                      return (originalWrite as any).call(res, chunk, ...rest)
+                    }
+                  }
+                  if (typeof chunk === 'string') {
+                    body += chunk
+                  } else if (Buffer.isBuffer(chunk)) {
+                    body += chunk.toString('utf-8')
+                  }
+                  return true
                 } as any
 
+                const originalEnd = res.end
                 res.end = function (chunk: any, ...rest: any[]) {
-                  if (isHtmlResponse) {
-                    if (typeof chunk === 'string') {
-                      body += chunk
-                    } else if (Buffer.isBuffer(chunk)) {
-                      body += chunk.toString('utf-8')
-                    }
-
-                    if (body.includes(brokenPrefix)) {
-                      const fixed = fixHtml(body)
-                      originalSetHeader('content-length', Buffer.byteLength(fixed))
-                      return originalEnd(fixed)
-                    }
-                    return originalEnd(body)
+                  if (bypassed) {
+                    return (originalEnd as any).call(res, chunk, ...rest)
                   }
-                  return originalEnd(chunk, ...rest)
+                  if (typeof chunk === 'string') {
+                    body += chunk
+                  } else if (Buffer.isBuffer(chunk)) {
+                    body += chunk.toString('utf-8')
+                  }
+
+                  const contentType = res.getHeader('content-type') as string
+                  if (contentType?.includes('text/html') && body.includes(brokenPrefix)) {
+                    const fixed = fixHtml(body)
+                    originalSetHeader('content-length', Buffer.byteLength(fixed))
+                    ;(originalEnd as any).call(res, fixed)
+                  } else {
+                    ;(originalEnd as any).call(res, body || chunk, ...rest)
+                  }
                 } as any
 
                 next()

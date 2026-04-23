@@ -24,10 +24,18 @@ const inputValue = computed({
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
+const MAX_INPUT_LENGTH = 1000
+
+const inputLength = computed(() => props.input.length)
+const isOverLimit = computed(() => inputLength.value > MAX_INPUT_LENGTH)
+const isNearLimit = computed(() => inputLength.value > MAX_INPUT_LENGTH * 0.8 && !isOverLimit.value)
+
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
-    emit('submit')
+    if (!isOverLimit.value) {
+      emit('submit')
+    }
   }
 }
 
@@ -38,7 +46,10 @@ function autoResize() {
   el.style.height = Math.min(el.scrollHeight, 160) + 'px'
 }
 
-watch(() => props.input, () => nextTick(autoResize))
+watch(
+  () => props.input,
+  () => nextTick(autoResize)
+)
 </script>
 
 <template>
@@ -60,7 +71,7 @@ watch(() => props.input, () => nextTick(autoResize))
           v-if="!isLoading"
           type="submit"
           data-testid="send-btn"
-          :disabled="!input.trim()"
+          :disabled="!input.trim() || isOverLimit"
           class="shrink-0 p-3 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:scale-95 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
         >
           发送 ▶
@@ -109,16 +120,25 @@ watch(() => props.input, () => nextTick(autoResize))
           class="px-2 py-1.5 text-xs font-medium rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
           @change="emit('update:currentModel', ($event.target as HTMLSelectElement).value)"
         >
-          <option
-            v-for="opt in modelOptions"
-            :key="opt.value"
-            :value="opt.value"
-          >
+          <option v-for="opt in modelOptions" :key="opt.value" :value="opt.value">
             {{ opt.label }}
           </option>
         </select>
 
-        <span class="text-xs text-gray-400 ml-auto">
+        <span
+          class="text-xs ml-auto transition-colors duration-200"
+          :class="
+            isOverLimit
+              ? 'text-red-500 font-medium'
+              : isNearLimit
+                ? 'text-amber-500'
+                : 'text-gray-400'
+          "
+        >
+          {{ inputLength }} / {{ MAX_INPUT_LENGTH }}
+        </span>
+        <span v-if="isOverLimit" class="text-xs text-red-500 ml-2"> 超出限制，无法发送 </span>
+        <span v-if="!isOverLimit" class="text-xs text-gray-400 ml-2">
           {{ enableThinking ? '🧠 深度思考模式' : '⚡ 快速模式' }}
         </span>
       </div>

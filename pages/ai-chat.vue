@@ -35,16 +35,27 @@ watch(isLoading, (loading) => {
   localIsLoading.value = loading
 })
 
-watch(messages, (newMessages) => {
-  const lastMsg = newMessages[newMessages.length - 1]
-}, { deep: true })
+watch(
+  messages,
+  (newMessages) => {
+    const lastMsg = newMessages[newMessages.length - 1]
+  },
+  { deep: true }
+)
 
 const isLastMessageLoading = computed(() => {
   return localIsLoading.value === true
 })
 
-const { sessionsList, currentSessionId, loadSessions, createNewSession, switchSession, deleteSession, renameSession } =
-  useChatSession(setMessages)
+const {
+  sessionsList,
+  currentSessionId,
+  loadSessions,
+  createNewSession,
+  switchSession,
+  deleteSession,
+  renameSession
+} = useChatSession(setMessages)
 
 onMounted(async () => {
   await loadSessions()
@@ -156,7 +167,16 @@ async function handleReload() {
           v-tooltip:bottom="showSidebar ? '收起侧边栏' : '展开侧边栏'"
           @click="showSidebar = !showSidebar"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="w-5 h-5"
+          >
             <rect x="3" y="3" width="18" height="18" rx="2" />
             <line x1="9" y1="3" x2="9" y2="21" />
           </svg>
@@ -228,14 +248,27 @@ async function handleReload() {
                   </div>
                 </div>
                 <div v-else class="group">
-                  <div class="whitespace-pre-wrap leading-relaxed">{{ msg.content }}</div>
-                  <div class="flex justify-end mt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  <div class="whitespace-pre-wrap break-words leading-relaxed">
+                    {{ msg.content }}
+                  </div>
+                  <div
+                    class="flex justify-end mt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                  >
                     <button
                       class="p-1 text-blue-200 hover:text-white rounded transition-colors"
                       v-tooltip="'编辑消息'"
                       @click="startEditing(index, msg.content)"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="w-3.5 h-3.5"
+                      >
                         <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
                         <path d="m15 5 4 4" />
                       </svg>
@@ -250,10 +283,7 @@ async function handleReload() {
                   :content="getReasoningContent(msg)"
                 />
 
-                <div
-                  v-if="getToolInvocations(msg).length > 0"
-                  class="mb-3 space-y-2"
-                >
+                <div v-if="getToolInvocations(msg).length > 0" class="mb-3 space-y-2">
                   <ToolInvocation
                     v-for="invocation in getToolInvocations(msg)"
                     :key="invocation.toolCallId"
@@ -264,7 +294,7 @@ async function handleReload() {
                 <div class="relative inline">
                   <MarkdownRenderer v-if="msg.content" :content="msg.content" />
                   <span
-                    v-if="isLastMessageLoading"
+                    v-if="isLastMessageLoading && index === messages.length - 1"
                     class="inline-block w-1.5 h-4 ml-0.5 bg-blue-500 cursor-blink align-text-bottom"
                   />
                 </div>
@@ -278,11 +308,31 @@ async function handleReload() {
                     v-tooltip="'复制'"
                     @click="copyMessage(msg.content, msg.id)"
                   >
-                    <svg v-if="copiedMessageId !== msg.id" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                    <svg
+                      v-if="copiedMessageId !== msg.id"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      class="w-3.5 h-3.5"
+                    >
                       <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
                       <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
                     </svg>
-                    <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-green-500">
+                    <svg
+                      v-else
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      class="w-3.5 h-3.5 text-green-500"
+                    >
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   </button>
@@ -292,7 +342,16 @@ async function handleReload() {
                     :disabled="isLoading"
                     @click="handleReload"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      class="w-3.5 h-3.5"
+                    >
                       <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                       <path d="M3 3v5h5" />
                       <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
@@ -322,7 +381,9 @@ async function handleReload() {
 <style scoped>
 .sidebar-enter-active,
 .sidebar-leave-active {
-  transition: margin-left 0.25s ease, opacity 0.25s ease;
+  transition:
+    margin-left 0.25s ease,
+    opacity 0.25s ease;
 }
 .sidebar-enter-from,
 .sidebar-leave-to {
