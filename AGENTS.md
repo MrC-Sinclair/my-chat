@@ -1,6 +1,6 @@
 # AGENTS.md
 
-sw-pad — AI 学习平板，面向深圳外国语学校学生的 H5 嵌入式 WebView 应用，运行于 Android 平板横屏环境。学生在平板上与 AI 助手对话，解答学科问题。AI 回复必须安全渲染 Markdown + LaTeX 公式，且支持工具调用（天气、搜索）。
+my-chat — 基于 Nuxt 3 + Vercel AI SDK 的通用 AI 对话应用，支持 Markdown + LaTeX 公式安全渲染，内置工具调用（天气、搜索）。适配平板和手机屏幕。
 
 ## Setup
 
@@ -78,15 +78,17 @@ sessions (1:N) → messages (1:N) → feedbacks（均级联删除）
 
 以下规则基于实际优化经验总结，新增功能时必须遵守：
 
-### 触摸设备适配（Android 平板 WebView）
+### 触摸设备适配（Android 平板 WebView + 手机）
 
-- **操作按钮必须触摸可达**：hover-only 的按钮（`opacity-0 group-hover:opacity-100`）在触摸设备上不可见，必须同时加 `focus-within:opacity-100` 或始终显示关键操作按钮
+- **操作按钮必须触摸可达**：hover-only 的按钮（`opacity-0 group-hover:opacity-100`）在触摸设备上不可见，手机端必须始终显示（不加 `group-hover`），平板端必须同时加 `focus-within:opacity-100`
+- **触摸目标 ≥ 36px**：纯图标按钮必须保证 `min-w-[36px] min-h-[36px]`（手机端），桌面端可恢复默认大小（`sm:min-w-0 sm:min-h-0`）
 - **禁止使用浏览器原生对话框**：`confirm()`、`alert()`、`prompt()` 在 WebView 中风格不协调且可能被拦截，必须使用自定义 `ConfirmDialogProvider` + `useConfirmDialog()` composable
 - **按钮点击反馈**：所有可点击元素必须加 `active:scale-95` 或 `active:scale-[0.98]`，提供触觉反馈感
+- **输入区按钮 ≥ 44px**：发送/停止等核心操作按钮必须 `min-w-[44px] min-h-[44px]`
 
 ### 动画与过渡
 
-- **侧边栏/面板切换**：必须用 `<Transition>` 包裹，使用 `margin-left` + `opacity` 组合实现滑入滑出，禁止 `v-if` 硬切
+- **侧边栏/面板切换**：桌面端用 `<Transition>` + `margin-left` + `opacity` 实现滑入滑出；手机端侧边栏为覆盖式（`fixed inset-y-0 left-0 z-50`），使用 `.slide-left` 动画从左侧滑入，同时显示半透明遮罩（`bg-black/50`）
 - **消息列表动画**：使用 `<TransitionGroup>` 包裹消息列表，入场动画 `translateY(12px)` + `opacity`，时长 300ms
 - **折叠/展开区域**：禁止用 `v-if` 直接切换，必须用 `max-height` + `overflow: hidden` + `transition` 实现平滑高度过渡
 - **自动滚动**：聊天消息区域必须在消息数量变化和 AI 流式输出时自动滚动到底部，使用 `scrollTo({ behavior: 'smooth' })`
@@ -112,12 +114,85 @@ sessions (1:N) → messages (1:N) → feedbacks（均级联删除）
 
 - **统一使用 SVG 图标**：禁止使用 Unicode 字符（如 ☰、✕）作为图标，全部替换为内联 SVG，保持视觉一致性
 - **行内代码颜色**：使用柔和的紫色（`#7c3aed`），禁止使用刺眼的红色（`#e11d48`），避免打断阅读节奏
-- **消息气泡宽度**：用户消息 `max-w-[85%]`，AI 消息 `max-w-[90%]`，在横屏平板上为代码和公式留足空间
+- **消息气泡宽度**：用户消息 `max-w-[92%] sm:max-w-[85%]`，AI 消息 `max-w-[96%] sm:max-w-[90%]`，手机端放宽以充分利用屏幕空间
 
 ### 会话管理
 
 - **会话重命名**：支持双击标题或点击编辑图标进入编辑模式，Enter 确认、Escape 取消、blur 自动确认
 - **删除确认**：必须通过 `useConfirmDialog()` 弹窗确认，禁止无确认直接删除
+
+## Responsive Design & Mobile Compatibility
+
+本项目同时支持 **Android 平板横屏**和**手机竖屏**，断点为 `sm:640px`。新增 UI 组件时必须遵循以下规则：
+
+### 响应式模式
+
+所有 UI 变更必须用 Tailwind 前缀同时适配手机和平板，CSS 在手机上**默认（无前缀）**，平板上**加 `sm:` 前缀**：
+
+```tailwind
+class="px-3 sm:px-6 py-2 sm:py-3 text-base sm:text-xl"
+```
+手机端是"窄屏模式"，平板端是"宽屏模式"，不要反过来。
+
+### 关键断点对照表
+
+| 属性           | 手机（默认）            | 平板（sm:）           |
+| -------------- | ----------------------- | --------------------- |
+| Header padding | `px-3 py-2`             | `sm:px-6 sm:py-3`     |
+| Header 标题    | `text-base`             | `sm:text-xl`          |
+| 侧边栏布局     | 覆盖式 overlay（fixed） | 内联式 inline（flex） |
+| 侧边栏宽度     | `w-[85vw]`              | `sm:w-64`             |
+| 消息气泡圆角   | `rounded-xl`            | `sm:rounded-2xl`      |
+| 消息气泡 padding | `px-2.5 py-1.5`       | `sm:px-5 sm:py-3`     |
+| 消息间距       | `space-y-2`             | `sm:space-y-6`        |
+| 消息容器 top padding | `py-1`            | `sm:py-6`             |
+| 用户气泡宽度   | `max-w-[92%]`           | `sm:max-w-[85%]`      |
+| AI 气泡宽度    | `max-w-[96%]`           | `sm:max-w-[90%]`      |
+| 操作按钮       | 始终显示，`min-w-[36px]` | hover 显示，默认大小  |
+| 发送按钮       | `min-w-[44px]` SVG 图标 | 同上                  |
+| "新会话"按钮   | SVG 图标，无文字        | 显示文字              |
+
+### 侧边栏（关键模式）
+
+侧边栏在手机和平板上使用**完全不同的布局模式**，已封装在 `ai-chat.vue` 中：
+
+```html
+<!-- 桌面端：内联在 flex 流中 -->
+<div class="hidden sm:flex">
+  <SessionSidebar v-show="showSidebar" ... />
+</div>
+
+<!-- 手机端：覆盖式弹出层 + 遮罩 -->
+<Transition name="slide-left">
+  <div v-if="isMobile && showSidebar" class="fixed inset-y-0 left-0 z-50 sm:hidden">
+    <SessionSidebar @close="showSidebar = false" />
+  </div>
+</Transition>
+```
+
+- `isMobile` 通过 `window.innerWidth < 640` 判断，在 `onMounted` 中初始化并监听 `resize`
+- 手机端侧边栏自带 X 关闭按钮，点击遮罩也可关闭
+- 动画使用 `transform: translateX(-100%)` 从左侧滑入
+
+### Viewport 设置
+
+`app.vue` 中已设置：
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+```
+禁止用户缩放，防止输入时页面意外缩放。
+
+### 新增组件检测清单
+
+新增或修改 UI 组件时，对照以下问题：
+
+- [ ] 手机端按钮触摸目标是否 ≥ 36px（核心操作 ≥ 44px）？
+- [ ] hover-only 的按钮在触摸设备上是否可见？
+- [ ] 是否用了 Tailwind 前缀 `sm:` 区分手机和平板？
+- [ ] 手机端侧边栏是否为 overlay 模式？
+- [ ] 消息间距是否在手机上更紧凑（`space-y-2` vs `space-y-6`）？
+- [ ] 操作栏是否在手机上始终显示（不依赖 hover）？
+- [ ] 手机端 padding 是否比平板端小？
 
 ## Code Style
 

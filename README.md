@@ -1,6 +1,6 @@
-# AI 学习平板
+# my-chat
 
-基于 Nuxt 3 + Vercel AI SDK 的 AI 对话学习助手，面向深圳外国语学校学生场景。
+基于 Nuxt 3 + Vercel AI SDK 的通用 AI 对话应用，支持 Markdown + LaTeX 公式安全渲染、深度思考模式、工具调用（天气、搜索），适配平板和手机屏幕。
 
 ## 技术栈
 
@@ -53,7 +53,7 @@ DATABASE_URL=postgresql://sw_pad:sw_pad_2026@localhost:5434/sw_pad
 ## 项目结构
 
 ```
-AI学习平板/
+my-chat/
 ├── pages/
 │   ├── index.vue              # 首页
 │   └── ai-chat.vue            # AI 聊天主页面（useChat）
@@ -290,7 +290,7 @@ return streamText({
 | **当前方案：onFinish 统一保存** | 事务一致性好，一次写入 user+assistant | 如果中途失败，用户消息也丢失 |
 | **替代方案：发送时存 user，回复时存 assistant** | 用户消息不丢失 | 两次 DB 写入，可能只有一半成功 |
 
-> **权衡选择**: 当前方案更简洁，适合学习助手场景。如果需要更强的可靠性，可以在发送时单独 INSERT user 消息。
+> **权衡选择**: 当前方案更简洁，适合通用对话场景。如果需要更强的可靠性，可以在发送时单独 INSERT user 消息。
 
 #### 消息去重策略
 

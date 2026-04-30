@@ -53,14 +53,14 @@ watch(
 </script>
 
 <template>
-  <footer class="shrink-0 border-t border-gray-200 bg-white p-4">
-    <form class="max-w-4xl mx-auto" @submit.prevent="emit('submit')">
+  <footer class="shrink-0 border-t border-gray-200 bg-white px-3 sm:px-4 py-3 sm:py-4">
+    <form class="max-w-full sm:max-w-4xl mx-auto" @submit.prevent="emit('submit')">
       <div class="flex items-end gap-2">
         <textarea
           ref="textareaRef"
           :value="inputValue"
           data-testid="chat-input"
-          class="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[48px] max-h-[160px]"
+          class="flex-1 resize-none rounded-xl border border-gray-300 px-3 sm:px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[44px] max-h-[120px] sm:max-h-[160px]"
           placeholder="输入你的问题..."
           rows="1"
           :disabled="isLoading"
@@ -72,25 +72,30 @@ watch(
           type="submit"
           data-testid="send-btn"
           :disabled="!input.trim() || isOverLimit"
-          class="shrink-0 p-3 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:scale-95 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
+          class="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:scale-95 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
         >
-          发送 ▶
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 sm:w-5 sm:h-5">
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
         </button>
         <button
           v-else
           type="button"
           data-testid="stop-btn"
-          class="shrink-0 p-3 text-sm font-medium text-white bg-red-500 rounded-xl hover:bg-red-600 active:scale-95 transition-all"
+          class="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-sm font-medium text-white bg-red-500 rounded-xl hover:bg-red-600 active:scale-95 transition-all"
           @click="emit('stop')"
         >
-          停止 ■
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 sm:w-5 sm:h-5">
+            <rect x="6" y="6" width="12" height="12" rx="1" />
+          </svg>
         </button>
       </div>
 
-      <div class="flex items-center gap-2 mt-2">
+      <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-2">
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all"
+          class="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg transition-all min-h-[36px]"
           :class="
             enableThinking
               ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300'
@@ -107,7 +112,7 @@ watch(
             stroke-width="2"
             stroke-linecap="round"
             stroke-linejoin="round"
-            class="w-3.5 h-3.5"
+            class="w-3.5 h-3.5 shrink-0"
           >
             <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
             <path d="M12 12V2a10 10 0 0 1 8.66 14.34" />
@@ -117,7 +122,7 @@ watch(
 
         <select
           :value="currentModel"
-          class="px-2 py-1.5 text-xs font-medium rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+          class="px-2 sm:px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer min-h-[36px]"
           @change="emit('update:currentModel', ($event.target as HTMLSelectElement).value)"
         >
           <option v-for="opt in modelOptions" :key="opt.value" :value="opt.value">
@@ -126,7 +131,7 @@ watch(
         </select>
 
         <span
-          class="text-xs ml-auto transition-colors duration-200"
+          class="text-xs transition-colors duration-200 ml-auto"
           :class="
             isOverLimit
               ? 'text-red-500 font-medium'
@@ -136,10 +141,6 @@ watch(
           "
         >
           {{ inputLength }} / {{ MAX_INPUT_LENGTH }}
-        </span>
-        <span v-if="isOverLimit" class="text-xs text-red-500 ml-2"> 超出限制，无法发送 </span>
-        <span v-if="!isOverLimit" class="text-xs text-gray-400 ml-2">
-          {{ enableThinking ? '🧠 深度思考模式' : '⚡ 快速模式' }}
         </span>
       </div>
     </form>

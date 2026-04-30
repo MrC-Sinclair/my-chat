@@ -30,6 +30,20 @@ const editingText = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
 const copiedMessageId = ref<string>('')
 const localIsLoading = ref(false)
+const isMobile = ref(false)
+
+function checkMobile() {
+  isMobile.value = window.innerWidth < 640
+}
+
+onMounted(() => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile)
+})
 
 watch(isLoading, (loading) => {
   localIsLoading.value = loading
@@ -145,25 +159,55 @@ async function handleReload() {
 
 <template>
   <div class="flex h-screen bg-white">
-    <Transition name="sidebar">
-      <SessionSidebar
-        v-show="showSidebar"
-        :sessions-list="sessionsList"
-        :current-session-id="currentSessionId"
-        @create="createNewSession"
-        @switch="switchSession"
-        @delete="deleteSession"
-        @rename="renameSession"
+    <!-- Mobile sidebar backdrop -->
+    <Transition name="fade">
+      <div
+        v-if="isMobile && showSidebar"
+        class="fixed inset-0 z-40 bg-black/50 sm:hidden"
+        @click="showSidebar = false"
       />
+    </Transition>
+
+    <!-- Desktop sidebar (inline in flex flow) -->
+    <div class="hidden sm:flex">
+      <Transition name="sidebar">
+        <SessionSidebar
+          v-show="showSidebar"
+          :sessions-list="sessionsList"
+          :current-session-id="currentSessionId"
+          @create="createNewSession"
+          @switch="switchSession"
+          @delete="deleteSession"
+          @rename="renameSession"
+        />
+      </Transition>
+    </div>
+
+    <!-- Mobile sidebar (overlay) -->
+    <Transition name="slide-left">
+      <div
+        v-if="isMobile && showSidebar"
+        class="fixed inset-y-0 left-0 z-50 sm:hidden"
+      >
+        <SessionSidebar
+          :sessions-list="sessionsList"
+          :current-session-id="currentSessionId"
+          @create="createNewSession"
+          @switch="switchSession"
+          @delete="deleteSession"
+          @rename="renameSession"
+          @close="showSidebar = false"
+        />
+      </div>
     </Transition>
 
     <div class="flex-1 flex flex-col min-w-0">
       <header
         data-testid="chat-header"
-        class="flex items-center gap-3 px-6 py-3 border-b border-gray-200 bg-white shrink-0"
+        class="flex items-center gap-2 sm:gap-3 px-3 sm:px-6 py-2 sm:py-3 border-b border-gray-200 bg-white shrink-0"
       >
         <button
-          class="p-1.5 text-gray-500 hover:text-gray-800 rounded-lg hover:bg-gray-100 active:scale-95 transition-all"
+          class="p-2 sm:p-1.5 text-gray-500 hover:text-gray-800 rounded-lg hover:bg-gray-100 active:scale-95 transition-all"
           v-tooltip:bottom="showSidebar ? '收起侧边栏' : '展开侧边栏'"
           @click="showSidebar = !showSidebar"
         >
@@ -181,17 +225,19 @@ async function handleReload() {
             <line x1="9" y1="3" x2="9" y2="21" />
           </svg>
         </button>
-        <h1 class="text-xl font-semibold text-gray-800">
-          {{ $config.public.appTitle }}
+        <h1 class="text-base sm:text-xl font-semibold text-gray-800 truncate">
+          {{ $config.public.appTitle || 'AI 对话' }}
         </h1>
-        <div class="ml-auto flex items-center gap-2">
-          <button
-            class="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 active:scale-95 transition-all"
-            @click="createNewSession"
-          >
-            新会话
-          </button>
-        </div>
+        <button
+          class="ml-auto px-2 sm:px-3 py-2 sm:py-1.5 text-xs sm:text-sm text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 active:scale-95 transition-all min-w-[44px] flex items-center justify-center"
+          v-tooltip="'新会话'"
+          @click="createNewSession"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 sm:hidden">
+            <path d="M12 5v14" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          <span class="hidden sm:inline">新会话</span>
+        </button>
       </header>
 
       <main ref="messagesContainer" class="flex-1 overflow-y-auto scroll-smooth">
@@ -199,27 +245,27 @@ async function handleReload() {
           v-if="messages.length === 0"
           class="flex flex-col items-center justify-center h-full text-gray-400"
         >
-          <div class="text-5xl mb-4">💬</div>
-          <p class="text-lg">开始一段新的对话吧</p>
-          <p class="mt-2 text-sm">我是你的AI助手，随时为你解答问题</p>
+          <div class="text-4xl sm:text-5xl mb-3 sm:mb-4">💬</div>
+          <p class="text-base sm:text-lg">开始一段新的对话吧</p>
+          <p class="mt-1 sm:mt-2 text-xs sm:text-sm">我是你的AI助手，随时为你解答问题</p>
           <button
-            class="mt-4 px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:scale-95 transition-all"
+            class="mt-3 sm:mt-4 px-5 sm:px-6 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:scale-95 transition-all"
             @click="createNewSession"
           >
             + 开始新对话
           </button>
         </div>
 
-        <div v-else class="max-w-4xl mx-auto py-6 px-4">
-          <TransitionGroup name="message" tag="div" class="space-y-6">
+        <div v-else class="max-w-full sm:max-w-4xl mx-auto py-1 sm:py-6 px-2 sm:px-4">
+          <TransitionGroup name="message" tag="div" class="space-y-2 sm:space-y-6">
             <div
               v-for="(msg, index) in messages"
               :key="msg.id || index"
               :class="[
-                'rounded-2xl px-5 py-3 overflow-hidden',
+                'rounded-xl sm:rounded-2xl px-2.5 sm:px-5 py-1.5 sm:py-3 overflow-hidden',
                 msg.role === 'user'
-                  ? 'ml-auto max-w-[85%] bg-blue-600 text-white message-user'
-                  : 'mr-auto max-w-[90%] bg-gray-50 text-gray-800 message-assistant'
+                  ? 'ml-auto max-w-[92%] sm:max-w-[85%] bg-blue-600 text-white message-user'
+                  : 'mr-auto max-w-[96%] sm:max-w-[90%] bg-gray-50 text-gray-800 message-assistant'
               ]"
             >
               <template v-if="msg.role === 'user'">
@@ -252,10 +298,10 @@ async function handleReload() {
                     {{ msg.content }}
                   </div>
                   <div
-                    class="flex justify-end mt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                    class="flex justify-end mt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 sm:transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
                   >
                     <button
-                      class="p-1 text-blue-200 hover:text-white rounded transition-colors"
+                      class="p-1.5 sm:p-1 text-blue-200 hover:text-white rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                       v-tooltip="'编辑消息'"
                       @click="startEditing(index, msg.content)"
                     >
@@ -301,10 +347,10 @@ async function handleReload() {
 
                 <div
                   v-if="msg.content"
-                  class="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200"
+                  class="flex items-center gap-1 mt-1.5 sm:mt-2 pt-1.5 sm:pt-2 border-t border-gray-100 sm:border-gray-200"
                 >
                   <button
-                    class="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors"
+                    class="p-1.5 sm:p-1 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                     v-tooltip="'复制'"
                     @click="copyMessage(msg.content, msg.id)"
                   >
@@ -337,7 +383,7 @@ async function handleReload() {
                     </svg>
                   </button>
                   <button
-                    class="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors"
+                    class="p-1.5 sm:p-1 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                     v-tooltip="'重新生成'"
                     :disabled="isLoading"
                     @click="handleReload"
@@ -388,6 +434,26 @@ async function handleReload() {
 .sidebar-enter-from,
 .sidebar-leave-to {
   margin-left: -256px;
+  opacity: 0;
+}
+
+/* Mobile sidebar slide-in */
+.slide-left-enter-active,
+.slide-left-leave-active {
+  transition: transform 0.25s ease;
+}
+.slide-left-enter-from,
+.slide-left-leave-to {
+  transform: translateX(-100%);
+}
+
+/* Mobile backdrop fade */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
 }
 

@@ -11,6 +11,7 @@ const emit = defineEmits<{
   switch: [sessionId: string]
   delete: [sessionId: string]
   rename: [sessionId: string, newTitle: string]
+  close: []
 }>()
 
 const renamingId = ref<string>('')
@@ -57,14 +58,23 @@ function formatRelativeTime(dateStr: string): string {
 </script>
 
 <template>
-  <aside class="w-64 shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col">
-    <div class="p-4 border-b border-gray-200">
+  <aside class="w-[85vw] sm:w-64 shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col h-full">
+    <div class="flex items-center gap-2 p-3 sm:p-4 border-b border-gray-200">
       <button
-        class="w-full px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+        class="flex-1 px-3 sm:px-4 py-2.5 sm:py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 min-h-[44px]"
         @click="emit('create')"
       >
-        <span class="text-lg">+</span>
+        <span class="text-lg leading-none">+</span>
         新建会话
+      </button>
+      <button
+        class="sm:hidden p-2 text-gray-500 hover:text-gray-800 rounded-lg hover:bg-gray-200 active:scale-95 transition-all min-w-[36px] min-h-[36px] flex items-center justify-center"
+        @click="$emit('close')"
+        v-tooltip="'关闭侧边栏'"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
+          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
       </button>
     </div>
 
@@ -76,7 +86,7 @@ function formatRelativeTime(dateStr: string): string {
       <div
         v-for="session in sessionsList"
         :key="session.id"
-        class="group flex items-center justify-between px-3 py-2.5 mb-1 rounded-lg cursor-pointer transition-colors"
+        class="group flex items-center justify-between px-2 sm:px-3 py-2.5 mb-1 rounded-lg cursor-pointer transition-colors"
         :class="
           session.id === currentSessionId
             ? 'bg-blue-100 text-blue-800'
@@ -88,7 +98,7 @@ function formatRelativeTime(dateStr: string): string {
           <template v-if="renamingId === session.id">
             <input
               v-model="renamingText"
-              class="w-full text-sm bg-white border border-blue-400 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              class="w-full text-sm bg-white border border-blue-400 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[36px]"
               @keydown.enter="confirmRename"
               @keydown.escape="cancelRename"
               @blur="confirmRename"
@@ -111,21 +121,21 @@ function formatRelativeTime(dateStr: string): string {
         </div>
         <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity ml-1">
           <button
-            class="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors"
+            class="p-1.5 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
             v-tooltip="'重命名'"
             @click.stop="startRename(session)"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
               <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
               <path d="m15 5 4 4" />
             </svg>
           </button>
           <button
-            class="p-1 text-gray-400 hover:text-red-600 rounded transition-colors"
+            class="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
             v-tooltip="'删除会话'"
             @click="handleDelete(session.id, $event)"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
               <path d="M3 6h18" />
               <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
               <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />

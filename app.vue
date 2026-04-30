@@ -10,6 +10,17 @@
   例如访问 /ai-chat 时：
     app.vue → default.vue(布局) → ai-chat.vue(页面)
 -->
+<script setup lang="ts">
+useHead({
+  meta: [
+    {
+      name: 'viewport',
+      content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'
+    }
+  ]
+})
+</script>
+
 <template>
   <ToastProvider>
     <ConfirmDialogProvider>
