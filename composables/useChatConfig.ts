@@ -45,6 +45,12 @@ export function useChatConfig() {
   /** 思考 token 预算 */
   const thinkingBudget = 4096
 
+  /** 当前模型是否支持视觉（图片理解） */
+  const supportsVision = computed(() => {
+    const model = currentModel.value
+    return model.includes('GLM-4.1V') || model.includes('Vision') || model.includes('VL')
+  })
+
   /** 从 /api/models 加载模型列表 */
   async function loadModels() {
     try {
@@ -68,6 +74,7 @@ export function useChatConfig() {
     showSidebar,
     modelOptions,
     thinkingBudget,
+    supportsVision,
     loadModels
   }
 }

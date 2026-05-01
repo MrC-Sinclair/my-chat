@@ -1,28 +1,3 @@
-/**
- * @file 聊天 API 接口 — POST /api/chat
- *
- * 本文件是 AI 聊天功能的核心后端接口，负责：
- *   1. 接收前端发送的聊天消息
- *   2. 调用大语言模型（LLM）进行流式生成回复
- *   3. 在回复完成后，将用户消息和 AI 回复保存到数据库
- *
- * 技术栈：
- *   - Vercel AI SDK（`ai` 包）：提供 streamText 流式文本生成能力
- *   - @ai-sdk/openai：OpenAI 兼容的模型适配器（可对接硅基流动等国内平台）
- *   - Drizzle ORM：操作 PostgreSQL 数据库
- *
- * 请求体格式（JSON）：
- *   {
- *     messages: [{ role: "user"|"assistant"|"system", content: "..." }],
- *     sessionId?: string,
- *     enable_thinking?: boolean,
- *     thinking_budget?: number,
- *     model?: string
- *   }
- *
- * 响应格式：AI SDK 的 DataStream 流式响应，前端可通过 useChat 逐字读取
- */
-
 import { createOpenAI } from '@ai-sdk/openai'
 import { streamText } from 'ai'
 import { db } from '~/server/db'
@@ -31,33 +6,18 @@ import { eq } from 'drizzle-orm'
 import { weatherTool } from '~/server/tools/weather'
 import { webSearchTool } from '~/server/tools/web-search'
 import { ALLOWED_MODEL_VALUES } from '~/server/config/models'
+import { writeFileSync, mkdirSync, existsSync } from 'fs'
+import { join } from 'path'
+import { uploadToImgBb } from '~/server/utils/imgbb'
 
-/**
- * 创建 LLM 提供者实例
- *
- * createOpenAI 会返回一个工厂函数，调用 llmProvider("模型名") 即可创建模型实例。
- * 通过环境变量配置，默认使用硅基流动（SiliconFlow）的 API 地址，
- * 兼容所有 OpenAI 格式的模型服务（如 DeepSeek、通义千问等）。
- */
 const llmProvider = createOpenAI({
   baseURL: process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1',
   apiKey: process.env.OPENAI_API_KEY
 })
 
-/** 默认模型名称，可通过环境变量 LLM_MODEL 切换 */
 const DEFAULT_LLM_MODEL = process.env.LLM_MODEL || 'Qwen/Qwen3-8B'
-
-/** 是否默认开启"深度思考"模式，环境变量 ENABLE_THINKING 设为 'false' 可关闭 */
 const DEFAULT_ENABLE_THINKING = process.env.ENABLE_THINKING !== 'false'
 
-/**
- * 系统提示词，优先从环境变量 SYSTEM_PROMPT 读取，为空则使用内置默认值
- *
- * 环境变量方式的好处：
- *   - 无需改代码即可定制 AI 角色和行为
- *   - 不同部署环境可使用不同的系统提示词
- *   - 敏感指令不暴露在前端代码中
- */
 const DEFAULT_SYSTEM_PROMPT =
   process.env.SYSTEM_PROMPT ||
   `你是一个友好的AI助手。请用简洁清晰的方式回答问题。
@@ -70,16 +30,27 @@ const DEFAULT_SYSTEM_PROMPT =
 
 const MAX_MESSAGE_LENGTH = 10_00
 const MAX_MESSAGES_COUNT = 10
+const MAX_IMAGE_SIZE = 4 * 1024 * 1024
+const MAX_IMAGES_PER_MESSAGE = 5
+const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads')
 
-/**
- * POST /api/chat 的事件处理器
- *
- * 整体流程：
- *   前端发送消息 → 解析请求体 → 获取系统提示词 → 调用 LLM 流式生成 → 回复完毕后保存到数据库
- */
+function saveBase64Image(base64: string): string {
+  const match = base64.match(/^data:image\/(\w+);base64,(.+)$/)
+  if (!match) throw new Error('Invalid image format')
+  const ext = match[1]
+  const data = match[2]
+  const buffer = Buffer.from(data, 'base64')
+  if (!existsSync(UPLOAD_DIR)) {
+    mkdirSync(UPLOAD_DIR, { recursive: true })
+  }
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  writeFileSync(join(UPLOAD_DIR, filename), buffer)
+  return `/uploads/${filename}`
+}
+
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
-  const { messages, sessionId, enable_thinking, thinking_budget, model } = body ?? {}
+  const { messages, sessionId, enable_thinking, thinking_budget, model, images } = body ?? {}
 
   if (!messages || !Array.isArray(messages)) {
     throw createError({
@@ -104,14 +75,55 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  if (images && Array.isArray(images)) {
+    if (images.length > MAX_IMAGES_PER_MESSAGE) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `图片数量超过限制（最多 ${MAX_IMAGES_PER_MESSAGE} 张）`
+      })
+    }
+    for (const img of images) {
+      if (typeof img === 'string' && img.length > MAX_IMAGE_SIZE * 1.37) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: `图片大小超过限制（最多 4MB）`
+        })
+      }
+    }
+  }
+
   const thinkingEnabled = enable_thinking ?? DEFAULT_ENABLE_THINKING
   const useModel = ALLOWED_MODEL_VALUES.has(model) ? model : DEFAULT_LLM_MODEL
+
+  let imageUrls: string[] = []
+  if (images && Array.isArray(images) && images.length > 0) {
+    const uploadPromises = images.map(async (img: string) => {
+      if (img.startsWith('data:')) {
+        const localPath = saveBase64Image(img)
+        const publicUrl = await uploadToImgBb(join(process.cwd(), 'public', localPath))
+        return publicUrl
+      }
+      return img
+    })
+    imageUrls = await Promise.all(uploadPromises)
+  }
+
+  const hasImages = imageUrls.length > 0
+
+  if (hasImages) {
+    return handleImageChat(event, messages, imageUrls, useModel, thinkingEnabled, thinking_budget, sessionId, images)
+  }
+
+  const llmMessages = messages.map((msg: { role: string; content: unknown }) => ({
+    role: msg.role as 'user' | 'assistant' | 'system',
+    content: msg.content as string
+  }))
 
   try {
     const result = streamText({
       model: llmProvider(useModel),
       system: DEFAULT_SYSTEM_PROMPT,
-      messages,
+      messages: llmMessages,
       tools: {
         weather: weatherTool,
         webSearch: webSearchTool
@@ -133,7 +145,7 @@ export default defineEventHandler(async (event) => {
       }
     })
     return result.toDataStreamResponse()
-  } catch (err) {
+  } catch (err: any) {
     console.error('streamText 调用失败:', err)
     throw createError({
       statusCode: 500,
@@ -142,28 +154,146 @@ export default defineEventHandler(async (event) => {
   }
 })
 
-/**
- * 将对话消息保存到数据库
- *
- * @param sessionId - 会话 ID，关联 sessions 表
- * @param chatMessages - 本次对话的所有消息（包含历史）
- * @param assistantText - AI 助手生成的完整回复文本
- */
+async function handleImageChat(
+  event: any,
+  messages: Array<{ role: string; content: string }>,
+  imageUrls: string[],
+  useModel: string,
+  thinkingEnabled: boolean,
+  thinking_budget: number | undefined,
+  sessionId: string | undefined,
+  originalImages?: string[]
+) {
+  const apiKey = process.env.OPENAI_API_KEY
+  const baseURL = process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1'
+
+  const openaiMessages = messages.map((msg) => {
+    if (msg.role === 'user' && msg === messages[messages.length - 1]) {
+      return {
+        role: 'user',
+        content: [
+          { type: 'text', text: msg.content },
+          ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } }))
+        ]
+      }
+    }
+    return { role: msg.role, content: msg.content }
+  })
+
+  const payload: any = {
+    model: useModel,
+    messages: [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }, ...openaiMessages],
+    stream: true
+  }
+
+  if (thinkingEnabled && !useModel.includes('1V')) {
+    payload.enable_thinking = true
+    payload.thinking_budget = thinking_budget || 4096
+  }
+
+  try {
+    const res = await fetch(`${baseURL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(payload)
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      console.error('[image-chat] API error:', res.status, text)
+      throw createError({
+        statusCode: res.status,
+        statusMessage: `LLM API 错误: ${text}`
+      })
+    }
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let fullText = ''
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            const chunk = decoder.decode(value, { stream: true })
+            const lines = chunk.split('\n')
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6)
+                if (data === '[DONE]') continue
+                try {
+                  const parsed = JSON.parse(data)
+                  const delta = parsed.choices?.[0]?.delta?.content || ''
+                  if (delta) {
+                    fullText += delta
+                    controller.enqueue(new TextEncoder().encode(`0:${JSON.stringify(delta)}\n`))
+                  }
+                } catch {}
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[image-chat] stream error:', err)
+        } finally {
+          controller.close()
+          reader.releaseLock()
+
+          if (sessionId && fullText) {
+            try {
+              await saveMessagesToDb(sessionId, messages, fullText, originalImages)
+            } catch (err) {
+              console.error('保存消息到数据库失败:', err)
+            }
+          }
+        }
+      }
+    })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'x-vercel-ai-data-stream': 'v1'
+      }
+    })
+  } catch (err: any) {
+    console.error('[image-chat] error:', err)
+    throw createError({
+      statusCode: 500,
+      statusMessage: `AI 调用失败: ${err instanceof Error ? err.message : String(err)}`
+    })
+  }
+}
+
 async function saveMessagesToDb(
   sessionId: string,
   chatMessages: Array<{ role: string; content: string }>,
-  assistantText: string
+  assistantText: string,
+  images?: string[]
 ) {
   if (chatMessages.length === 0) return
 
   const lastUserMessage = [...chatMessages].reverse().find((msg) => msg.role === 'user')
 
   if (lastUserMessage) {
+    const meta: Record<string, unknown> = {}
+    if (images && images.length > 0) {
+      meta.images = images.map((img, i) => ({
+        index: i,
+        size: img.length
+      }))
+    }
+
     await db.insert(messagesTable).values({
       id: crypto.randomUUID(),
       sessionId,
       role: 'user',
       content: lastUserMessage.content,
+      metadata: Object.keys(meta).length > 0 ? meta : undefined,
       createdAt: new Date()
     })
   }

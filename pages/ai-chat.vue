@@ -3,14 +3,20 @@ import { useChat } from '@ai-sdk/vue'
 import MarkdownRenderer from '~/components/chat/MarkdownRenderer.vue'
 import SessionSidebar from '~/components/chat/SessionSidebar.vue'
 import ToolInvocation from '~/components/chat/ToolInvocation.vue'
-import ChatInput from '~/components/chat/ChatInput.vue'
+import ChatInput, { type UploadedImage } from '~/components/chat/ChatInput.vue'
 import ThinkingProcess from '~/components/chat/ThinkingProcess.vue'
 import { useChatSession } from '~/composables/useChatSession'
 import { useChatConfig } from '~/composables/useChatConfig'
 import { useToast } from '~/composables/useToast'
 
-const { enableThinking, currentModel, showSidebar, modelOptions, thinkingBudget } = useChatConfig()
+const { enableThinking, currentModel, showSidebar, modelOptions, thinkingBudget, supportsVision } =
+  useChatConfig()
 const toast = useToast()
+
+const uploadedImages = ref<UploadedImage[]>([])
+const pendingMessageImages = ref<UploadedImage[]>([])
+const messageImages = ref<Map<string, UploadedImage[]>>(new Map())
+const nextMessageIndex = ref<number>(0)
 
 const { messages, input, handleSubmit, isLoading, stop, reload, setMessages } = useChat({
   api: '/api/chat',
@@ -18,12 +24,64 @@ const { messages, input, handleSubmit, isLoading, stop, reload, setMessages } = 
     sessionId: currentSessionId.value || undefined,
     enable_thinking: enableThinking.value,
     thinking_budget: enableThinking.value ? thinkingBudget : undefined,
-    model: currentModel.value
+    model: currentModel.value,
+    images:
+      uploadedImages.value.length > 0 ? uploadedImages.value.map((img) => img.dataUrl) : undefined
   })),
+  onFinish: () => {
+    uploadedImages.value = []
+    if (pendingMessageImages.value.length > 0) {
+      nextTick(() => {
+        const targetMsg = messages.value[nextMessageIndex.value]
+        console.log(
+          '[chat] onFinish, targetMsg:',
+          targetMsg?.id,
+          targetMsg?.role,
+          targetMsg?.content
+        )
+        if (targetMsg && targetMsg.role === 'user') {
+          messageImages.value.set(targetMsg.id, [...pendingMessageImages.value])
+          console.log('[chat] images associated to msg:', targetMsg.id)
+        }
+        pendingMessageImages.value = []
+      })
+    }
+  },
   onError: (err) => {
+    uploadedImages.value = []
+    if (pendingMessageImages.value.length > 0) {
+      const targetMsg = messages.value[nextMessageIndex.value]
+      if (targetMsg && targetMsg.role === 'user') {
+        messageImages.value.set(targetMsg.id, [...pendingMessageImages.value])
+      }
+    }
+    pendingMessageImages.value = []
     toast.error(`AI 回复失败：${err.message || '未知错误'}`)
   }
 })
+
+const originalHandleSubmit = handleSubmit
+const wrappedHandleSubmit = () => {
+  if (uploadedImages.value.length > 0) {
+    pendingMessageImages.value = [...uploadedImages.value]
+  }
+  nextMessageIndex.value = messages.value.length
+  originalHandleSubmit()
+}
+
+function getMessageImages(msgId: string, index: number): UploadedImage[] {
+  const fromMap = messageImages.value.get(msgId)
+  if (fromMap && fromMap.length > 0) return fromMap
+
+  const lastUserIndex = [...messages.value].reverse().findIndex((m) => m.role === 'user')
+  const actualLastUserIndex = messages.value.length - 1 - lastUserIndex
+
+  if (index === actualLastUserIndex && pendingMessageImages.value.length > 0) {
+    return pendingMessageImages.value
+  }
+
+  return []
+}
 
 const editingIndex = ref(-1)
 const editingText = ref('')
@@ -104,7 +162,7 @@ function submitEditing(index: number) {
 
   input.value = newContent
   nextTick(() => {
-    handleSubmit()
+    wrappedHandleSubmit()
   })
 
   cancelEditing()
@@ -185,10 +243,7 @@ async function handleReload() {
 
     <!-- Mobile sidebar (overlay) -->
     <Transition name="slide-left">
-      <div
-        v-if="isMobile && showSidebar"
-        class="fixed inset-y-0 left-0 z-50 sm:hidden"
-      >
+      <div v-if="isMobile && showSidebar" class="fixed inset-y-0 left-0 z-50 sm:hidden">
         <SessionSidebar
           :sessions-list="sessionsList"
           :current-session-id="currentSessionId"
@@ -233,8 +288,18 @@ async function handleReload() {
           v-tooltip="'新会话'"
           @click="createNewSession"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 sm:hidden">
-            <path d="M12 5v14" /><line x1="5" y1="12" x2="19" y2="12" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="w-4 h-4 sm:hidden"
+          >
+            <path d="M12 5v14" />
+            <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           <span class="hidden sm:inline">新会话</span>
         </button>
@@ -296,6 +361,18 @@ async function handleReload() {
                 <div v-else class="group">
                   <div class="whitespace-pre-wrap break-words leading-relaxed">
                     {{ msg.content }}
+                  </div>
+                  <div
+                    v-if="getMessageImages(msg.id, index).length"
+                    class="flex gap-1.5 mt-2 flex-wrap"
+                  >
+                    <img
+                      v-for="img in getMessageImages(msg.id, index)"
+                      :key="img.id"
+                      :src="img.dataUrl"
+                      :alt="img.filename"
+                      class="w-20 h-20 object-cover rounded-lg border border-blue-300/50"
+                    />
                   </div>
                   <div
                     class="flex justify-end mt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 sm:transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
@@ -416,8 +493,10 @@ async function handleReload() {
         :is-loading="isLoading"
         v-model:enable-thinking="enableThinking"
         v-model:current-model="currentModel"
+        v-model:images="uploadedImages"
         :model-options="modelOptions"
-        @submit="handleSubmit"
+        :supports-vision="supportsVision"
+        @submit="wrappedHandleSubmit"
         @stop="stop"
       />
     </div>

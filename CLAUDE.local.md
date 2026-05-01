@@ -17,6 +17,13 @@
 - 优先使用中文回复
 - 代码注释使用中文（除非明确要求英文）
 
+## Image Chat (图片对话)
+
+- 图床使用 **ImgBB**（免费），API Key 硬编码在 `server/utils/imgbb.ts`
+- 硅基流动不支持 base64 图片，必须先上传到图床获取公网 URL
+- 仅 `THUDM/GLM-4.1V-9B-Thinking` 支持图片理解
+- GLM-4.1V 模型不支持 `enable_thinking` 参数（自带思考能力）
+
 ## Local Development
 
 - 数据库：Docker PostgreSQL，开发端口 5434，测试端口 5433
