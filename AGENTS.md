@@ -215,6 +215,7 @@ class="px-3 sm:px-6 py-2 sm:py-3 text-base sm:text-xl"
 - 新增 AI 工具时，在 `server/tools/` 创建文件，用 `tool()` 定义，并在 `chat.post.ts` 的 `tools` 参数中注册
 - 新增 API 路由时必须包含参数校验和 `createError()` 错误处理
 - 修改服务端中间件、`nuxt.config.ts` 的 Vite 插件、或任何涉及 `res.write`/`res.end` 的代码后，**必须验证流式输出（打字机效果）是否正常**，因为缓冲响应体会破坏 SSE 流
+- **修改代码后必须调用 `read_lints` 检查 lint 错误**。特别是模板中的 HTML 结构变更（如添加/删除标签），每次 `replace_in_file` 后都要手动校验对应的起始/闭合标签是否完整
 
 ## SSR Hydration Rules
 
