@@ -38,10 +38,12 @@
   z-index: 9999;
 }
 
-[data-tooltip]:hover::after,
-[data-tooltip]:hover::before {
-  opacity: 1;
-  visibility: visible;
+@media (min-width: 640px) {
+  [data-tooltip]:hover::after,
+  [data-tooltip]:hover::before {
+    opacity: 1;
+    visibility: visible;
+  }
 }
 
 [data-tooltip-position="bottom"]::after {

@@ -123,10 +123,12 @@ function checkMobile() {
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
+  document.addEventListener('click', onDocumentClick)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
+  document.removeEventListener('click', onDocumentClick)
 })
 
 watch(isLoading, (loading) => {
@@ -239,18 +241,64 @@ async function handleReload() {
     toast.error('重新生成失败，请重试')
   }
 }
+
+const quickPrompts = [
+  { icon: '☀️', text: '今天天气怎么样？' },
+  { icon: '💻', text: '用 Python 写一个贪吃蛇游戏' },
+  { icon: '🔬', text: '用简单的语言解释一下相对论' },
+  { icon: '🎬', text: '推荐几部好看的科幻电影' },
+  { icon: '🌐', text: '把这段文字翻译成英文' },
+  { icon: '✉️', text: '帮我写一封商务邮件' }
+]
+
+function useQuickPrompt(prompt: string) {
+  input.value = prompt
+  nextTick(() => {
+    wrappedHandleSubmit()
+  })
+}
+
+function closeSidebar() {
+  showSidebar.value = false
+}
+
+function toggleSidebar() {
+  showSidebar.value = !showSidebar.value
+}
+
+function onDocumentClick(e: Event) {
+  if (!showSidebar.value) return
+  const target = e.target as HTMLElement
+  if (target.closest('header')) return
+  const sidebarEl = target.closest('[data-mobile-sidebar]')
+  if (!sidebarEl) {
+    showSidebar.value = false
+  }
+}
 </script>
 
 <template>
   <div class="flex h-screen bg-white">
-    <!-- Mobile sidebar backdrop -->
-    <Transition name="fade">
-      <div
-        v-if="isMobile && showSidebar"
-        class="fixed inset-0 z-40 bg-black/50 sm:hidden"
-        @click="showSidebar = false"
-      />
-    </Transition>
+    <!-- Mobile sidebar panel -->
+    <div
+      v-if="showSidebar"
+      data-mobile-sidebar
+      class="fixed inset-0 z-50 sm:hidden"
+      style="background: rgba(0, 0, 0, 0.5)"
+      @click.self="closeSidebar"
+    >
+      <div class="absolute inset-y-0 left-0 w-[85vw] bg-gray-50">
+        <SessionSidebar
+          :sessions-list="sessionsList"
+          :current-session-id="currentSessionId"
+          @create="createNewSession"
+          @switch="switchSession"
+          @delete="deleteSession"
+          @rename="renameSession"
+          @close="closeSidebar"
+        />
+      </div>
+    </div>
 
     <!-- Desktop sidebar (inline in flex flow) -->
     <div class="hidden sm:flex">
@@ -267,21 +315,6 @@ async function handleReload() {
       </Transition>
     </div>
 
-    <!-- Mobile sidebar (overlay) -->
-    <Transition name="slide-left">
-      <div v-if="isMobile && showSidebar" class="fixed inset-y-0 left-0 z-50 sm:hidden">
-        <SessionSidebar
-          :sessions-list="sessionsList"
-          :current-session-id="currentSessionId"
-          @create="createNewSession"
-          @switch="switchSession"
-          @delete="deleteSession"
-          @rename="renameSession"
-          @close="showSidebar = false"
-        />
-      </div>
-    </Transition>
-
     <div class="flex-1 flex flex-col min-w-0">
       <header
         data-testid="chat-header"
@@ -290,7 +323,7 @@ async function handleReload() {
         <button
           class="p-2 sm:p-1.5 text-gray-500 hover:text-gray-800 rounded-lg hover:bg-gray-100 active:scale-95 transition-all"
           v-tooltip:bottom="showSidebar ? '收起侧边栏' : '展开侧边栏'"
-          @click="showSidebar = !showSidebar"
+          @click="toggleSidebar"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -368,43 +401,31 @@ async function handleReload() {
             </div>
           </Transition>
         </div>
-
-        <button
-          class="ml-auto px-2 sm:px-3 py-2 sm:py-1.5 text-xs sm:text-sm text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 active:scale-95 transition-all min-w-[44px] flex items-center justify-center"
-          v-tooltip="'新会话'"
-          @click="createNewSession"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="w-4 h-4 sm:hidden"
-          >
-            <path d="M12 5v14" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          <span class="hidden sm:inline">新会话</span>
-        </button>
       </header>
 
       <main ref="messagesContainer" class="flex-1 overflow-y-auto scroll-smooth">
         <div
           v-if="messages.length === 0"
-          class="flex flex-col items-center justify-center h-full text-gray-400"
+          class="flex flex-col items-center justify-center h-full px-4"
         >
-          <div class="text-4xl sm:text-5xl mb-3 sm:mb-4">💬</div>
-          <p class="text-base sm:text-lg">开始一段新的对话吧</p>
-          <p class="mt-1 sm:mt-2 text-xs sm:text-sm">我是你的AI助手，随时为你解答问题</p>
-          <button
-            class="mt-3 sm:mt-4 px-5 sm:px-6 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:scale-95 transition-all"
-            @click="createNewSession"
-          >
-            + 开始新对话
-          </button>
+          <h2 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">有什么可以帮忙的？</h2>
+          <p class="text-sm sm:text-base text-gray-400 mb-8 sm:mb-10">
+            选择一个话题，或直接输入问题开始对话
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 w-full max-w-lg sm:max-w-xl">
+            <button
+              v-for="prompt in quickPrompts"
+              :key="prompt.text"
+              class="flex items-center gap-3 px-4 py-3 sm:px-5 sm:py-3.5 text-left rounded-xl border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm hover:bg-gray-50 active:scale-[0.98] transition-all duration-200 group min-h-[44px] sm:min-h-0"
+              @click="useQuickPrompt(prompt.text)"
+            >
+              <span
+                class="text-lg sm:text-xl shrink-0 group-hover:scale-110 transition-transform duration-200"
+                >{{ prompt.icon }}</span
+              >
+              <span class="text-sm text-gray-600 truncate">{{ prompt.text }}</span>
+            </button>
+          </div>
         </div>
 
         <div v-else class="max-w-full sm:max-w-4xl mx-auto py-1 sm:py-6 px-2 sm:px-4">
@@ -597,26 +618,6 @@ async function handleReload() {
 .sidebar-enter-from,
 .sidebar-leave-to {
   margin-left: -256px;
-  opacity: 0;
-}
-
-/* Mobile sidebar slide-in */
-.slide-left-enter-active,
-.slide-left-leave-active {
-  transition: transform 0.25s ease;
-}
-.slide-left-enter-from,
-.slide-left-leave-to {
-  transform: translateX(-100%);
-}
-
-/* Mobile backdrop fade */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.25s ease;
-}
-.fade-enter-from,
-.fade-leave-to {
   opacity: 0;
 }
 
