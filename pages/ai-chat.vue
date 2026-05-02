@@ -87,6 +87,32 @@ const editingIndex = ref(-1)
 const editingText = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
 const copiedMessageId = ref<string>('')
+const modelDropdownOpen = ref(false)
+const modelDropdownRef = ref<HTMLElement | null>(null)
+
+const currentModelLabel = computed(() => {
+  const found = modelOptions.value.find((opt) => opt.value === currentModel.value)
+  return found?.label || currentModel.value
+})
+
+function selectModel(value: string) {
+  currentModel.value = value
+  modelDropdownOpen.value = false
+}
+
+function handleModelDropdownClick(e: MouseEvent) {
+  if (modelDropdownRef.value && !modelDropdownRef.value.contains(e.target as Node)) {
+    modelDropdownOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleModelDropdownClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleModelDropdownClick)
+})
 const localIsLoading = ref(false)
 const isMobile = ref(false)
 
@@ -283,6 +309,66 @@ async function handleReload() {
         <h1 class="text-base sm:text-xl font-semibold text-gray-800 truncate">
           {{ $config.public.appTitle || 'AI 对话' }}
         </h1>
+
+        <div class="relative" ref="modelDropdownRef">
+          <button
+            class="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300 active:scale-95 transition-all min-h-[36px] text-gray-700"
+            v-tooltip:bottom="'切换模型'"
+            @click="modelDropdownOpen = !modelDropdownOpen"
+          >
+            <span class="max-w-[80px] sm:max-w-[140px] truncate">{{ currentModelLabel }}</span>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-3.5 h-3.5 transition-transform duration-200"
+              :class="modelDropdownOpen ? 'rotate-180' : ''"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          <Transition name="dropdown-fade">
+            <div
+              v-if="modelDropdownOpen"
+              class="absolute top-full mt-1 right-0 sm:left-0 sm:right-auto w-52 sm:w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
+            >
+              <div class="py-1">
+                <button
+                  v-for="opt in modelOptions"
+                  :key="opt.value"
+                  class="w-full text-left px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm transition-colors duration-150 flex items-center gap-2 min-h-[36px]"
+                  :class="
+                    currentModel === opt.value
+                      ? 'bg-blue-50 text-blue-700 font-medium'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  "
+                  @click="selectModel(opt.value)"
+                >
+                  <svg
+                    v-if="currentModel === opt.value"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="w-3.5 h-3.5 shrink-0"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span v-else class="w-3.5 h-3.5 shrink-0" />
+                  <span class="truncate">{{ opt.label }}</span>
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+
         <button
           class="ml-auto px-2 sm:px-3 py-2 sm:py-1.5 text-xs sm:text-sm text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 active:scale-95 transition-all min-w-[44px] flex items-center justify-center"
           v-tooltip="'新会话'"
@@ -492,9 +578,7 @@ async function handleReload() {
         v-model:input="input"
         :is-loading="isLoading"
         v-model:enable-thinking="enableThinking"
-        v-model:current-model="currentModel"
         v-model:images="uploadedImages"
-        :model-options="modelOptions"
         :supports-vision="supportsVision"
         @submit="wrappedHandleSubmit"
         @stop="stop"
@@ -534,6 +618,16 @@ async function handleReload() {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.dropdown-fade-enter-active,
+.dropdown-fade-leave-active {
+  transition: all 0.15s ease;
+}
+.dropdown-fade-enter-from,
+.dropdown-fade-leave-to {
+  opacity: 0;
+  transform: scaleY(0.9) translateY(-4px);
 }
 
 .message-enter-active {

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import type { ModelOption } from '~/composables/useChatConfig'
-
 export interface UploadedImage {
   id: string
   dataUrl: string
@@ -11,8 +9,6 @@ const props = defineProps<{
   input: string
   isLoading: boolean
   enableThinking: boolean
-  currentModel: string
-  modelOptions: ModelOption[]
   images: UploadedImage[]
   supportsVision: boolean
 }>()
@@ -22,7 +18,6 @@ const emit = defineEmits<{
   submit: []
   stop: []
   'update:enableThinking': [value: boolean]
-  'update:currentModel': [value: string]
   'update:images': [images: UploadedImage[]]
 }>()
 
@@ -245,16 +240,6 @@ function removeImage(id: string) {
           </svg>
           思考
         </button>
-
-        <select
-          :value="currentModel"
-          class="px-2 sm:px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer min-h-[36px]"
-          @change="emit('update:currentModel', ($event.target as HTMLSelectElement).value)"
-        >
-          <option v-for="opt in modelOptions" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
 
         <span
           class="text-xs transition-colors duration-200 ml-auto"

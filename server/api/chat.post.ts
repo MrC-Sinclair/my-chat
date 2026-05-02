@@ -109,9 +109,20 @@ export default defineEventHandler(async (event) => {
   }
 
   const hasImages = imageUrls.length > 0
+  const isVisionModel =
+    useModel.includes('1V') || useModel.includes('VL') || useModel.includes('Vision')
 
-  if (hasImages) {
-    return handleImageChat(event, messages, imageUrls, useModel, thinkingEnabled, thinking_budget, sessionId, images)
+  if (hasImages || isVisionModel) {
+    return handleImageChat(
+      event,
+      messages,
+      imageUrls,
+      useModel,
+      thinkingEnabled,
+      thinking_budget,
+      sessionId,
+      images
+    )
   }
 
   const llmMessages = messages.map((msg: { role: string; content: unknown }) => ({
@@ -169,12 +180,14 @@ async function handleImageChat(
 
   const openaiMessages = messages.map((msg) => {
     if (msg.role === 'user' && msg === messages[messages.length - 1]) {
-      return {
-        role: 'user',
-        content: [
-          { type: 'text', text: msg.content },
-          ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } }))
-        ]
+      if (imageUrls.length > 0) {
+        return {
+          role: 'user',
+          content: [
+            { type: 'text', text: msg.content },
+            ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } }))
+          ]
+        }
       }
     }
     return { role: msg.role, content: msg.content }
