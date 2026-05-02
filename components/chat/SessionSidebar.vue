@@ -119,7 +119,7 @@ function formatRelativeTime(dateStr: string): string {
             </div>
           </template>
         </div>
-        <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity ml-1">
+        <div class="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 sm:transition-opacity ml-1">
           <button
             class="p-1.5 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
             v-tooltip="'重命名'"

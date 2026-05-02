@@ -375,7 +375,7 @@ async function handleReload() {
                     />
                   </div>
                   <div
-                    class="flex justify-end mt-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 sm:transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                    class="flex justify-end mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 sm:transition-opacity"
                   >
                     <button
                       class="p-1.5 sm:p-1 text-blue-200 hover:text-white rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
