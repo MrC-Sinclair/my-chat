@@ -1,6 +1,6 @@
 import { unlinkSync, existsSync } from 'fs'
 
-const IMGBB_API_KEY = 'a571e3f7399858bbc7937e612be62e0e'
+const IMGBB_API_KEY = process.env.IMGBB_API_KEY || ''
 const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload'
 
 export async function uploadToImgBb(filePath: string): Promise<string> {
