@@ -4,7 +4,7 @@ import { db } from '~/server/db'
 import { messages as messagesTable, sessions } from '~/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { weatherTool } from '~/server/tools/weather'
-import { webSearchTool } from '~/server/tools/web-search'
+import { webSearchTool, searchWithBing } from '~/server/tools/web-search'
 import { ALLOWED_MODEL_VALUES } from '~/server/config/models'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
@@ -22,11 +22,15 @@ const DEFAULT_SYSTEM_PROMPT =
   process.env.SYSTEM_PROMPT ||
   `你是一个友好的AI助手。请用简洁清晰的方式回答问题。
 
-你拥有以下工具：
-- 天气查询：当用户询问天气、气温、是否下雨等问题时，使用天气工具查询实时数据
-- 网页搜索：当需要查找最新信息（新闻、政策、动态）、验证不确定知识、或查找资料时，使用搜索工具
+【重要规则】当用户问题涉及以下内容时，你【必须】调用网页搜索工具，禁止凭记忆回答：
+- 任何包含"最新"、"今天"、"近期"、"当前"、"现在"、"最近"等时间词的问题
+- 新闻、事件、政策、数据、价格等可能随时间变化的信息
+- 你不确定的事实或数据
 
-搜索后请综合搜索结果给出准确回答，并注明信息来源。`
+搜索后请综合搜索结果给出准确回答，并注明信息来源。
+如果你没有调用搜索工具就回答了时效性问题，你的回答很可能是过时的。`
+
+const TIME_KEYWORDS = ['最新', '今天', '近期', '当前', '现在', '最近', '新闻', '实时', '最新消息', '热点', '动态']
 
 const MAX_MESSAGE_LENGTH = 10_00
 const MAX_MESSAGES_COUNT = 10
@@ -62,7 +66,7 @@ function parseBase64Meta(
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
-  const { messages, sessionId, enable_thinking, thinking_budget, model, images } = body ?? {}
+  const { messages, sessionId, enable_thinking, thinking_budget, model, images, enable_web_search } = body ?? {}
 
   if (!messages || !Array.isArray(messages)) {
     throw createError({
@@ -178,15 +182,48 @@ export default defineEventHandler(async (event) => {
 
   const vision = isVisionModel(useModel)
   const maxSteps = vision ? 1 : 5
+  const webSearchEnabled = enable_web_search !== false
+
+  let finalSystemPrompt = DEFAULT_SYSTEM_PROMPT
+
+  if (webSearchEnabled && !vision) {
+    const lastUserMsg = messages
+      .filter((m: { role: string }) => m.role === 'user')
+      .map((m: { content: unknown }) => (typeof m.content === 'string' ? m.content : ''))
+      .pop() || ''
+
+    if (TIME_KEYWORDS.some((kw) => lastUserMsg.includes(kw))) {
+      try {
+        const searchQuery = lastUserMsg.slice(0, 50)
+        const rawResults = await searchWithBing(searchQuery)
+        const results = rawResults.slice(0, 5).map((item, index) => ({
+          index: index + 1,
+          title: item.title,
+          url: item.url,
+          snippet: item.snippet.slice(0, 200)
+        }))
+        if (results.length > 0) {
+          finalSystemPrompt += `\n\n以下是搜索到的最新信息，请基于这些信息回答用户问题：\n${JSON.stringify(results, null, 2)}`
+        }
+      } catch (err) {
+        console.error('关键词预判搜索失败:', err)
+      }
+    }
+  }
 
   try {
     const result = streamText({
       model: llmProvider(useModel),
-      system: DEFAULT_SYSTEM_PROMPT,
+      system: finalSystemPrompt,
       messages: llmMessages as Parameters<typeof streamText>[0]['messages'],
       maxSteps,
       temperature: vision ? 0.7 : void 0,
-      ...(!vision && { tools: { weather: weatherTool, webSearch: webSearchTool } }),
+      ...(!vision && {
+        tools: {
+          weather: weatherTool,
+          ...(webSearchEnabled && { webSearch: webSearchTool })
+        }
+      }),
       ...thinkingOptions,
       onFinish: async ({ text }) => {
         if (!sessionId) return

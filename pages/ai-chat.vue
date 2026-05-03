@@ -9,8 +9,15 @@ import { useChatSession } from '~/composables/useChatSession'
 import { useChatConfig } from '~/composables/useChatConfig'
 import { useToast } from '~/composables/useToast'
 
-const { enableThinking, currentModel, showSidebar, modelOptions, thinkingBudget, supportsVision } =
-  useChatConfig()
+const {
+  enableThinking,
+  enableWebSearch,
+  currentModel,
+  showSidebar,
+  modelOptions,
+  thinkingBudget,
+  supportsVision
+} = useChatConfig()
 const toast = useToast()
 
 const uploadedImages = ref<UploadedImage[]>([])
@@ -25,6 +32,7 @@ const { messages, input, handleSubmit, isLoading, stop, reload, setMessages } = 
     enable_thinking: enableThinking.value,
     thinking_budget: enableThinking.value ? thinkingBudget : undefined,
     model: currentModel.value,
+    enable_web_search: enableWebSearch.value,
     images:
       uploadedImages.value.length > 0 ? uploadedImages.value.map((img) => img.dataUrl) : undefined
   })),
@@ -591,6 +599,7 @@ function onDocumentClick(e: Event) {
         v-model:input="input"
         :is-loading="isLoading"
         v-model:enable-thinking="enableThinking"
+        v-model:enable-web-search="enableWebSearch"
         v-model:images="uploadedImages"
         :supports-vision="supportsVision"
         @submit="wrappedHandleSubmit"

@@ -9,6 +9,7 @@ const props = defineProps<{
   input: string
   isLoading: boolean
   enableThinking: boolean
+  enableWebSearch: boolean
   images: UploadedImage[]
   supportsVision: boolean
 }>()
@@ -18,6 +19,7 @@ const emit = defineEmits<{
   submit: []
   stop: []
   'update:enableThinking': [value: boolean]
+  'update:enableWebSearch': [value: boolean]
   'update:images': [images: UploadedImage[]]
 }>()
 
@@ -248,6 +250,25 @@ function removeImage(id: string) {
             <path d="M12 12V2a10 10 0 0 1 8.66 14.34" />
           </svg>
           思考
+        </button>
+
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 min-h-[32px]"
+          :class="
+            enableWebSearch
+              ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+          "
+          v-tooltip="enableWebSearch ? '联网搜索已开启' : '联网搜索已关闭'"
+          @click="emit('update:enableWebSearch', !enableWebSearch)"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+          联网
         </button>
 
         <span

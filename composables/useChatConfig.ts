@@ -35,6 +35,8 @@ export function useChatConfig() {
   /** 是否开启深度思考模式 */
   const enableThinking = ref(true)
 
+  const enableWebSearch = ref(true)
+
   /** 当前选中的模型 */
   const currentModel = ref(config.public.defaultModel)
 
@@ -71,6 +73,7 @@ export function useChatConfig() {
 
   return {
     enableThinking,
+    enableWebSearch,
     currentModel,
     showSidebar,
     modelOptions,
