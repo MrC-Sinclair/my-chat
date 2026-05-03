@@ -50,6 +50,10 @@ export function useChatConfig() {
 
   const supportsVision = computed(() => currentCapabilities.value.vision)
 
+  watch(currentModel, () => {
+    enableThinking.value = !currentCapabilities.value.reasoning
+  })
+
   async function loadModels() {
     try {
       const data = await $fetch<ModelOption[]>('/api/models')

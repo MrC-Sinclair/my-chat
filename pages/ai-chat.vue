@@ -510,7 +510,7 @@ function onDocumentClick(e: Event) {
 
               <template v-else>
                 <ThinkingProcess
-                  v-if="getReasoningContent(msg)"
+                  v-if="enableThinking && getReasoningContent(msg)"
                   :content="getReasoningContent(msg)"
                 />
 

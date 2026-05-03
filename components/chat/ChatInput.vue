@@ -229,7 +229,6 @@ function removeImage(id: string) {
 
       <div class="flex flex-wrap items-center gap-2 mt-2.5">
         <button
-          v-if="!currentCapabilities.reasoning"
           type="button"
           class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 min-h-[32px]"
           :class="
@@ -237,7 +236,15 @@ function removeImage(id: string) {
               ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
               : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
           "
-          v-tooltip="enableThinking ? '深度思考已开启（更准但较慢）' : '快速模式（关闭深度思考）'"
+          v-tooltip="
+            currentCapabilities.reasoning
+              ? enableThinking
+                ? '思考过程已显示'
+                : '点击显示思考过程'
+              : enableThinking
+                ? '深度思考已开启（更准但较慢）'
+                : '快速模式（关闭深度思考）'
+          "
           @click="emit('update:enableThinking', !enableThinking)"
         >
           <svg
@@ -253,7 +260,7 @@ function removeImage(id: string) {
             <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
             <path d="M12 12V2a10 10 0 0 1 8.66 14.34" />
           </svg>
-          思考
+          {{ currentCapabilities.reasoning ? '思考' : '思考' }}
         </button>
 
         <button
