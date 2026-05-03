@@ -114,20 +114,12 @@ onUnmounted(() => {
   document.removeEventListener('click', handleModelDropdownClick)
 })
 const localIsLoading = ref(false)
-const isMobile = ref(false)
-
-function checkMobile() {
-  isMobile.value = window.innerWidth < 640
-}
 
 onMounted(() => {
-  checkMobile()
-  window.addEventListener('resize', checkMobile)
   document.addEventListener('click', onDocumentClick)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', checkMobile)
   document.removeEventListener('click', onDocumentClick)
 })
 

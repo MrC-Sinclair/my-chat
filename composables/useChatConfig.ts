@@ -38,12 +38,8 @@ export function useChatConfig() {
   /** 当前选中的模型 */
   const currentModel = ref(config.public.defaultModel)
 
-  /** 控制侧边栏的显示/隐藏（桌面端默认打开，移动端默认关闭） */
+  /** 控制侧边栏的显示/隐藏 */
   const showSidebar = ref(false)
-
-  onMounted(() => {
-    showSidebar.value = window.innerWidth >= 640
-  })
 
   /** 可用模型列表（从 API 动态加载，失败则使用 fallback） */
   const modelOptions = ref<ModelOption[]>(FALLBACK_MODELS)
@@ -69,7 +65,6 @@ export function useChatConfig() {
     }
   }
 
-  /** 组件挂载时加载模型列表 */
   onMounted(() => {
     loadModels()
   })
