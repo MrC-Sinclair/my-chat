@@ -4,7 +4,7 @@ import { db } from '~/server/db'
 import { messages as messagesTable, sessions } from '~/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { weatherTool } from '~/server/tools/weather'
-import { webSearchTool, searchWithBing } from '~/server/tools/web-search'
+import { webSearchTool } from '~/server/tools/web-search'
 import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/models'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
@@ -196,7 +196,7 @@ export default defineEventHandler(async (event) => {
 
   let finalSystemPrompt = DEFAULT_SYSTEM_PROMPT
 
-  if (webSearchEnabled && !caps.vision) {
+  if (webSearchEnabled && !caps.vision && caps.toolCalling) {
     const lastUserMsg =
       messages
         .filter((m: { role: string }) => m.role === 'user')
@@ -204,21 +204,8 @@ export default defineEventHandler(async (event) => {
         .pop() || ''
 
     if (TIME_KEYWORDS.some((kw) => lastUserMsg.includes(kw))) {
-      try {
-        const searchQuery = lastUserMsg.slice(0, 50)
-        const rawResults = await searchWithBing(searchQuery)
-        const results = rawResults.slice(0, 5).map((item, index) => ({
-          index: index + 1,
-          title: item.title,
-          url: item.url,
-          snippet: item.snippet.slice(0, 200)
-        }))
-        if (results.length > 0) {
-          finalSystemPrompt += `\n\n以下是搜索到的最新信息，请基于这些信息回答用户问题：\n${JSON.stringify(results, null, 2)}`
-        }
-      } catch (err) {
-        console.error('关键词预判搜索失败:', err)
-      }
+      finalSystemPrompt +=
+        '\n\n【系统提示】用户的问题涉及时效性信息，你【必须】调用网页搜索工具（webSearch）来获取最新信息，禁止凭记忆回答。'
     }
   }
 

@@ -1,7 +1,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 
-const BING_SEARCH_URL = 'https://cn.bing.com/search'
+const TAVILY_API_URL = 'https://api.tavily.com/search'
 
 interface SearchResultItem {
   title: string
@@ -9,63 +9,36 @@ interface SearchResultItem {
   snippet: string
 }
 
-function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&ensp;/g, ' ')
-    .replace(/&#\d+;/g, '')
-}
+export async function searchWithTavily(query: string): Promise<SearchResultItem[]> {
+  const apiKey = process.env.TAVILY_API_KEY
+  if (!apiKey) {
+    throw new Error('未配置 TAVILY_API_KEY')
+  }
 
-export async function searchWithBing(query: string): Promise<SearchResultItem[]> {
-  const url = `${BING_SEARCH_URL}?q=${encodeURIComponent(query)}`
-
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-    }
+  const response = await fetch(TAVILY_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      api_key: apiKey,
+      query,
+      search_depth: 'basic',
+      include_answer: false,
+      max_results: 8
+    })
   })
 
   if (!response.ok) {
-    throw new Error(`Bing 请求失败 (${response.status})`)
+    const errorText = await response.text().catch(() => '')
+    throw new Error(`Tavily 请求失败 (${response.status}): ${errorText}`)
   }
 
-  const html = await response.text()
-  const results: SearchResultItem[] = []
+  const data = await response.json()
 
-  const resultBlocks = html.split('<li class="b_algo"').slice(1)
-
-  for (const block of resultBlocks) {
-    try {
-      const hrefMatch = block.match(/<a[^>]*href="([^"]*)"/)
-      const titleMatch = block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/)
-      const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/)
-
-      if (hrefMatch && titleMatch) {
-        const title = decodeHtmlEntities(titleMatch[1].replace(/<[^>]+>/g, '')).trim()
-        const rawUrl = hrefMatch[1]
-        const snippet = snippetMatch
-          ? decodeHtmlEntities(snippetMatch[1].replace(/<[^>]+>/g, ''))
-              .trim()
-              .slice(0, 300)
-          : ''
-
-        if (title && rawUrl.startsWith('http')) {
-          results.push({ title, url: rawUrl, snippet })
-        }
-      }
-    } catch {
-      // skip
-    }
-  }
-
-  return results
+  return (data.results || []).map((item: { title?: string; url?: string; content?: string }) => ({
+    title: item.title || '',
+    url: item.url || '',
+    snippet: (item.content || '').slice(0, 300)
+  }))
 }
 
 export const webSearchTool = tool({
@@ -78,7 +51,7 @@ export const webSearchTool = tool({
   }),
   execute: async ({ query }) => {
     try {
-      const rawResults = await searchWithBing(query)
+      const rawResults = await searchWithTavily(query)
 
       const maxResults = 8
       const results = rawResults.slice(0, maxResults).map((item, index) => ({
