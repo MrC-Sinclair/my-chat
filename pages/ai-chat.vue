@@ -16,7 +16,8 @@ const {
   showSidebar,
   modelOptions,
   thinkingBudget,
-  supportsVision
+  supportsVision,
+  currentCapabilities
 } = useChatConfig()
 const toast = useToast()
 
@@ -602,6 +603,7 @@ function onDocumentClick(e: Event) {
         v-model:enable-web-search="enableWebSearch"
         v-model:images="uploadedImages"
         :supports-vision="supportsVision"
+        :current-capabilities="currentCapabilities"
         @submit="wrappedHandleSubmit"
         @stop="stop"
       />

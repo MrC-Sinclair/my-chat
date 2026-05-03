@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ModelCapabilities } from '~/composables/useChatConfig'
+
 export interface UploadedImage {
   id: string
   dataUrl: string
@@ -12,6 +14,7 @@ const props = defineProps<{
   enableWebSearch: boolean
   images: UploadedImage[]
   supportsVision: boolean
+  currentCapabilities: ModelCapabilities
 }>()
 
 const emit = defineEmits<{
@@ -226,6 +229,7 @@ function removeImage(id: string) {
 
       <div class="flex flex-wrap items-center gap-2 mt-2.5">
         <button
+          v-if="!currentCapabilities.reasoning"
           type="button"
           class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 min-h-[32px]"
           :class="
@@ -253,6 +257,7 @@ function removeImage(id: string) {
         </button>
 
         <button
+          v-if="!currentCapabilities.vision"
           type="button"
           class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 min-h-[32px]"
           :class="

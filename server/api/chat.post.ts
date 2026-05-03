@@ -5,7 +5,7 @@ import { messages as messagesTable, sessions } from '~/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { weatherTool } from '~/server/tools/weather'
 import { webSearchTool, searchWithBing } from '~/server/tools/web-search'
-import { ALLOWED_MODEL_VALUES } from '~/server/config/models'
+import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/models'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { uploadToImgBb } from '~/server/utils/imgbb'
@@ -30,7 +30,19 @@ const DEFAULT_SYSTEM_PROMPT =
 搜索后请综合搜索结果给出准确回答，并注明信息来源。
 如果你没有调用搜索工具就回答了时效性问题，你的回答很可能是过时的。`
 
-const TIME_KEYWORDS = ['最新', '今天', '近期', '当前', '现在', '最近', '新闻', '实时', '最新消息', '热点', '动态']
+const TIME_KEYWORDS = [
+  '最新',
+  '今天',
+  '近期',
+  '当前',
+  '现在',
+  '最近',
+  '新闻',
+  '实时',
+  '最新消息',
+  '热点',
+  '动态'
+]
 
 const MAX_MESSAGE_LENGTH = 10_00
 const MAX_MESSAGES_COUNT = 10
@@ -52,13 +64,7 @@ function saveBase64Image(base64: string): string {
   return `/uploads/${filename}`
 }
 
-function isVisionModel(modelName: string): boolean {
-  return modelName.includes('1V') || modelName.includes('VL') || modelName.includes('Vision')
-}
-
-function parseBase64Meta(
-  dataUrl: string
-): { base64: string; mimeType: string } | null {
+function parseBase64Meta(dataUrl: string): { base64: string; mimeType: string } | null {
   const match = dataUrl.match(/^data:([\w/+-]+);base64,(.+)$/)
   if (!match) return null
   return { mimeType: match[1], base64: match[2] }
@@ -66,7 +72,15 @@ function parseBase64Meta(
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
-  const { messages, sessionId, enable_thinking, thinking_budget, model, images, enable_web_search } = body ?? {}
+  const {
+    messages,
+    sessionId,
+    enable_thinking,
+    thinking_budget,
+    model,
+    images,
+    enable_web_search
+  } = body ?? {}
 
   if (!messages || !Array.isArray(messages)) {
     throw createError({
@@ -109,6 +123,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const useModel = ALLOWED_MODEL_VALUES.has(model) ? model : DEFAULT_LLM_MODEL
+  const caps = getModelCapabilities(useModel)
 
   let imageUrls: string[] = []
   if (images && Array.isArray(images) && images.length > 0) {
@@ -142,16 +157,13 @@ export default defineEventHandler(async (event) => {
   const llmMessages = messages
     .filter((msg: { role: string }) => msg.role !== 'system')
     .map((msg: { role: string; content: unknown }) => {
-      const textContent =
-        typeof msg.content === 'string' ? msg.content : String(msg.content || '')
+      const textContent = typeof msg.content === 'string' ? msg.content : String(msg.content || '')
 
-      if (msg.role === 'assistant')
-        return { role: 'assistant' as const, content: textContent }
+      if (msg.role === 'assistant') return { role: 'assistant' as const, content: textContent }
 
       if (messages.indexOf(msg) === lastUserIdx && hasImages) {
         const parts: Array<
-          | { type: 'text'; text: string }
-          | { type: 'image'; image: string | URL; mimeType?: string }
+          { type: 'text'; text: string } | { type: 'image'; image: string | URL; mimeType?: string }
         > = [{ type: 'text', text: textContent }]
 
         for (const url of imageUrls) {
@@ -170,27 +182,26 @@ export default defineEventHandler(async (event) => {
       }
 
       return { role: 'user' as const, content: textContent }
-    }
-  )
+    })
 
   const thinkingEnabled = enable_thinking ?? DEFAULT_ENABLE_THINKING
-  const modelSupportsThinking = !isVisionModel(useModel)
+  const modelSupportsThinking = !caps.vision && !caps.reasoning
   const thinkingOptions =
     thinkingEnabled && modelSupportsThinking
       ? { enableThinking: true, thinkingBudget: thinking_budget || 4096 }
       : {}
 
-  const vision = isVisionModel(useModel)
-  const maxSteps = vision ? 1 : 5
+  const maxSteps = caps.vision || caps.reasoning ? 1 : 5
   const webSearchEnabled = enable_web_search !== false
 
   let finalSystemPrompt = DEFAULT_SYSTEM_PROMPT
 
-  if (webSearchEnabled && !vision) {
-    const lastUserMsg = messages
-      .filter((m: { role: string }) => m.role === 'user')
-      .map((m: { content: unknown }) => (typeof m.content === 'string' ? m.content : ''))
-      .pop() || ''
+  if (webSearchEnabled && !caps.vision) {
+    const lastUserMsg =
+      messages
+        .filter((m: { role: string }) => m.role === 'user')
+        .map((m: { content: unknown }) => (typeof m.content === 'string' ? m.content : ''))
+        .pop() || ''
 
     if (TIME_KEYWORDS.some((kw) => lastUserMsg.includes(kw))) {
       try {
@@ -217,8 +228,8 @@ export default defineEventHandler(async (event) => {
       system: finalSystemPrompt,
       messages: llmMessages as Parameters<typeof streamText>[0]['messages'],
       maxSteps,
-      temperature: vision ? 0.7 : void 0,
-      ...(!vision && {
+      temperature: caps.vision ? 0.7 : void 0,
+      ...(caps.toolCalling && {
         tools: {
           weather: weatherTool,
           ...(webSearchEnabled && { webSearch: webSearchTool })
@@ -251,9 +262,7 @@ async function saveMessagesToDb(
   imageUrls?: string[]
 ) {
   if (chatMessages.length === 0) return
-  const lastUserMessage = [...chatMessages]
-    .reverse()
-    .find((msg) => msg.role === 'user')
+  const lastUserMessage = [...chatMessages].reverse().find((msg) => msg.role === 'user')
   if (lastUserMessage) {
     const meta: Record<string, unknown> = {}
     if (imageUrls && imageUrls.length > 0) {
@@ -279,8 +288,5 @@ async function saveMessagesToDb(
     metadata: { model: DEFAULT_LLM_MODEL },
     createdAt: new Date()
   })
-  await db
-    .update(sessions)
-    .set({ updatedAt: new Date() })
-    .where(eq(sessions.id, sessionId))
+  await db.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))
 }
