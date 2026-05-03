@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 import { weatherTool } from '~/server/tools/weather'
 import { webSearchTool } from '~/server/tools/web-search'
 import { ALLOWED_MODEL_VALUES } from '~/server/config/models'
-import { writeFileSync, mkdirSync, existsSync } from 'fs'
+import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { uploadToImgBb } from '~/server/utils/imgbb'
 
@@ -46,6 +46,18 @@ function saveBase64Image(base64: string): string {
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
   writeFileSync(join(UPLOAD_DIR, filename), buffer)
   return `/uploads/${filename}`
+}
+
+function isVisionModel(modelName: string): boolean {
+  return modelName.includes('1V') || modelName.includes('VL') || modelName.includes('Vision')
+}
+
+function parseBase64Meta(
+  dataUrl: string
+): { base64: string; mimeType: string } | null {
+  const match = dataUrl.match(/^data:([\w/+-]+);base64,(.+)$/)
+  if (!match) return null
+  return { mimeType: match[1], base64: match[2] }
 }
 
 export default defineEventHandler(async (event) => {
@@ -92,16 +104,28 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const thinkingEnabled = enable_thinking ?? DEFAULT_ENABLE_THINKING
   const useModel = ALLOWED_MODEL_VALUES.has(model) ? model : DEFAULT_LLM_MODEL
 
   let imageUrls: string[] = []
   if (images && Array.isArray(images) && images.length > 0) {
     const uploadPromises = images.map(async (img: string) => {
       if (img.startsWith('data:')) {
-        const localPath = saveBase64Image(img)
-        const publicUrl = await uploadToImgBb(join(process.cwd(), 'public', localPath))
-        return publicUrl
+        if (process.env.IMGBB_API_KEY) {
+          const localPath = saveBase64Image(img)
+          const fullPath = join(process.cwd(), 'public', localPath)
+          try {
+            const publicUrl = await uploadToImgBb(fullPath)
+            return publicUrl
+          } catch (err) {
+            console.error('ImgBB 上传失败，降级使用 base64:', (err as Error).message)
+            try {
+              if (existsSync(fullPath)) unlinkSync(fullPath)
+            } catch {
+              // 忽略清理错误
+            }
+          }
+        }
+        return img
       }
       return img
     })
@@ -109,54 +133,72 @@ export default defineEventHandler(async (event) => {
   }
 
   const hasImages = imageUrls.length > 0
-  const isVisionModel =
-    useModel.includes('1V') || useModel.includes('VL') || useModel.includes('Vision')
+  const lastUserIdx = messages.map((m: { role: string }) => m.role).lastIndexOf('user')
 
-  if (hasImages || isVisionModel) {
-    return handleImageChat(
-      event,
-      messages,
-      imageUrls,
-      useModel,
-      thinkingEnabled,
-      thinking_budget,
-      sessionId,
-      images
-    )
-  }
+  const llmMessages = messages
+    .filter((msg: { role: string }) => msg.role !== 'system')
+    .map((msg: { role: string; content: unknown }) => {
+      const textContent =
+        typeof msg.content === 'string' ? msg.content : String(msg.content || '')
 
-  const llmMessages = messages.map((msg: { role: string; content: unknown }) => ({
-    role: msg.role as 'user' | 'assistant' | 'system',
-    content: msg.content as string
-  }))
+      if (msg.role === 'assistant')
+        return { role: 'assistant' as const, content: textContent }
+
+      if (messages.indexOf(msg) === lastUserIdx && hasImages) {
+        const parts: Array<
+          | { type: 'text'; text: string }
+          | { type: 'image'; image: string | URL; mimeType?: string }
+        > = [{ type: 'text', text: textContent }]
+
+        for (const url of imageUrls) {
+          if (url.startsWith('data:')) {
+            const meta = parseBase64Meta(url)
+            parts.push({
+              type: 'image',
+              image: meta ? meta.base64 : url,
+              mimeType: meta?.mimeType
+            })
+          } else {
+            parts.push({ type: 'image', image: new URL(url) })
+          }
+        }
+        return { role: 'user' as const, content: parts }
+      }
+
+      return { role: 'user' as const, content: textContent }
+    }
+  )
+
+  const thinkingEnabled = enable_thinking ?? DEFAULT_ENABLE_THINKING
+  const modelSupportsThinking = !isVisionModel(useModel)
+  const thinkingOptions =
+    thinkingEnabled && modelSupportsThinking
+      ? { enableThinking: true, thinkingBudget: thinking_budget || 4096 }
+      : {}
+
+  const vision = isVisionModel(useModel)
+  const maxSteps = vision ? 1 : 5
 
   try {
     const result = streamText({
       model: llmProvider(useModel),
       system: DEFAULT_SYSTEM_PROMPT,
-      messages: llmMessages,
-      tools: {
-        weather: weatherTool,
-        webSearch: webSearchTool
-      },
-      maxSteps: 5,
-      ...(thinkingEnabled
-        ? {
-            enableThinking: true,
-            thinkingBudget: thinking_budget || 4096
-          }
-        : {}),
+      messages: llmMessages as Parameters<typeof streamText>[0]['messages'],
+      maxSteps,
+      temperature: vision ? 0.7 : void 0,
+      ...(!vision && { tools: { weather: weatherTool, webSearch: webSearchTool } }),
+      ...thinkingOptions,
       onFinish: async ({ text }) => {
         if (!sessionId) return
         try {
-          await saveMessagesToDb(sessionId, messages, text)
+          await saveMessagesToDb(sessionId, messages, text, hasImages ? imageUrls : undefined)
         } catch (err) {
           console.error('保存消息到数据库失败:', err)
         }
       }
     })
     return result.toDataStreamResponse()
-  } catch (err: any) {
+  } catch (err) {
     console.error('streamText 调用失败:', err)
     throw createError({
       statusCode: 500,
@@ -165,152 +207,33 @@ export default defineEventHandler(async (event) => {
   }
 })
 
-async function handleImageChat(
-  event: any,
-  messages: Array<{ role: string; content: string }>,
-  imageUrls: string[],
-  useModel: string,
-  thinkingEnabled: boolean,
-  thinking_budget: number | undefined,
-  sessionId: string | undefined,
-  originalImages?: string[]
-) {
-  const apiKey = process.env.OPENAI_API_KEY
-  const baseURL = process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1'
-
-  const openaiMessages = messages.map((msg) => {
-    if (msg.role === 'user' && msg === messages[messages.length - 1]) {
-      if (imageUrls.length > 0) {
-        return {
-          role: 'user',
-          content: [
-            { type: 'text', text: msg.content },
-            ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } }))
-          ]
-        }
-      }
-    }
-    return { role: msg.role, content: msg.content }
-  })
-
-  const payload: any = {
-    model: useModel,
-    messages: [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }, ...openaiMessages],
-    stream: true
-  }
-
-  if (thinkingEnabled && !useModel.includes('1V')) {
-    payload.enable_thinking = true
-    payload.thinking_budget = thinking_budget || 4096
-  }
-
-  try {
-    const res = await fetch(`${baseURL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(payload)
-    })
-
-    if (!res.ok) {
-      const text = await res.text()
-      console.error('[image-chat] API error:', res.status, text)
-      throw createError({
-        statusCode: res.status,
-        statusMessage: `LLM API 错误: ${text}`
-      })
-    }
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        let fullText = ''
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-            const chunk = decoder.decode(value, { stream: true })
-            const lines = chunk.split('\n')
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6)
-                if (data === '[DONE]') continue
-                try {
-                  const parsed = JSON.parse(data)
-                  const delta = parsed.choices?.[0]?.delta?.content || ''
-                  if (delta) {
-                    fullText += delta
-                    controller.enqueue(new TextEncoder().encode(`0:${JSON.stringify(delta)}\n`))
-                  }
-                } catch {}
-              }
-            }
-          }
-        } catch (err) {
-          console.error('[image-chat] stream error:', err)
-        } finally {
-          controller.close()
-          reader.releaseLock()
-
-          if (sessionId && fullText) {
-            try {
-              await saveMessagesToDb(sessionId, messages, fullText, originalImages)
-            } catch (err) {
-              console.error('保存消息到数据库失败:', err)
-            }
-          }
-        }
-      }
-    })
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'x-vercel-ai-data-stream': 'v1'
-      }
-    })
-  } catch (err: any) {
-    console.error('[image-chat] error:', err)
-    throw createError({
-      statusCode: 500,
-      statusMessage: `AI 调用失败: ${err instanceof Error ? err.message : String(err)}`
-    })
-  }
-}
-
 async function saveMessagesToDb(
   sessionId: string,
-  chatMessages: Array<{ role: string; content: string }>,
+  chatMessages: Array<{ role: string; content: unknown }>,
   assistantText: string,
-  images?: string[]
+  imageUrls?: string[]
 ) {
   if (chatMessages.length === 0) return
-
-  const lastUserMessage = [...chatMessages].reverse().find((msg) => msg.role === 'user')
-
+  const lastUserMessage = [...chatMessages]
+    .reverse()
+    .find((msg) => msg.role === 'user')
   if (lastUserMessage) {
     const meta: Record<string, unknown> = {}
-    if (images && images.length > 0) {
-      meta.images = images.map((img, i) => ({
-        index: i,
-        size: img.length
-      }))
+    if (imageUrls && imageUrls.length > 0) {
+      meta.images = imageUrls.map((url, i) => ({ index: i, url }))
     }
-
     await db.insert(messagesTable).values({
       id: crypto.randomUUID(),
       sessionId,
       role: 'user',
-      content: lastUserMessage.content,
+      content:
+        typeof lastUserMessage.content === 'string'
+          ? lastUserMessage.content
+          : JSON.stringify(lastUserMessage.content),
       metadata: Object.keys(meta).length > 0 ? meta : undefined,
       createdAt: new Date()
     })
   }
-
   await db.insert(messagesTable).values({
     id: crypto.randomUUID(),
     sessionId,
@@ -319,6 +242,8 @@ async function saveMessagesToDb(
     metadata: { model: DEFAULT_LLM_MODEL },
     createdAt: new Date()
   })
-
-  await db.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))
+  await db
+    .update(sessions)
+    .set({ updatedAt: new Date() })
+    .where(eq(sessions.id, sessionId))
 }

@@ -36,13 +36,15 @@ export async function uploadToImgBb(filePath: string): Promise<string> {
       throw new Error('imgbb 上传失败')
     }
 
+    try {
+      if (existsSync(filePath)) unlinkSync(filePath)
+    } catch {
+      // 文件可能已被系统清理
+    }
+
     return json.data.url
   } catch (err) {
     console.error('[imgbb] upload error:', err)
     throw err
-  } finally {
-    try {
-      if (existsSync(filePath)) unlinkSync(filePath)
-    } catch {}
   }
 }
