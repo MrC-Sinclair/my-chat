@@ -139,11 +139,13 @@ function removeImage(id: string) {
             <div
               v-for="img in images"
               :key="img.id"
-              class="relative w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-lg overflow-hidden ring-1 ring-gray-200 group/img"
+              class="relative shrink-0 group/img"
             >
-              <img :src="img.dataUrl" :alt="img.filename" class="w-full h-full object-cover" />
+              <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-gray-200">
+                <img :src="img.dataUrl" :alt="img.filename" class="w-full h-full object-cover" />
+              </div>
               <button
-                class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-700/80 text-white rounded-full flex items-center justify-center hover:bg-gray-900 active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover/img:opacity-100 sm:focus-within:opacity-100"
+                class="absolute -top-2 -right-2 w-5 h-5 bg-gray-500 text-white rounded-full flex items-center justify-center hover:bg-gray-700 active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover/img:opacity-100 shadow-sm"
                 @click="removeImage(img.id)"
               >
                 <svg
@@ -151,7 +153,7 @@ function removeImage(id: string) {
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  stroke-width="2"
+                  stroke-width="2.5"
                   stroke-linecap="round"
                   stroke-linejoin="round"
                   class="w-3 h-3"
@@ -181,10 +183,10 @@ function removeImage(id: string) {
           type="submit"
           data-testid="send-btn"
           :disabled="!input.trim() || isOverLimit"
-          class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-lg transition-all duration-200"
+          class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-200"
           :class="
             input.trim() && !isOverLimit
-              ? 'bg-gray-900 hover:bg-gray-800 text-white active:scale-95'
+              ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95 shadow-sm hover:shadow'
               : 'bg-gray-100 text-gray-300 cursor-not-allowed'
           "
         >
@@ -193,20 +195,20 @@ function removeImage(id: string) {
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            stroke-width="2"
+            stroke-width="2.5"
             stroke-linecap="round"
             stroke-linejoin="round"
             class="w-4 h-4"
           >
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            <path d="M12 19V5" />
+            <path d="m5 12 7-7 7 7" />
           </svg>
         </button>
         <button
           v-else
           type="button"
           data-testid="stop-btn"
-          class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-lg bg-gray-900 hover:bg-gray-800 text-white active:scale-95 transition-all"
+          class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-700 text-white active:scale-95 transition-all shadow-sm"
           @click="emit('stop')"
         >
           <svg

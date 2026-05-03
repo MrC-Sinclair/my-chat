@@ -30,14 +30,20 @@ const FALLBACK_MODELS: ModelOption[] = [
  * @returns 聊天配置相关的响应式状态
  */
 export function useChatConfig() {
+  const config = useRuntimeConfig()
+
   /** 是否开启深度思考模式 */
   const enableThinking = ref(true)
 
   /** 当前选中的模型 */
-  const currentModel = ref('Qwen/Qwen3-8B')
+  const currentModel = ref(config.public.defaultModel)
 
-  /** 控制侧边栏的显示/隐藏 */
-  const showSidebar = ref(true)
+  /** 控制侧边栏的显示/隐藏（桌面端默认打开，移动端默认关闭） */
+  const showSidebar = ref(false)
+
+  onMounted(() => {
+    showSidebar.value = window.innerWidth >= 640
+  })
 
   /** 可用模型列表（从 API 动态加载，失败则使用 fallback） */
   const modelOptions = ref<ModelOption[]>(FALLBACK_MODELS)

@@ -436,7 +436,7 @@ function onDocumentClick(e: Event) {
               :class="[
                 'rounded-xl sm:rounded-2xl px-2.5 sm:px-5 py-1.5 sm:py-3 overflow-hidden',
                 msg.role === 'user'
-                  ? 'ml-auto max-w-[92%] sm:max-w-[85%] bg-blue-600 text-white message-user'
+                  ? 'ml-auto max-w-[92%] sm:max-w-[85%] bg-gray-100 text-gray-800 message-user'
                   : 'mr-auto max-w-[96%] sm:max-w-[90%] bg-gray-50 text-gray-800 message-assistant'
               ]"
             >
@@ -444,20 +444,20 @@ function onDocumentClick(e: Event) {
                 <div v-if="editingIndex === index" class="space-y-2">
                   <textarea
                     v-model="editingText"
-                    class="w-full resize-none rounded-lg border border-blue-400 bg-white text-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[48px] max-h-[160px]"
+                    class="w-full resize-none rounded-xl border border-gray-200 bg-white text-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300/50 min-h-[48px] max-h-[160px]"
                     rows="2"
                     @keydown.enter.prevent="submitEditing(index)"
                     @keydown.escape.prevent="cancelEditing"
                   />
                   <div class="flex items-center gap-2 justify-end">
                     <button
-                      class="px-3 py-1 text-xs text-gray-500 hover:text-gray-700 rounded transition-colors"
+                      class="px-3 py-1.5 text-xs text-gray-800 hover:text-gray-900 rounded-lg transition-colors font-medium"
                       @click="cancelEditing"
                     >
                       取消
                     </button>
                     <button
-                      class="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 active:scale-95 transition-all"
+                      class="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 active:scale-95 transition-all"
                       :disabled="!editingText.trim()"
                       @click="submitEditing(index)"
                     >
@@ -478,14 +478,14 @@ function onDocumentClick(e: Event) {
                       :key="img.id"
                       :src="img.dataUrl"
                       :alt="img.filename"
-                      class="w-20 h-20 object-cover rounded-lg border border-blue-300/50"
+                      class="w-20 h-20 object-cover rounded-lg border border-gray-200"
                     />
                   </div>
                   <div
                     class="flex justify-end mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 sm:transition-opacity"
                   >
                     <button
-                      class="p-1.5 sm:p-1 text-blue-200 hover:text-white rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+                      class="p-1.5 sm:p-1 text-gray-400 hover:text-gray-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                       v-tooltip="'编辑消息'"
                       @click="startEditing(index, msg.content)"
                     >
