@@ -1,4 +1,3 @@
-import { createOpenAI } from '@ai-sdk/openai'
 import { streamText } from 'ai'
 import { db } from '~/server/db'
 import { messages as messagesTable, sessions } from '~/server/db/schema'
@@ -9,11 +8,13 @@ import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/mode
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { uploadToImgBb } from '~/server/utils/imgbb'
+import {
+  createReasoningProvider,
+  REASONING_PREFIX,
+  REASONING_END
+} from '~/server/utils/reasoning-provider'
 
-const llmProvider = createOpenAI({
-  baseURL: process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1',
-  apiKey: process.env.OPENAI_API_KEY
-})
+const llmProvider = createReasoningProvider()
 
 const DEFAULT_LLM_MODEL = process.env.LLM_MODEL || 'Qwen/Qwen3-8B'
 const DEFAULT_ENABLE_THINKING = process.env.ENABLE_THINKING !== 'false'
@@ -224,13 +225,171 @@ export default defineEventHandler(async (event) => {
       onFinish: async ({ text }) => {
         if (!sessionId) return
         try {
-          await saveMessagesToDb(sessionId, messages, text, hasImages ? imageUrls : undefined)
+          // 从 text 中移除 reasoning 标记内容，只保留正式回答
+          // text 格式：REASONING_PREFIX + 思考内容... + REASONING_END + 正式回答
+          const reasoningStart = text.indexOf(REASONING_PREFIX)
+          const reasoningEndIdx = text.indexOf(REASONING_END)
+          let cleanText = text
+          if (reasoningStart >= 0 && reasoningEndIdx >= 0) {
+            // 有完整的 reasoning 段：取 REASONING_END 之后的内容
+            cleanText = text.slice(reasoningEndIdx + REASONING_END.length).trim()
+          } else if (reasoningStart >= 0) {
+            // 只有 reasoning 没有正式回答（极端情况）
+            cleanText = ''
+          }
+          await saveMessagesToDb(sessionId, messages, cleanText, hasImages ? imageUrls : undefined)
         } catch (err) {
           console.error('保存消息到数据库失败:', err)
         }
       }
     })
-    return result.toDataStreamResponse()
+
+    // 将 fullStream 中的 text-delta 按 REASONING 标记分类：
+    // - 带 REASONING_PREFIX 的 → 转为 reasoning 事件（思考过程）
+    // - 带 REASONING_END 的 → 切换回 text-delta（正式回答开始）
+    // - 其他 → 原样传递
+    const dataStream = result.fullStream.pipeThrough(
+      new TransformStream({
+        transform(chunk, controller) {
+          if (chunk.type === 'text-delta') {
+            const delta = chunk.textDelta
+
+            // 整个 delta 以 REASONING_PREFIX 开头：纯 reasoning 片段
+            if (delta.startsWith(REASONING_PREFIX)) {
+              const reasoningText = delta.slice(REASONING_PREFIX.length)
+              if (reasoningText) {
+                controller.enqueue({ type: 'reasoning', textDelta: reasoningText })
+              }
+              return
+            }
+
+            // delta 中间包含 REASONING_PREFIX：reasoning 和其他内容混合
+            if (delta.includes(REASONING_PREFIX)) {
+              const parts = delta.split(REASONING_PREFIX)
+              for (const part of parts) {
+                if (!part) continue
+                if (part.includes(REASONING_END)) {
+                  // reasoning → 正式回答的切换点
+                  const subParts = part.split(REASONING_END)
+                  if (subParts[0]) {
+                    controller.enqueue({ type: 'reasoning', textDelta: subParts[0] })
+                  }
+                  if (subParts[1]) {
+                    controller.enqueue({ type: 'text-delta', textDelta: subParts[1] })
+                  }
+                } else {
+                  controller.enqueue({ type: 'reasoning', textDelta: part })
+                }
+              }
+              return
+            }
+
+            // delta 以 REASONING_END 开头：正式回答开始
+            if (delta.startsWith(REASONING_END)) {
+              const textAfter = delta.slice(REASONING_END.length)
+              if (textAfter) {
+                controller.enqueue({ type: 'text-delta', textDelta: textAfter })
+              }
+              return
+            }
+
+            // delta 中间包含 REASONING_END：reasoning 尾部和正式回答开头
+            if (delta.includes(REASONING_END)) {
+              const parts = delta.split(REASONING_END)
+              if (parts[0]) {
+                controller.enqueue({ type: 'reasoning', textDelta: parts[0] })
+              }
+              if (parts[1]) {
+                controller.enqueue({ type: 'text-delta', textDelta: parts[1] })
+              }
+              return
+            }
+
+            // 普通 text-delta，直接传递
+            controller.enqueue(chunk)
+            return
+          }
+
+          // 非 text-delta 事件（tool-call、error、finish 等）直接传递
+          controller.enqueue(chunk)
+        }
+      })
+    )
+
+    // 手动序列化为 AI SDK 数据流格式
+    // 格式说明：0=文本, g=推理, 9=工具调用, c=工具调用增量, a=工具结果, 3=错误, d=完成
+    const encoder = new TextEncoder()
+    const readableStream = dataStream.pipeThrough(
+      new TransformStream({
+        transform(chunk, controller) {
+          switch (chunk.type) {
+            case 'text-delta':
+              controller.enqueue(encoder.encode(`0:${JSON.stringify(chunk.textDelta)}\n`))
+              break
+            case 'reasoning':
+              controller.enqueue(encoder.encode(`g:${JSON.stringify(chunk.textDelta)}\n`))
+              break
+            case 'tool-call':
+              controller.enqueue(
+                encoder.encode(
+                  `9:${JSON.stringify({
+                    toolCallId: chunk.toolCallId,
+                    toolName: chunk.toolName,
+                    args: chunk.args
+                  })}\n`
+                )
+              )
+              break
+            case 'tool-call-delta':
+              controller.enqueue(
+                encoder.encode(
+                  `c:${JSON.stringify({
+                    toolCallId: chunk.toolCallId,
+                    argsTextDelta: chunk.argsTextDelta
+                  })}\n`
+                )
+              )
+              break
+            case 'tool-result':
+              controller.enqueue(
+                encoder.encode(
+                  `a:${JSON.stringify({
+                    toolCallId: chunk.toolCallId,
+                    result: chunk.result
+                  })}\n`
+                )
+              )
+              break
+            case 'error':
+              controller.enqueue(
+                encoder.encode(
+                  `3:${JSON.stringify(chunk.error instanceof Error ? chunk.error.message : String(chunk.error))}\n`
+                )
+              )
+              break
+            case 'finish':
+              controller.enqueue(
+                encoder.encode(
+                  `d:${JSON.stringify({
+                    finishReason: chunk.finishReason,
+                    usage: chunk.usage
+                  })}\n`
+                )
+              )
+              break
+            default:
+              break
+          }
+        }
+      })
+    )
+
+    return new Response(readableStream, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'X-Vercel-AI-Data-Stream': 'v1'
+      }
+    })
   } catch (err) {
     console.error('streamText 调用失败:', err)
     throw createError({

@@ -168,8 +168,16 @@ function getToolInvocations(msg: any): any[] {
   return invocations
 }
 
+/** 从消息对象中提取思考过程内容，兼容 AI SDK 的两种字段格式 */
 function getReasoningContent(msg: any): string {
-  return msg.reasoningContent || ''
+  // 旧版 AI SDK 使用 msg.reasoning 字段
+  if (msg.reasoning) return msg.reasoning
+  // 新版 AI SDK 使用 msg.parts 数组中的 reasoning 类型 part
+  if (msg.parts && Array.isArray(msg.parts)) {
+    const reasoningPart = msg.parts.find((p: any) => p.type === 'reasoning')
+    if (reasoningPart) return reasoningPart.reasoning
+  }
+  return ''
 }
 
 function startEditing(index: number, content: string) {
@@ -510,7 +518,7 @@ function onDocumentClick(e: Event) {
 
               <template v-else>
                 <ThinkingProcess
-                  v-if="enableThinking && getReasoningContent(msg)"
+                  v-if="getReasoningContent(msg)"
                   :content="getReasoningContent(msg)"
                 />
 
