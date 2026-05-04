@@ -45,7 +45,7 @@ const TIME_KEYWORDS = [
 ]
 
 const MAX_MESSAGE_LENGTH = 10_00
-const MAX_MESSAGES_COUNT = 10
+const MAX_CONTEXT_MESSAGES = 50
 const MAX_IMAGE_SIZE = 4 * 1024 * 1024
 const MAX_IMAGES_PER_MESSAGE = 5
 const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads')
@@ -89,11 +89,9 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (messages.length > MAX_MESSAGES_COUNT) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: `消息数量超过限制（最多 ${MAX_MESSAGES_COUNT} 条）`
-    })
+  let contextMessages = messages
+  if (messages.length > MAX_CONTEXT_MESSAGES) {
+    contextMessages = messages.slice(-MAX_CONTEXT_MESSAGES)
   }
 
   for (const msg of messages) {
@@ -152,16 +150,16 @@ export default defineEventHandler(async (event) => {
   }
 
   const hasImages = imageUrls.length > 0
-  const lastUserIdx = messages.map((m: { role: string }) => m.role).lastIndexOf('user')
+  const lastUserIdx = contextMessages.map((m: { role: string }) => m.role).lastIndexOf('user')
 
-  const llmMessages = messages
+  const llmMessages = contextMessages
     .filter((msg: { role: string }) => msg.role !== 'system')
     .map((msg: { role: string; content: unknown }) => {
       const textContent = typeof msg.content === 'string' ? msg.content : String(msg.content || '')
 
       if (msg.role === 'assistant') return { role: 'assistant' as const, content: textContent }
 
-      if (messages.indexOf(msg) === lastUserIdx && hasImages) {
+      if (contextMessages.indexOf(msg) === lastUserIdx && hasImages) {
         const parts: Array<
           { type: 'text'; text: string } | { type: 'image'; image: string | URL; mimeType?: string }
         > = [{ type: 'text', text: textContent }]
@@ -198,7 +196,7 @@ export default defineEventHandler(async (event) => {
 
   if (webSearchEnabled && !caps.vision && caps.toolCalling) {
     const lastUserMsg =
-      messages
+      contextMessages
         .filter((m: { role: string }) => m.role === 'user')
         .map((m: { content: unknown }) => (typeof m.content === 'string' ? m.content : ''))
         .pop() || ''
