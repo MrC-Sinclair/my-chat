@@ -99,6 +99,15 @@ const copiedMessageId = ref<string>('')
 const modelDropdownOpen = ref(false)
 const modelDropdownRef = ref<HTMLElement | null>(null)
 
+/** 每条消息的思考过程展开状态，key 为消息 ID */
+const expandedThinkingMap = ref<Map<string, boolean>>(new Map())
+
+/** 切换指定消息的思考过程展开/收起状态 */
+function toggleThinkingExpand(msgId: string) {
+  const current = expandedThinkingMap.value.get(msgId) || false
+  expandedThinkingMap.value.set(msgId, !current)
+}
+
 const currentModelLabel = computed(() => {
   const found = modelOptions.value.find((opt) => opt.value === currentModel.value)
   return found?.label || currentModel.value
@@ -138,8 +147,7 @@ watch(isLoading, (loading) => {
 
 watch(
   messages,
-  (newMessages) => {
-    const lastMsg = newMessages[newMessages.length - 1]
+  (_newMessages) => {
   },
   { deep: true }
 )
@@ -166,6 +174,17 @@ function getToolInvocations(msg: any): any[] {
   const invocations = msg.toolInvocations
   if (!Array.isArray(invocations)) return []
   return invocations
+}
+
+/**
+ * 根据前端开关状态过滤可见的工具调用
+ * - enableWebSearch 关闭时，隐藏 webSearch 工具
+ * - 其他工具（如 weather）始终显示
+ */
+function getVisibleToolInvocations(msg: any): any[] {
+  const all = getToolInvocations(msg)
+  if (enableWebSearch.value) return all
+  return all.filter((inv: any) => inv.toolName !== 'webSearch')
 }
 
 /** 从消息对象中提取思考过程内容，兼容 AI SDK 的两种字段格式 */
@@ -518,13 +537,15 @@ function onDocumentClick(e: Event) {
 
               <template v-else>
                 <ThinkingProcess
-                  v-if="getReasoningContent(msg)"
+                  v-if="enableThinking && getReasoningContent(msg)"
                   :content="getReasoningContent(msg)"
+                  :is-expanded="expandedThinkingMap.get(msg.id) || false"
+                  @toggle="toggleThinkingExpand(msg.id)"
                 />
 
-                <div v-if="getToolInvocations(msg).length > 0" class="mb-3 space-y-2">
+                <div v-if="getVisibleToolInvocations(msg).length > 0" class="mb-3 space-y-2">
                   <ToolInvocation
-                    v-for="invocation in getToolInvocations(msg)"
+                    v-for="invocation in getVisibleToolInvocations(msg)"
                     :key="invocation.toolCallId"
                     :invocation="invocation"
                   />
