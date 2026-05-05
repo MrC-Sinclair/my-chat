@@ -41,7 +41,18 @@ const inputLength = computed(() => props.input.length)
 const isOverLimit = computed(() => inputLength.value > MAX_INPUT_LENGTH)
 const isNearLimit = computed(() => inputLength.value > MAX_INPUT_LENGTH * 0.8 && !isOverLimit.value)
 
+const isComposing = ref(false)
+
+function handleCompositionStart() {
+  isComposing.value = true
+}
+
+function handleCompositionEnd() {
+  isComposing.value = false
+}
+
 function handleKeydown(e: KeyboardEvent) {
+  if (isComposing.value) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     if (!isOverLimit.value) {
@@ -180,6 +191,8 @@ function removeImage(id: string) {
             :disabled="isLoading"
             @input="inputValue = ($event.target as HTMLTextAreaElement).value"
             @keydown="handleKeydown"
+            @compositionstart="handleCompositionStart"
+            @compositionend="handleCompositionEnd"
           />
         </div>
 

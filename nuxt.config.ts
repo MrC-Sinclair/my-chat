@@ -158,7 +158,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       appTitle: process.env.APP_TITLE || 'AI 对话助手',
-      defaultModel: process.env.LLM_MODEL || 'THUDM/GLM-4.1V-9B-Thinking'
+      defaultModel: process.env.LLM_MODEL || 'Qwen/Qwen3-8B'
     },
     openAiApiKey: process.env.OPENAI_API_KEY,
     openAiBaseUrl: process.env.OPENAI_BASE_URL,
