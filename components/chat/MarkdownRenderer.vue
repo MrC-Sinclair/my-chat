@@ -49,6 +49,7 @@ watch(
     nextTick(() => {
       if (containerRef.value) {
         renderCodeBlocks()
+        renderImages()
         renderMath(containerRef.value)
       }
     })
@@ -60,9 +61,64 @@ watch(
 onMounted(() => {
   if (containerRef.value) {
     renderCodeBlocks()
+    renderImages()
     renderMath(containerRef.value)
   }
 })
+
+/** 放大查看的图片 URL */
+const lightboxSrc = ref('')
+
+/** 打开图片放大查看 */
+function openLightbox(src: string) {
+  lightboxSrc.value = src
+}
+
+/** 关闭图片放大查看 */
+function closeLightbox() {
+  lightboxSrc.value = ''
+}
+
+/**
+ * 为容器内的 <img> 标签添加容错处理和点击放大
+ *
+ * 由于内容通过 v-html 渲染，无法使用 Vue 的事件绑定，
+ * 需要在 DOM 更新后手动为图片添加事件监听器。
+ *
+ * 处理内容：
+ *   1. onerror — 图片加载失败时替换为友好提示
+ *   2. onclick — 点击图片打开放大查看
+ */
+function renderImages() {
+  if (!containerRef.value) return
+
+  const images = containerRef.value.querySelectorAll('img')
+  images.forEach((img) => {
+    if (img.dataset.imgProcessed) return
+    img.dataset.imgProcessed = 'true'
+
+    img.referrerPolicy = 'no-referrer'
+
+    img.addEventListener('error', () => {
+      if (img.parentElement?.classList.contains('img-error')) return
+      const fallback = document.createElement('div')
+      fallback.className = 'img-error'
+      fallback.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg> 图片加载失败`
+      const altText = img.alt || img.src
+      if (altText) {
+        const altSpan = document.createElement('span')
+        altSpan.style.opacity = '0.7'
+        altSpan.textContent = `(${altText})`
+        fallback.appendChild(altSpan)
+      }
+      img.replaceWith(fallback)
+    })
+
+    img.addEventListener('click', () => {
+      if (img.src) openLightbox(img.src)
+    })
+  })
+}
 
 /**
  * 将 <pre><code> 标签替换为 CodeBlock Vue 组件
@@ -86,9 +142,10 @@ function renderCodeBlocks() {
     if (!preEl) return
 
     // 从 class="language-python" 中提取 "python"
-    const language = Array.from(codeEl.classList)
-      .find((cls) => cls.startsWith('language-'))
-      ?.replace('language-', '') || ''
+    const language =
+      Array.from(codeEl.classList)
+        .find((cls) => cls.startsWith('language-'))
+        ?.replace('language-', '') || ''
 
     const codeText = codeEl.textContent || ''
 
@@ -110,11 +167,15 @@ function renderCodeBlocks() {
     - prose 类来自 Tailwind Typography 插件，提供排版美化
     - ref="containerRef" 用于获取 DOM 引用进行后处理
   -->
-  <div
-    ref="containerRef"
-    class="markdown-body prose prose-sm max-w-none"
-    v-html="htmlContent"
-  />
+  <div ref="containerRef" class="markdown-body prose prose-sm max-w-none" v-html="htmlContent" />
+
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="lightboxSrc" class="img-lightbox" @click="closeLightbox">
+        <img :src="lightboxSrc" alt="放大查看" @click.stop />
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <!-- 组件样式：Markdown 排版 + KaTeX 公式样式 -->
@@ -185,6 +246,20 @@ function renderCodeBlocks() {
   font-weight: 600;
 }
 
+/** 图片响应式样式 */
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 0.6em 0;
+  cursor: zoom-in;
+  transition: opacity 0.2s ease;
+}
+
+.markdown-body img:hover {
+  opacity: 0.92;
+}
+
 /** 链接样式 */
 .markdown-body a {
   color: #2563eb;
@@ -211,6 +286,60 @@ function renderCodeBlocks() {
   overflow-y: hidden;
   padding: 0.5em 0;
   margin: 0.8em 0;
+}
+
+/** 图片加载失败容错样式 */
+.markdown-body .img-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #b91c1c;
+  font-size: 0.85em;
+  margin: 0.6em 0;
+}
+
+/** 图片放大遮罩层 */
+.img-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  cursor: zoom-out;
+  animation: lightbox-fade-in 0.2s ease;
+}
+
+.img-lightbox img {
+  max-width: 92vw;
+  max-height: 92vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes lightbox-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 /** 行内公式字体略大 */

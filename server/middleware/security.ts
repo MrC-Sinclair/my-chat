@@ -7,7 +7,7 @@ const CSP_DIRECTIVES = [
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
   "font-src 'self' https://cdn.jsdelivr.net",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https:",
   "connect-src 'self' https://api.siliconflow.cn",
   "frame-ancestors 'none'",
   "base-uri 'self'",

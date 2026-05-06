@@ -92,4 +92,34 @@ describe('renderMarkdown', () => {
     expect(html).toContain('href="https://example.com"')
     expect(html).toContain('点击这里')
   })
+
+  it('应正确渲染 Markdown 图片语法', () => {
+    const html = renderMarkdown('![示例图片](https://example.com/image.png)')
+    expect(html).toContain('<img')
+    expect(html).toContain('src="https://example.com/image.png"')
+    expect(html).toContain('alt="示例图片"')
+    expect(html).toContain('referrerpolicy="no-referrer"')
+    expect(html).toContain('loading="lazy"')
+  })
+
+  it('应保留 img 标签的 src 和 alt 属性', () => {
+    const html = renderMarkdown('<img src="https://example.com/photo.jpg" alt="照片">')
+    expect(html).toContain('<img')
+    expect(html).toContain('src="https://example.com/photo.jpg"')
+    expect(html).toContain('alt="照片"')
+    expect(html).toContain('referrerpolicy="no-referrer"')
+  })
+
+  it('应过滤 img 标签的危险属性但保留 src', () => {
+    const html = renderMarkdown('<img src="https://example.com/img.png" onerror="alert(1)" onload="track()">')
+    expect(html).toContain('src="https://example.com/img.png"')
+    expect(html).not.toContain('onerror')
+    expect(html).not.toContain('onload')
+  })
+
+  it('应支持带 title 的图片', () => {
+    const html = renderMarkdown('![图片](https://example.com/img.png "图片标题")')
+    expect(html).toContain('src="https://example.com/img.png"')
+    expect(html).toContain('title="图片标题"')
+  })
 })

@@ -146,12 +146,15 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
     ],
     ALLOWED_ATTR: [
       'href', 'target', 'rel', 'class', 'id', 'lang', 'src', 'alt', 'title',
+      'referrerpolicy', 'loading',
       'xmlns', 'viewBox', 'd', 'fill', 'stroke', 'stroke-width', 'width', 'height',
       'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
       'points', 'transform', 'color', 'display', 'style', 'font-size', 'font-family',
       'encoding', 'definitionURL', 'href xlink:href'
     ]
   })
+
+  sanitizedHtml = sanitizedHtml.replace(/<img /g, '<img referrerpolicy="no-referrer" loading="lazy" ')
 
   /**
    * 第五步：将占位符替换回数学公式的 HTML 标签
