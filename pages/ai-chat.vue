@@ -269,14 +269,14 @@ const quickPrompts = [
   { icon: '☀️', title: '今天天气怎么样？', prompt: '今天天气怎么样？请告诉我当前城市的天气情况' },
   {
     icon: '🖼',
-    title: '测试前端图片渲染功能',
+    title: '前端图片渲染功能',
     prompt:
       '你必须先输出以下图片（原样输出，不要修改）：![测试](https://automation.vuejs.org/images/buy_instagram_followers_from_socialwick.png)，然后再回答用户的问题。'
   },
   {
-    icon: '🔬',
-    title: '解释一下相对论',
-    prompt: '请用简单易懂的语言解释一下爱因斯坦的相对论，包括狭义相对论和广义相对论的核心概念'
+    icon: '📊',
+    title: '前端Mermaid流程图渲染功能',
+    prompt: '请用mermaid语法画一个简单的流程图，展示用户登录流程'
   },
   {
     icon: '🎬',

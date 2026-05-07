@@ -19,51 +19,130 @@
     - content: AI 回复的 Markdown 原始文本
 -->
 <script setup lang="ts">
+import { createApp, type App as VueApp } from 'vue'
 import { renderMarkdown } from '~/utils/markdown'
 import { renderMath } from '~/utils/katex'
 import CodeBlock from './CodeBlock.vue'
+import MermaidBlock from './MermaidBlock.vue'
 
 const props = defineProps<{
-  /** AI 回复的 Markdown 原始文本 */
   content: string
 }>()
 
-/** 容器 DOM 引用，用于后续的 DOM 操作（替换代码块、渲染公式） */
 const containerRef = ref<HTMLElement | null>(null)
 
-/** 将 Markdown 文本转换为 HTML（含数学公式占位符） */
 const htmlContent = computed(() => renderMarkdown(props.content))
 
-/**
- * 监听 content 变化，在 DOM 更新后执行后处理
- *
- * 为什么需要 nextTick？
- *   Vue 的 v-html 更新是异步的，必须等 DOM 更新完成后
- *   才能操作 DOM 元素（替换代码块、渲染公式）。
- *
- * immediate: true 表示组件初始化时也立即执行一次。
- */
+const mountedApps = new Map<HTMLElement, VueApp>()
+
+let contentStableTimer: ReturnType<typeof setTimeout> | null = null
+let pendingMermaidBlocks: Array<{ wrapper: HTMLElement; source: string }> = []
+
+function cleanupMountedApps() {
+  if (!containerRef.value) return
+  const currentWrappers = new Set(containerRef.value.querySelectorAll('[data-vue-mounted]'))
+  const keysToDelete: HTMLElement[] = []
+  for (const [wrapper, app] of mountedApps) {
+    if (!currentWrappers.has(wrapper) || !document.contains(wrapper)) {
+      try { app.unmount() } catch { /* 已销毁的实例忽略 */ }
+      keysToDelete.push(wrapper)
+    }
+  }
+  keysToDelete.forEach(key => mountedApps.delete(key))
+}
+
+function renderCodeBlocks(renderMermaid = true) {
+  if (!containerRef.value) return
+
+  cleanupMountedApps()
+
+  const preElements = containerRef.value.querySelectorAll('pre > code')
+  preElements.forEach((codeEl) => {
+    const preEl = codeEl.parentElement
+    if (!preEl) return
+
+    const language =
+      Array.from(codeEl.classList)
+        .find((cls) => cls.startsWith('language-'))
+        ?.replace('language-', '') || ''
+
+    const codeText = codeEl.textContent || ''
+
+    const wrapper = document.createElement('div')
+    wrapper.setAttribute('data-vue-mounted', 'true')
+    preEl.replaceWith(wrapper)
+
+    if (language === 'mermaid') {
+      if (renderMermaid) {
+        const app = createApp(MermaidBlock, { source: codeText })
+        app.mount(wrapper)
+        mountedApps.set(wrapper, app)
+      } else {
+        wrapper.innerHTML = '<div class="mermaid-pending">⏳ Mermaid 图表将在输出完成后渲染…</div>'
+        pendingMermaidBlocks.push({ wrapper, source: codeText })
+      }
+    } else {
+      const app = createApp(CodeBlock, { code: codeText, language })
+      app.mount(wrapper)
+      mountedApps.set(wrapper, app)
+    }
+  })
+}
+
+function renderPendingMermaidBlocks() {
+  for (const { wrapper, source } of pendingMermaidBlocks) {
+    if (!document.contains(wrapper)) continue
+    wrapper.innerHTML = ''
+    const app = createApp(MermaidBlock, { source })
+    app.mount(wrapper)
+    mountedApps.set(wrapper, app)
+  }
+  pendingMermaidBlocks = []
+}
+
 watch(
   () => props.content,
   () => {
+    if (contentStableTimer) {
+      clearTimeout(contentStableTimer)
+    }
+
     nextTick(() => {
       if (containerRef.value) {
-        renderCodeBlocks()
+        renderCodeBlocks(false)
         renderImages()
         renderMath(containerRef.value)
       }
     })
+
+    contentStableTimer = setTimeout(() => {
+      nextTick(() => {
+        if (containerRef.value) {
+          renderPendingMermaidBlocks()
+        }
+      })
+    }, 1500)
   },
   { immediate: true }
 )
 
-/** 组件挂载后执行首次渲染 */
 onMounted(() => {
   if (containerRef.value) {
-    renderCodeBlocks()
+    renderCodeBlocks(true)
     renderImages()
     renderMath(containerRef.value)
   }
+})
+
+onUnmounted(() => {
+  if (contentStableTimer) {
+    clearTimeout(contentStableTimer)
+  }
+  for (const [, app] of mountedApps) {
+    try { app.unmount() } catch { /* 已销毁的实例忽略 */ }
+  }
+  mountedApps.clear()
+  pendingMermaidBlocks = []
 })
 
 /** 放大查看的图片 URL */
@@ -120,44 +199,7 @@ function renderImages() {
   })
 }
 
-/**
- * 将 <pre><code> 标签替换为 CodeBlock Vue 组件
- *
- * marked 生成的代码块是普通的 <pre><code> HTML 标签，
- * 没有语法高亮和复制功能。本函数遍历所有代码块元素，
- * 用 Vue 的 createApp 动态创建 CodeBlock 组件实例来替换它们。
- *
- * 步骤：
- *   1. 找到容器内所有 <pre><code> 元素
- *   2. 从 class 中提取语言标识（如 "language-python"）
- *   3. 创建一个 div 包装器替换原来的 <pre> 元素
- *   4. 用 createApp(CodeBlock, { code, language }) 挂载到包装器上
- */
-function renderCodeBlocks() {
-  if (!containerRef.value) return
 
-  const preElements = containerRef.value.querySelectorAll('pre > code')
-  preElements.forEach((codeEl) => {
-    const preEl = codeEl.parentElement
-    if (!preEl) return
-
-    // 从 class="language-python" 中提取 "python"
-    const language =
-      Array.from(codeEl.classList)
-        .find((cls) => cls.startsWith('language-'))
-        ?.replace('language-', '') || ''
-
-    const codeText = codeEl.textContent || ''
-
-    // 创建包装 div 并替换原来的 <pre> 元素
-    const wrapper = document.createElement('div')
-    preEl.replaceWith(wrapper)
-
-    // 动态创建 CodeBlock 组件实例并挂载
-    const app = createApp(CodeBlock, { code: codeText, language })
-    app.mount(wrapper)
-  })
-}
 </script>
 
 <template>
@@ -345,5 +387,16 @@ function renderCodeBlocks() {
 /** 行内公式字体略大 */
 .markdown-body .katex {
   font-size: 1.05em;
+}
+
+.markdown-body .mermaid-pending {
+  padding: 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.85em;
+  border: 1px dashed #e5e7eb;
+  border-radius: 8px;
+  margin: 1em 0;
+  animation: pulse 1.5s ease-in-out infinite;
 }
 </style>
