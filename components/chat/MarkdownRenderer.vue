@@ -36,7 +36,6 @@ const htmlContent = computed(() => renderMarkdown(props.content))
 const mountedApps = new Map<HTMLElement, VueApp>()
 
 let contentStableTimer: ReturnType<typeof setTimeout> | null = null
-let pendingMermaidBlocks: Array<{ wrapper: HTMLElement; source: string }> = []
 
 function cleanupMountedApps() {
   if (!containerRef.value) return
@@ -44,11 +43,15 @@ function cleanupMountedApps() {
   const keysToDelete: HTMLElement[] = []
   for (const [wrapper, app] of mountedApps) {
     if (!currentWrappers.has(wrapper) || !document.contains(wrapper)) {
-      try { app.unmount() } catch { /* 已销毁的实例忽略 */ }
+      try {
+        app.unmount()
+      } catch {
+        /* 已销毁的实例忽略 */
+      }
       keysToDelete.push(wrapper)
     }
   }
-  keysToDelete.forEach(key => mountedApps.delete(key))
+  keysToDelete.forEach((key) => mountedApps.delete(key))
 }
 
 function renderCodeBlocks(renderMermaid = true) {
@@ -78,8 +81,8 @@ function renderCodeBlocks(renderMermaid = true) {
         app.mount(wrapper)
         mountedApps.set(wrapper, app)
       } else {
+        wrapper.setAttribute('data-mermaid-source', codeText)
         wrapper.innerHTML = '<div class="mermaid-pending">⏳ Mermaid 图表将在输出完成后渲染…</div>'
-        pendingMermaidBlocks.push({ wrapper, source: codeText })
       }
     } else {
       const app = createApp(CodeBlock, { code: codeText, language })
@@ -90,14 +93,16 @@ function renderCodeBlocks(renderMermaid = true) {
 }
 
 function renderPendingMermaidBlocks() {
-  for (const { wrapper, source } of pendingMermaidBlocks) {
-    if (!document.contains(wrapper)) continue
+  if (!containerRef.value) return
+  const pendingWrappers = containerRef.value.querySelectorAll('[data-mermaid-source]')
+  pendingWrappers.forEach((wrapper) => {
+    const source = wrapper.getAttribute('data-mermaid-source') || ''
+    wrapper.removeAttribute('data-mermaid-source')
     wrapper.innerHTML = ''
     const app = createApp(MermaidBlock, { source })
     app.mount(wrapper)
-    mountedApps.set(wrapper, app)
-  }
-  pendingMermaidBlocks = []
+    mountedApps.set(wrapper as HTMLElement, app)
+  })
 }
 
 watch(
@@ -116,10 +121,9 @@ watch(
     })
 
     contentStableTimer = setTimeout(() => {
+      contentStableTimer = null
       nextTick(() => {
-        if (containerRef.value) {
-          renderPendingMermaidBlocks()
-        }
+        renderPendingMermaidBlocks()
       })
     }, 1500)
   },
@@ -139,10 +143,13 @@ onUnmounted(() => {
     clearTimeout(contentStableTimer)
   }
   for (const [, app] of mountedApps) {
-    try { app.unmount() } catch { /* 已销毁的实例忽略 */ }
+    try {
+      app.unmount()
+    } catch {
+      /* 已销毁的实例忽略 */
+    }
   }
   mountedApps.clear()
-  pendingMermaidBlocks = []
 })
 
 /** 放大查看的图片 URL */
@@ -178,6 +185,14 @@ function renderImages() {
 
     img.referrerPolicy = 'no-referrer'
 
+    img.addEventListener('load', () => {
+      img.classList.add('img-loaded')
+    })
+
+    if (img.complete && img.naturalWidth > 0) {
+      img.classList.add('img-loaded')
+    }
+
     img.addEventListener('error', () => {
       if (img.parentElement?.classList.contains('img-error')) return
       const fallback = document.createElement('div')
@@ -198,8 +213,6 @@ function renderImages() {
     })
   })
 }
-
-
 </script>
 
 <template>
@@ -288,18 +301,39 @@ function renderImages() {
   font-weight: 600;
 }
 
-/** 图片响应式样式 */
+/** 图片响应式样式 + 加载占位骨架屏 */
 .markdown-body img {
   max-width: 100%;
   height: auto;
+  min-height: 180px;
   border-radius: 8px;
   margin: 0.6em 0;
   cursor: zoom-in;
-  transition: opacity 0.2s ease;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: img-shimmer 1.5s ease-in-out infinite;
 }
 
-.markdown-body img:hover {
+.markdown-body img.img-loaded {
+  opacity: 1;
+  min-height: 0;
+  background: none;
+  animation: none;
+}
+
+.markdown-body img.img-loaded:hover {
   opacity: 0.92;
+}
+
+@keyframes img-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /** 链接样式 */
