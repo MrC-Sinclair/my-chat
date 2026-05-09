@@ -115,6 +115,7 @@ watch(
     nextTick(() => {
       if (containerRef.value) {
         renderCodeBlocks(false)
+        renderTables()
         renderImages()
         renderMath(containerRef.value)
       }
@@ -133,6 +134,7 @@ watch(
 onMounted(() => {
   if (containerRef.value) {
     renderCodeBlocks(true)
+    renderTables()
     renderImages()
     renderMath(containerRef.value)
   }
@@ -175,6 +177,18 @@ function closeLightbox() {
  *   1. onerror — 图片加载失败时替换为友好提示
  *   2. onclick — 点击图片打开放大查看
  */
+function renderTables() {
+  if (!containerRef.value) return
+  const tables = containerRef.value.querySelectorAll('table')
+  tables.forEach((table) => {
+    if (table.parentElement?.classList.contains('table-wrapper')) return
+    const wrapper = document.createElement('div')
+    wrapper.className = 'table-wrapper'
+    table.parentNode?.insertBefore(wrapper, table)
+    wrapper.appendChild(table)
+  })
+}
+
 function renderImages() {
   if (!containerRef.value) return
 
@@ -283,10 +297,16 @@ function renderImages() {
 }
 
 /** 表格样式 */
+.markdown-body .table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 1em 0;
+}
+
 .markdown-body table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1em 0;
+  margin: 0;
 }
 
 .markdown-body th,
