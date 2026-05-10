@@ -210,6 +210,7 @@ class="px-3 sm:px-6 py-2 sm:py-3 text-base sm:text-xl"
 - 常量：UPPER_SNAKE_CASE（`LLM_MODEL`）
 - 数据库列：snake_case（`created_at`、`session_id`）
 - 前端 API 调用：统一用 Nuxt 的 `$fetch` / `useFetch`，禁止原生 `fetch`
+- 注释规则：复杂逻辑、非显而易见的业务约束、容易踩坑的地方**必须加中文注释**；简单自解释的代码不需要注释
 
 ## Critical Rules
 

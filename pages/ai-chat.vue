@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useChat } from '@ai-sdk/vue'
+import { useVirtualizer } from '@tanstack/vue-virtual'
 import MarkdownRenderer from '~/components/chat/MarkdownRenderer.vue'
 import SessionSidebar from '~/components/chat/SessionSidebar.vue'
 import ToolInvocation from '~/components/chat/ToolInvocation.vue'
@@ -219,27 +220,54 @@ function submitEditing(index: number) {
   cancelEditing()
 }
 
+const virtualizerParentRef = ref<HTMLElement | null>(null)
+
+const virtualizer = useVirtualizer(
+  computed(() => ({
+    count: messages.value.length,
+    getScrollElement: () => messagesContainer.value,
+    estimateSize: (index: number) => {
+      const msg = messages.value[index]
+      if (!msg) return 80
+      if (msg.role === 'user') return 72
+      return 220
+    },
+    overscan: 5,
+    measureElement: (el: HTMLElement | null) => {
+      if (!el) return undefined
+      return el.getBoundingClientRect().height
+    },
+    gap: 8
+  }))
+)
+
 function scrollToBottom() {
   nextTick(() => {
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTo({
-        top: messagesContainer.value.scrollHeight,
-        behavior: 'smooth'
-      })
-    }
+    if (messages.value.length === 0) return
+    virtualizer.value.scrollToIndex(messages.value.length - 1, {
+      align: 'end',
+      behavior: 'smooth'
+    })
   })
 }
 
 watch(
   () => messages.value.length,
-  () => scrollToBottom()
+  (newLen, oldLen) => {
+    if (newLen > oldLen) {
+      scrollToBottom()
+    }
+  }
 )
 
 watch(
   () => messages.value[messages.value.length - 1]?.content,
   () => {
     if (isLoading.value) {
-      scrollToBottom()
+      virtualizer.value.scrollToIndex(messages.value.length - 1, {
+        align: 'end',
+        behavior: 'smooth'
+      })
     }
   }
 )
@@ -469,24 +497,40 @@ function onDocumentClick(e: Event) {
         </div>
 
         <div v-else class="max-w-full sm:max-w-4xl mx-auto py-1 sm:py-6 px-2 sm:px-4">
-          <TransitionGroup name="message" tag="div" class="space-y-2 sm:space-y-6">
+          <div
+            ref="virtualizerParentRef"
+            :style="{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative'
+            }"
+          >
             <div
-              v-for="(msg, index) in messages"
-              :key="msg.id || index"
+              v-for="virtualRow in virtualizer.getVirtualItems()"
+              :key="virtualRow.key"
+              :ref="(el) => virtualizer.measureElement(el as HTMLElement | null)"
+              :data-index="virtualRow.index"
+              :style="{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`
+              }"
               :class="[
                 'rounded-xl sm:rounded-2xl px-2.5 sm:px-5 py-1.5 sm:py-3 overflow-hidden',
-                msg.role === 'user'
+                messages[virtualRow.index].role === 'user'
                   ? 'ml-auto max-w-[92%] sm:max-w-[85%] bg-gray-100 text-gray-800 message-user'
                   : 'mr-auto max-w-[96%] sm:max-w-[90%] bg-gray-50 text-gray-800 message-assistant'
               ]"
             >
-              <template v-if="msg.role === 'user'">
-                <div v-if="editingIndex === index" class="space-y-2">
+              <template v-if="messages[virtualRow.index].role === 'user'">
+                <div v-if="editingIndex === virtualRow.index" class="space-y-2">
                   <textarea
                     v-model="editingText"
                     class="w-full resize-none rounded-xl border border-gray-200 bg-white text-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300/50 min-h-[48px] max-h-[160px]"
                     rows="2"
-                    @keydown.enter.prevent="submitEditing(index)"
+                    @keydown.enter.prevent="submitEditing(virtualRow.index)"
                     @keydown.escape.prevent="cancelEditing"
                   />
                   <div class="flex items-center gap-2 justify-end">
@@ -499,7 +543,7 @@ function onDocumentClick(e: Event) {
                     <button
                       class="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 active:scale-95 transition-all"
                       :disabled="!editingText.trim()"
-                      @click="submitEditing(index)"
+                      @click="submitEditing(virtualRow.index)"
                     >
                       发送
                     </button>
@@ -507,14 +551,14 @@ function onDocumentClick(e: Event) {
                 </div>
                 <div v-else class="group">
                   <div class="whitespace-pre-wrap break-words leading-relaxed">
-                    {{ msg.content }}
+                    {{ messages[virtualRow.index].content }}
                   </div>
                   <div
-                    v-if="getMessageImages(msg.id, index).length"
+                    v-if="getMessageImages(messages[virtualRow.index].id, virtualRow.index).length"
                     class="flex gap-1.5 mt-2 flex-wrap"
                   >
                     <img
-                      v-for="img in getMessageImages(msg.id, index)"
+                      v-for="img in getMessageImages(messages[virtualRow.index].id, virtualRow.index)"
                       :key="img.id"
                       :src="img.dataUrl"
                       :alt="img.filename"
@@ -527,7 +571,7 @@ function onDocumentClick(e: Event) {
                     <button
                       class="p-1.5 sm:p-1 text-gray-400 hover:text-gray-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                       v-tooltip="'编辑消息'"
-                      @click="startEditing(index, msg.content)"
+                      @click="startEditing(virtualRow.index, messages[virtualRow.index].content)"
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -549,39 +593,39 @@ function onDocumentClick(e: Event) {
 
               <template v-else>
                 <ThinkingProcess
-                  v-if="enableThinking && getReasoningContent(msg)"
-                  :content="getReasoningContent(msg)"
-                  :is-expanded="expandedThinkingMap.get(msg.id) || false"
-                  @toggle="toggleThinkingExpand(msg.id)"
+                  v-if="enableThinking && getReasoningContent(messages[virtualRow.index])"
+                  :content="getReasoningContent(messages[virtualRow.index])"
+                  :is-expanded="expandedThinkingMap.get(messages[virtualRow.index].id) || false"
+                  @toggle="toggleThinkingExpand(messages[virtualRow.index].id)"
                 />
 
-                <div v-if="getVisibleToolInvocations(msg).length > 0" class="mb-3 space-y-2">
+                <div v-if="getVisibleToolInvocations(messages[virtualRow.index]).length > 0" class="mb-3 space-y-2">
                   <ToolInvocation
-                    v-for="invocation in getVisibleToolInvocations(msg)"
+                    v-for="invocation in getVisibleToolInvocations(messages[virtualRow.index])"
                     :key="invocation.toolCallId"
                     :invocation="invocation"
                   />
                 </div>
 
                 <div class="relative inline">
-                  <MarkdownRenderer v-if="msg.content" :content="msg.content" />
+                  <MarkdownRenderer v-if="messages[virtualRow.index].content" :content="messages[virtualRow.index].content" />
                   <span
-                    v-if="isLastMessageLoading && index === messages.length - 1"
+                    v-if="isLastMessageLoading && virtualRow.index === messages.length - 1"
                     class="inline-block w-1.5 h-4 ml-0.5 bg-blue-500 cursor-blink align-text-bottom"
                   />
                 </div>
 
                 <div
-                  v-if="msg.content"
+                  v-if="messages[virtualRow.index].content"
                   class="flex items-center gap-1 mt-1.5 sm:mt-2 pt-1.5 sm:pt-2 border-t border-gray-100 sm:border-gray-200"
                 >
                   <button
                     class="p-1.5 sm:p-1 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                     v-tooltip="'复制'"
-                    @click="copyMessage(msg.content, msg.id)"
+                    @click="copyMessage(messages[virtualRow.index].content, messages[virtualRow.index].id)"
                   >
                     <svg
-                      v-if="copiedMessageId !== msg.id"
+                      v-if="copiedMessageId !== messages[virtualRow.index].id"
                       xmlns="http://www.w3.org/2000/svg"
                       viewBox="0 0 24 24"
                       fill="none"
@@ -633,7 +677,7 @@ function onDocumentClick(e: Event) {
                 </div>
               </template>
             </div>
-          </TransitionGroup>
+          </div>
         </div>
       </main>
 
@@ -673,20 +717,5 @@ function onDocumentClick(e: Event) {
 .dropdown-fade-leave-to {
   opacity: 0;
   transform: scaleY(0.9) translateY(-4px);
-}
-
-.message-enter-active {
-  transition: all 0.3s ease-out;
-}
-.message-leave-active {
-  transition: all 0.15s ease-in;
-}
-.message-enter-from {
-  opacity: 0;
-  transform: translateY(12px);
-}
-.message-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
 }
 </style>
