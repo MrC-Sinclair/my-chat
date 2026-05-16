@@ -31,10 +31,14 @@ const props = defineProps<{
 
 const containerRef = ref<HTMLElement | null>(null)
 
-const htmlContent = computed(() => renderMarkdown(props.content))
+const htmlContent = ref(renderMarkdown(props.content))
 
 const mountedApps = new Map<HTMLElement, VueApp>()
 
+const codeBlockCache = new Map<string, { wrapper: HTMLElement; app: VueApp }>()
+
+let rafId: number | null = null
+let lastRenderedContent = props.content
 let contentStableTimer: ReturnType<typeof setTimeout> | null = null
 
 function cleanupMountedApps() {
@@ -54,12 +58,34 @@ function cleanupMountedApps() {
   keysToDelete.forEach((key) => mountedApps.delete(key))
 }
 
+function saveCodeBlocks() {
+  codeBlockCache.clear()
+  if (!containerRef.value) return
+
+  const wrappers = containerRef.value.querySelectorAll('[data-vue-mounted]')
+  wrappers.forEach((w) => {
+    const el = w as HTMLElement
+    const codeEl = el.querySelector('code')
+    if (!codeEl) return
+    const code = codeEl.textContent || ''
+    const lang = el.dataset.language || ''
+    const key = `${lang}::${code}`
+    const app = mountedApps.get(el)
+    if (app) {
+      codeBlockCache.set(key, { wrapper: el, app })
+      mountedApps.delete(el)
+    }
+  })
+}
+
 function renderCodeBlocks(renderMermaid = true) {
   if (!containerRef.value) return
 
   cleanupMountedApps()
 
   const preElements = containerRef.value.querySelectorAll('pre > code')
+  const reusedKeys = new Set<string>()
+
   preElements.forEach((codeEl) => {
     const preEl = codeEl.parentElement
     if (!preEl) return
@@ -70,9 +96,27 @@ function renderCodeBlocks(renderMermaid = true) {
         ?.replace('language-', '') || ''
 
     const codeText = codeEl.textContent || ''
+    const key = `${language}::${codeText}`
+
+    const cached = codeBlockCache.get(key)
+    if (cached && !cached.wrapper.contains(preEl)) {
+      preEl.replaceWith(cached.wrapper)
+      mountedApps.set(cached.wrapper, cached.app)
+      reusedKeys.add(key)
+      return
+    }
+    if (cached) {
+      codeBlockCache.delete(key)
+      try {
+        cached.app.unmount()
+      } catch {
+        /* 已销毁的实例忽略 */
+      }
+    }
 
     const wrapper = document.createElement('div')
     wrapper.setAttribute('data-vue-mounted', 'true')
+    wrapper.dataset.language = language
     preEl.replaceWith(wrapper)
 
     if (language === 'mermaid') {
@@ -90,6 +134,17 @@ function renderCodeBlocks(renderMermaid = true) {
       mountedApps.set(wrapper, app)
     }
   })
+
+  for (const [key, { app }] of codeBlockCache) {
+    if (!reusedKeys.has(key)) {
+      try {
+        app.unmount()
+      } catch {
+        /* 已销毁的实例忽略 */
+      }
+    }
+  }
+  codeBlockCache.clear()
 }
 
 function renderPendingMermaidBlocks() {
@@ -105,30 +160,60 @@ function renderPendingMermaidBlocks() {
   })
 }
 
-watch(
-  () => props.content,
-  () => {
-    if (contentStableTimer) {
-      clearTimeout(contentStableTimer)
-    }
+function doRender() {
+  if (props.content === lastRenderedContent) return
+  lastRenderedContent = props.content
 
-    nextTick(() => {
+  saveCodeBlocks()
+
+  htmlContent.value = renderMarkdown(props.content)
+
+  nextTick(() => {
+    try {
       if (containerRef.value) {
         renderCodeBlocks(false)
         renderTables()
         renderImages()
         renderMath(containerRef.value)
       }
-    })
+    } catch (e) {
+      console.error('MarkdownRenderer 后处理渲染失败:', e)
+    }
+  })
+}
 
-    contentStableTimer = setTimeout(() => {
-      contentStableTimer = null
-      nextTick(() => {
-        renderPendingMermaidBlocks()
-      })
-    }, 1500)
+function scheduleRender() {
+  if (rafId !== null) return
+  rafId = requestAnimationFrame(() => {
+    rafId = null
+    try {
+      doRender()
+    } catch (e) {
+      console.error('MarkdownRenderer 调度渲染失败:', e)
+    }
+  })
+}
+
+watch(
+  () => props.content,
+  () => {
+    try {
+      if (contentStableTimer) {
+        clearTimeout(contentStableTimer)
+      }
+
+      scheduleRender()
+
+      contentStableTimer = setTimeout(() => {
+        contentStableTimer = null
+        nextTick(() => {
+          renderPendingMermaidBlocks()
+        })
+      }, 1500)
+    } catch (e) {
+      console.error('MarkdownRenderer watch 回调失败:', e)
+    }
   },
-  { immediate: true }
 )
 
 onMounted(() => {
@@ -141,6 +226,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
   if (contentStableTimer) {
     clearTimeout(contentStableTimer)
   }
@@ -152,6 +241,7 @@ onUnmounted(() => {
     }
   }
   mountedApps.clear()
+  codeBlockCache.clear()
 })
 
 /** 放大查看的图片 URL */

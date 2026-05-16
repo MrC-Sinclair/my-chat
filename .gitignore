@@ -7,5 +7,5 @@ coverage/
 test-results/
 playwright-report/
 drizzle/
-
+auto-imports.d.ts
 .env
