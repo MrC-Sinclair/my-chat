@@ -42,3 +42,7 @@ TodoWrite 标记 `completed` 前，必须已经实际执行了对应操作并验
 
 - 工具说文件不存在 → 用 `Test-Path` 再确认
 - 命令输出看似成功 → 检查退出码是否为 0
+
+## OpenSpec 上下文规则
+本规则已同步 openspec/project.md。当使用 openspec-propose/apply 等 skill 时，
+如需具体规范，请主动请求用户 @openspec/specs/ 下的相关文件。
