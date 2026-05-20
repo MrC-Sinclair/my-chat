@@ -146,8 +146,6 @@ watch(isLoading, (loading) => {
   localIsLoading.value = loading
 })
 
-watch(messages, (_newMessages) => {}, { deep: true })
-
 const isLastMessageLoading = computed(() => {
   return localIsLoading.value === true
 })
