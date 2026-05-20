@@ -11,15 +11,13 @@
   渲染流程：
     AI 回复文本
       ↓ renderMarkdown()  → 基础 HTML（含占位符）
-      ↓ v-html 渲染       → DOM 树
-      ↓ renderCodeBlocks() → 将 <pre><code> 替换为 CodeBlock 组件
-      ↓ renderMath()       → 将数学占位符替换为 KaTeX 渲染结果
+      ↓ parseSegments()   → 拆分为片段数组（文本 / 代码块 / Mermaid）
+      ↓ 声明式渲染         → Vue 组件树（CodeBlock / MermaidBlock / v-html）
 
   Props：
     - content: AI 回复的 Markdown 原始文本
 -->
 <script setup lang="ts">
-import { createApp, type App as VueApp } from 'vue'
 import { renderMarkdown } from '~/utils/markdown'
 import { renderMath } from '~/utils/katex'
 import CodeBlock from './CodeBlock.vue'
@@ -31,147 +29,125 @@ const props = defineProps<{
 
 const containerRef = ref<HTMLElement | null>(null)
 
-const htmlContent = ref(renderMarkdown(props.content))
+/** 渲染片段类型 */
+interface TextSegment {
+  type: 'text'
+  html: string
+}
 
-const mountedApps = new Map<HTMLElement, VueApp>()
+interface CodeSegment {
+  type: 'code'
+  language: string
+  code: string
+}
 
-const codeBlockCache = new Map<string, { wrapper: HTMLElement; app: VueApp }>()
+interface MermaidSegment {
+  type: 'mermaid'
+  source: string
+}
+
+type Segment = TextSegment | CodeSegment | MermaidSegment
+
+/**
+ * 将 Markdown HTML 拆分为片段数组
+ *
+ * 策略：先渲染完整 HTML，然后提取所有 <pre> 代码块，
+ * 将 HTML 拆分为"文本段"和"代码段"交替的数组。
+ * 代码段使用声明式 Vue 组件渲染，避免 createApp 的重复创建开销。
+ */
+function parseSegments(html: string): Segment[] {
+  const segments: Segment[] = []
+
+  // 统一用一次遍历处理所有代码块
+  const allBlocks: { start: number; end: number; lang: string; code: string }[] = []
+
+  // 匹配所有 <pre><code> 块
+  const preCodeRegex = /<pre><code(?: class="language-(\w+)")?>([\s\S]*?)<\/code><\/pre>/g
+  let match: RegExpExecArray | null
+
+  while ((match = preCodeRegex.exec(html)) !== null) {
+    const lang = match[1] || ''
+    const codeHtml = match[2]
+    // HTML 实体解码
+    const code = decodeHtml(codeHtml)
+    allBlocks.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      lang,
+      code
+    })
+  }
+
+  let lastEnd = 0
+  for (const block of allBlocks) {
+    // 代码块之前的文本
+    if (block.start > lastEnd) {
+      const textHtml = html.slice(lastEnd, block.start)
+      if (textHtml.trim()) {
+        segments.push({ type: 'text', html: textHtml })
+      }
+    }
+
+    if (block.lang === 'mermaid') {
+      segments.push({ type: 'mermaid', source: block.code })
+    } else {
+      segments.push({ type: 'code', language: block.lang, code: block.code })
+    }
+
+    lastEnd = block.end
+  }
+
+  // 最后一段文本
+  if (lastEnd < html.length) {
+    const textHtml = html.slice(lastEnd)
+    if (textHtml.trim()) {
+      segments.push({ type: 'text', html: textHtml })
+    }
+  }
+
+  // 如果没有代码块，整段作为文本
+  if (segments.length === 0 && html.trim()) {
+    segments.push({ type: 'text', html })
+  }
+
+  return segments
+}
+
+/** 解码 HTML 实体 */
+function decodeHtml(html: string): string {
+  return html
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/')
+}
+
+/** 使用 shallowRef 避免对大型 HTML 字符串做深层响应式追踪 */
+const segments = shallowRef<Segment[]>([])
+
+/** 是否正在流式输出（内容稳定后设为 false，Mermaid 延迟到稳定后再渲染） */
+const isStreaming = ref(false)
 
 let rafId: number | null = null
 let lastRenderedContent = props.content
 let contentStableTimer: ReturnType<typeof setTimeout> | null = null
 
-function cleanupMountedApps() {
-  if (!containerRef.value) return
-  const currentWrappers = new Set(containerRef.value.querySelectorAll('[data-vue-mounted]'))
-  const keysToDelete: HTMLElement[] = []
-  for (const [wrapper, app] of mountedApps) {
-    if (!currentWrappers.has(wrapper) || !document.contains(wrapper)) {
-      try {
-        app.unmount()
-      } catch {
-        /* 已销毁的实例忽略 */
-      }
-      keysToDelete.push(wrapper)
-    }
-  }
-  keysToDelete.forEach((key) => mountedApps.delete(key))
-}
-
-function saveCodeBlocks() {
-  codeBlockCache.clear()
-  if (!containerRef.value) return
-
-  const wrappers = containerRef.value.querySelectorAll('[data-vue-mounted]')
-  wrappers.forEach((w) => {
-    const el = w as HTMLElement
-    const codeEl = el.querySelector('code')
-    if (!codeEl) return
-    const code = codeEl.textContent || ''
-    const lang = el.dataset.language || ''
-    const key = `${lang}::${code}`
-    const app = mountedApps.get(el)
-    if (app) {
-      codeBlockCache.set(key, { wrapper: el, app })
-      mountedApps.delete(el)
-    }
-  })
-}
-
-function renderCodeBlocks(renderMermaid = true) {
-  if (!containerRef.value) return
-
-  cleanupMountedApps()
-
-  const preElements = containerRef.value.querySelectorAll('pre > code')
-  const reusedKeys = new Set<string>()
-
-  preElements.forEach((codeEl) => {
-    const preEl = codeEl.parentElement
-    if (!preEl) return
-
-    const language =
-      Array.from(codeEl.classList)
-        .find((cls) => cls.startsWith('language-'))
-        ?.replace('language-', '') || ''
-
-    const codeText = codeEl.textContent || ''
-    const key = `${language}::${codeText}`
-
-    const cached = codeBlockCache.get(key)
-    if (cached && !cached.wrapper.contains(preEl)) {
-      preEl.replaceWith(cached.wrapper)
-      mountedApps.set(cached.wrapper, cached.app)
-      reusedKeys.add(key)
-      return
-    }
-    if (cached) {
-      codeBlockCache.delete(key)
-      try {
-        cached.app.unmount()
-      } catch {
-        /* 已销毁的实例忽略 */
-      }
-    }
-
-    const wrapper = document.createElement('div')
-    wrapper.setAttribute('data-vue-mounted', 'true')
-    wrapper.dataset.language = language
-    preEl.replaceWith(wrapper)
-
-    if (language === 'mermaid') {
-      if (renderMermaid) {
-        const app = createApp(MermaidBlock, { source: codeText })
-        app.mount(wrapper)
-        mountedApps.set(wrapper, app)
-      } else {
-        wrapper.setAttribute('data-mermaid-source', codeText)
-        wrapper.innerHTML = '<div class="mermaid-pending">⏳ Mermaid 图表将在输出完成后渲染…</div>'
-      }
-    } else {
-      const app = createApp(CodeBlock, { code: codeText, language })
-      app.mount(wrapper)
-      mountedApps.set(wrapper, app)
-    }
-  })
-
-  for (const [key, { app }] of codeBlockCache) {
-    if (!reusedKeys.has(key)) {
-      try {
-        app.unmount()
-      } catch {
-        /* 已销毁的实例忽略 */
-      }
-    }
-  }
-  codeBlockCache.clear()
-}
-
-function renderPendingMermaidBlocks() {
-  if (!containerRef.value) return
-  const pendingWrappers = containerRef.value.querySelectorAll('[data-mermaid-source]')
-  pendingWrappers.forEach((wrapper) => {
-    const source = wrapper.getAttribute('data-mermaid-source') || ''
-    wrapper.removeAttribute('data-mermaid-source')
-    wrapper.innerHTML = ''
-    const app = createApp(MermaidBlock, { source })
-    app.mount(wrapper)
-    mountedApps.set(wrapper as HTMLElement, app)
-  })
-}
-
 function doRender() {
   if (props.content === lastRenderedContent) return
   lastRenderedContent = props.content
 
-  saveCodeBlocks()
+  // 内容变化说明还在流式输出
+  isStreaming.value = true
 
-  htmlContent.value = renderMarkdown(props.content)
+  const html = renderMarkdown(props.content)
+  segments.value = parseSegments(html)
 
   nextTick(() => {
     try {
       if (containerRef.value) {
-        renderCodeBlocks(false)
         renderTables()
         renderImages()
         renderMath(containerRef.value)
@@ -204,10 +180,14 @@ watch(
 
       scheduleRender()
 
+      // 内容稳定后标记流式输出结束，重新渲染数学公式
       contentStableTimer = setTimeout(() => {
         contentStableTimer = null
+        isStreaming.value = false
         nextTick(() => {
-          renderPendingMermaidBlocks()
+          if (containerRef.value) {
+            renderMath(containerRef.value)
+          }
         })
       }, 1500)
     } catch (e) {
@@ -217,12 +197,7 @@ watch(
 )
 
 onMounted(() => {
-  if (containerRef.value) {
-    renderCodeBlocks(true)
-    renderTables()
-    renderImages()
-    renderMath(containerRef.value)
-  }
+  doRender()
 })
 
 onUnmounted(() => {
@@ -233,15 +208,6 @@ onUnmounted(() => {
   if (contentStableTimer) {
     clearTimeout(contentStableTimer)
   }
-  for (const [, app] of mountedApps) {
-    try {
-      app.unmount()
-    } catch {
-      /* 已销毁的实例忽略 */
-    }
-  }
-  mountedApps.clear()
-  codeBlockCache.clear()
 })
 
 /** 放大查看的图片 URL */
@@ -258,14 +224,7 @@ function closeLightbox() {
 }
 
 /**
- * 为容器内的 <img> 标签添加容错处理和点击放大
- *
- * 由于内容通过 v-html 渲染，无法使用 Vue 的事件绑定，
- * 需要在 DOM 更新后手动为图片添加事件监听器。
- *
- * 处理内容：
- *   1. onerror — 图片加载失败时替换为友好提示
- *   2. onclick — 点击图片打开放大查看
+ * 为容器内的 <table> 添加滚动包装
  */
 function renderTables() {
   if (!containerRef.value) return
@@ -320,13 +279,17 @@ function renderImages() {
 </script>
 
 <template>
-  <!--
-    渲染容器：
-    - v-html 将 Markdown 转换的 HTML 插入 DOM
-    - prose 类来自 Tailwind Typography 插件，提供排版美化
-    - ref="containerRef" 用于获取 DOM 引用进行后处理
-  -->
-  <div ref="containerRef" class="markdown-body prose prose-sm max-w-none" v-html="htmlContent" />
+  <div ref="containerRef" class="markdown-body prose prose-sm max-w-none">
+    <template v-for="(seg, i) in segments" :key="i">
+      <!-- 文本片段：v-html 渲染（含公式占位符、表格、图片等） -->
+      <div v-if="seg.type === 'text'" v-html="seg.html" />
+      <!-- 代码块：声明式组件，Vue 自动管理生命周期 -->
+      <CodeBlock v-else-if="seg.type === 'code'" :code="seg.code" :language="seg.language" />
+      <!-- Mermaid 图表：流式输出期间显示占位符，稳定后再渲染 -->
+      <div v-else-if="seg.type === 'mermaid' && isStreaming" class="mermaid-pending">⏳ Mermaid 图表将在输出完成后渲染…</div>
+      <MermaidBlock v-else-if="seg.type === 'mermaid'" :source="seg.source" />
+    </template>
+  </div>
 
   <Teleport to="body">
     <Transition name="fade">
@@ -531,16 +494,5 @@ function renderImages() {
 /** 行内公式字体略大 */
 .markdown-body .katex {
   font-size: 1.05em;
-}
-
-.markdown-body .mermaid-pending {
-  padding: 16px;
-  text-align: center;
-  color: #9ca3af;
-  font-size: 0.85em;
-  border: 1px dashed #e5e7eb;
-  border-radius: 8px;
-  margin: 1em 0;
-  animation: pulse 1.5s ease-in-out infinite;
 }
 </style>

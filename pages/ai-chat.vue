@@ -517,6 +517,7 @@ function onDocumentClick(e: Event) {
                 width: '100%',
                 transform: `translateY(${virtualRow.start}px)`
               }"
+              v-memo="[messages[virtualRow.index]?.id, messages[virtualRow.index]?.content, messages[virtualRow.index]?.role, editingIndex === virtualRow.index, copiedMessageId === messages[virtualRow.index]?.id, isLastMessageLoading && virtualRow.index === messages.length - 1, expandedThinkingMap.get(messages[virtualRow.index]?.id) || false]"
               :class="[
                 'rounded-xl sm:rounded-2xl px-2.5 sm:px-5 py-1.5 sm:py-3 overflow-hidden',
                 messages[virtualRow.index].role === 'user'

@@ -72,10 +72,26 @@ const mathInlineRegex = /(?<!\$)\$(?!\$)([^\n]+?)(?<!\$)\$(?!\$)/g
 export function renderMarkdown(rawText: string, options?: MarkdownOptions): string {
   const opts = { ...defaultOptions, ...options }
 
+  /** 存储提取出的代码块，防止代码块内的 $$ 被误提取为公式 */
+  const codeBlocks: string[] = []
   /** 存储提取出的块级公式，下标对应占位符中的编号 */
   const mathBlocks: string[] = []
   /** 存储提取出的行内公式 */
   const mathInlines: string[] = []
+
+  /**
+   * 第零步：提取围栏代码块，用占位符替换
+   *
+   * 代码块内的 $$ 或 $ 不应被当作公式提取。
+   * 例如 ```latex\n$$E=mc^2$$\n``` 中的 $$ 是代码内容，不是公式定界符。
+   * 在 marked 解析前恢复代码块，不影响 Markdown 解析。
+   */
+  const fencedCodeRegex = /^(`{3,}|~{3,})(\w*)\n([\s\S]*?)\n\1$/gm
+  let processedText = rawText.replace(fencedCodeRegex, (_, fence, _lang, code) => {
+    const index = codeBlocks.length
+    codeBlocks.push(`${fence}${_lang}\n${code}\n${fence}`)
+    return `%%CODEBLOCK${index}%%`
+  })
 
   /**
    * 第一步：提取块级公式，用占位符替换
@@ -83,7 +99,7 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
    * $$E=mc^2$$ → \n%%MATHBLOCK0%%\n
    * 前后加换行是为了让 marked 将占位符识别为独立段落
    */
-  let processedText = rawText.replace(mathBlockRegex, (_, formula) => {
+  processedText = processedText.replace(mathBlockRegex, (_, formula) => {
     const index = mathBlocks.length
     mathBlocks.push(formula.trim())
     return `\n%%MATHBLOCK${index}%%\n`
@@ -98,6 +114,12 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
     const index = mathInlines.length
     mathInlines.push(formula.trim())
     return `%%MATHINLINE${index}%%`
+  })
+
+  /** 恢复代码块占位符，让 marked 正确解析代码块 */
+  codeBlocks.forEach((block, index) => {
+    // 必须用函数替换，不能用字符串：字符串替换中 $$ 会被解释为单个 $
+    processedText = processedText.replace(`%%CODEBLOCK${index}%%`, () => block)
   })
 
   /**
