@@ -1,0 +1,6 @@
+schema: spec-driven
+
+name: add-voice-input
+description: 在 ChatInput 发送按钮左侧添加语音输入按钮，使用浏览器 Web Speech API 实现语音识别输入
+created: 2026-05-22
+status: proposed
