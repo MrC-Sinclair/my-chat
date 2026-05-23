@@ -7,13 +7,15 @@
 使用浏览器内置的 `SpeechRecognition`（Chrome/Edge）或 `webkitSpeechRecognition`（Safari），**不引入任何第三方库**。
 
 ```ts
-// 兼容性检测
-const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition
+// 兼容性检测（注意 TypeScript 中需要 as any 绕过类型检查）
+const SpeechRecognitionAPI =
+  (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
 ```
 
+- **支持**：Chrome、Edge、Safari 15+（含 iOS）、Android WebView
 - **不支持**：Firefox（`SpeechRecognition` 不可用，按钮隐藏）
 - **语言**：`zh-CN`（中文识别）
-- **模式**：`interimResults: true`（实时显示部分结果），非连续模式（说完自动停止）
+- **模式**：`interimResults: true`（实时识别），`continuous: false`（说完自动停止）
 
 ### 为什么不用第三方服务
 
@@ -34,22 +36,32 @@ const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechReco
 ### 状态机
 
 ```
-         idle ──点击(不支持)→ 隐藏
-          │
-          └──点击(支持)──→ recording（红色脉冲动画）
-                              │
-                              ├── 再次点击 → idle（停止录音）
-                              ├── 识别结束 → idle（自动停止）
-                              └── 识别错误 → idle + toast.error
+         idle ──点击──→ recording（红色脉冲动画）
+                            │
+                            ├── 再次点击 → idle（手动停止录音）
+                            ├── 识别结束 → idle（自动停止，追加文字）
+                            └── 识别错误 → idle + emit('speechError')
 ```
+
+不支持 SpeechRecognition 的浏览器中 `speechSupported = false`，按钮不渲染。
 
 ### Props / Emits 变更
 
-不改动现有 Props 和 Emits 接口。语音按钮通过 `inputValue` computed 直接修改输入文本：
+不改动现有 Props 和 Emits 接口。语音按钮通过 `inputValue` computed 直接修改输入文本。仅追加 `isFinal === true` 的识别结果，避免 interim 中间结果重复追加：
 
 ```ts
-// 追加识别文字到输入框末尾
-inputValue.value = (inputValue.value + ' ' + transcript).trim()
+// onresult 中只追加 final 结果，忽略 interim
+recognition.onresult = (event: SpeechRecognitionEvent) => {
+  let finalTranscript = ''
+  for (let i = event.resultIndex; i < event.results.length; i++) {
+    if (event.results[i].isFinal) {
+      finalTranscript += event.results[i][0].transcript
+    }
+  }
+  if (finalTranscript) {
+    inputValue.value = (inputValue.value + ' ' + finalTranscript).trim()
+  }
+}
 ```
 
 ## 模板变更
@@ -61,14 +73,17 @@ inputValue.value = (inputValue.value + ' ' + transcript).trim()
 <button
   v-if="speechSupported"
   type="button"
-  v-tooltip="isRecording ? '点击停止录音' : '语音输入'"
-  class="shrink-0 min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-200 active:scale-95"
+  :disabled="isLoading"
+  v-tooltip="isLoading ? '' : isRecording ? '点击停止录音' : '语音输入'"
+  class="shrink-0 relative min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-200 active:scale-95"
   :class="isRecording
     ? 'text-red-500 bg-red-50 hover:bg-red-100'
-    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'"
+    : isLoading
+      ? 'text-gray-300 cursor-not-allowed'
+      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'"
   @click="toggleSpeechRecognition"
 >
-  <!-- 脉冲动画圆环（录音中） -->
+  <!-- 脉冲动画圆环（录音中），依赖按钮 relative 定位 -->
   <span
     v-if="isRecording"
     class="absolute inset-1 rounded-full border-2 border-red-400 animate-ping opacity-30"
@@ -78,9 +93,21 @@ inputValue.value = (inputValue.value + ' ' + transcript).trim()
 </button>
 ```
 
-### 录音状态动画
+### isLoading 时语音按钮行为
 
-使用 Tailwind `animate-ping` 实现红色脉冲圆环，表明正在录音。
+AI 回复期间（`isLoading = true`）发送按钮被替换为停止按钮，此时语音输入无意义。语音按钮在 `isLoading` 时 `disabled`、灰色不可点击。
+
+### 实例生命周期管理
+
+每次点击创建新的 `SpeechRecognition` 实例，存储在 `recognitionRef` 中。录音结束或组件卸载时必须清理：
+
+```ts
+const recognitionRef = ref<SpeechRecognition | null>(null)
+
+onUnmounted(() => {
+  recognitionRef.value?.abort()
+})
+```
 
 ## 响应式适配
 
