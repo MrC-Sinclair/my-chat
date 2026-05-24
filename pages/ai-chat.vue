@@ -690,6 +690,7 @@ function onDocumentClick(e: Event) {
         :current-capabilities="currentCapabilities"
         @submit="wrappedHandleSubmit"
         @stop="stop"
+        @speech-error="(msg: string) => toast.error(msg)"
       />
     </div>
   </div>

@@ -24,6 +24,7 @@ const emit = defineEmits<{
   'update:enableThinking': [value: boolean]
   'update:enableWebSearch': [value: boolean]
   'update:images': [images: UploadedImage[]]
+  speechError: [message: string]
 }>()
 
 const inputValue = computed({
@@ -107,6 +108,70 @@ function removeImage(id: string) {
     'update:images',
     props.images.filter((img) => img.id !== id)
   )
+}
+
+// ===== 语音识别 =====
+const speechSupported = ref(false)
+const isRecording = ref(false)
+const recognitionRef = ref<any>(null)
+
+onMounted(() => {
+  const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  speechSupported.value = !!SpeechRecognitionAPI
+})
+
+onUnmounted(() => {
+  recognitionRef.value?.abort()
+  recognitionRef.value = null
+})
+
+function toggleSpeechRecognition() {
+  if (props.isLoading) return
+
+  if (isRecording.value && recognitionRef.value) {
+    // 手动停止录音
+    recognitionRef.value.stop()
+    return
+  }
+
+  const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  if (!SpeechRecognitionAPI) return
+
+  const recognition = new SpeechRecognitionAPI()
+  recognition.lang = 'zh-CN'
+  recognition.interimResults = true
+  recognition.continuous = false
+
+  recognition.onresult = (event: any) => {
+    let finalTranscript = ''
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript
+      }
+    }
+    if (finalTranscript) {
+      inputValue.value = (inputValue.value + ' ' + finalTranscript).trim()
+    }
+  }
+
+  recognition.onerror = (event: any) => {
+    isRecording.value = false
+    recognitionRef.value = null
+    if (event.error === 'not-allowed') {
+      emit('speechError', '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问')
+    } else if (event.error !== 'aborted') {
+      emit('speechError', '语音识别出错，请重试')
+    }
+  }
+
+  recognition.onend = () => {
+    isRecording.value = false
+    recognitionRef.value = null
+  }
+
+  recognitionRef.value = recognition
+  isRecording.value = true
+  recognition.start()
 }
 </script>
 
@@ -195,6 +260,40 @@ function removeImage(id: string) {
             @compositionend="handleCompositionEnd"
           />
         </div>
+
+        <!-- 语音输入按钮 -->
+        <button
+          v-if="speechSupported"
+          type="button"
+          :disabled="isLoading"
+          v-tooltip="isLoading ? '' : isRecording ? '点击停止录音' : '语音输入'"
+          class="shrink-0 relative min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-200 active:scale-95"
+          :class="isRecording
+            ? 'text-red-500 bg-red-50 hover:bg-red-100'
+            : isLoading
+              ? 'text-gray-300 cursor-not-allowed'
+              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'"
+          @click="toggleSpeechRecognition"
+        >
+          <span
+            v-if="isRecording"
+            class="absolute inset-1 rounded-full border-2 border-red-400 animate-ping opacity-30"
+          />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="w-5 h-5 sm:w-4 sm:h-4 relative z-10"
+          >
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="22" />
+          </svg>
+        </button>
 
         <button
           v-if="!isLoading"
