@@ -49,7 +49,7 @@ function getContainer(wrapper: VueWrapper): HTMLElement {
 }
 
 function getMountedElements(wrapper: VueWrapper): Element[] {
-  return Array.from(getContainer(wrapper).querySelectorAll('[data-vue-mounted]'))
+  return Array.from(getContainer(wrapper).querySelectorAll('.code-block-wrapper'))
 }
 
 /** 模拟 AI 流式输出：逐步追加字符 */
@@ -232,8 +232,9 @@ describe('问题2: CodeBlock 实例复用', () => {
     await flushRafAndTick()
 
     const afterEl = getMountedElements(wrapper)[0]
-    // 内容变了 → 新实例 → 新 DOM 元素
-    expect(afterEl).not.toBe(beforeEl)
+    // 声明式渲染下 Vue 复用 DOM 元素，但内容已更新为新值
+    expect(afterEl).toBe(beforeEl)
+    expect(afterEl.querySelector('code')?.textContent).toContain('v2')
   })
 })
 

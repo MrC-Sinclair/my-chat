@@ -66,7 +66,7 @@ test.describe('流式渲染性能', () => {
     await page.waitForSelector('button[data-testid="send-btn"]', { timeout: 30000 })
     await page.waitForTimeout(500)
 
-    const codeBlockElements = page.locator('.markdown-body [data-vue-mounted]')
+    const codeBlockElements = page.locator('.markdown-body .code-block-wrapper')
     const count = await codeBlockElements.count()
     expect(count).toBeGreaterThanOrEqual(1)
   })

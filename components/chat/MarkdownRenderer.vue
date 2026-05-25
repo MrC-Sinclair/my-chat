@@ -132,7 +132,8 @@ const segments = shallowRef<Segment[]>([])
 const isStreaming = ref(false)
 
 let rafId: number | null = null
-let lastRenderedContent = props.content
+/** 初始化为 null 确保 onMounted 中首次 doRender 不会被跳过 */
+let lastRenderedContent: string | null = null
 let contentStableTimer: ReturnType<typeof setTimeout> | null = null
 
 function doRender() {
@@ -196,6 +197,9 @@ watch(
   },
 )
 
+// 在 setup 阶段预初始化 segments，确保初次渲染即包含内容
+doRender()
+
 onMounted(() => {
   doRender()
 })
@@ -207,6 +211,7 @@ onUnmounted(() => {
   }
   if (contentStableTimer) {
     clearTimeout(contentStableTimer)
+    contentStableTimer = null
   }
 })
 

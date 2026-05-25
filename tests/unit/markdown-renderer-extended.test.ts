@@ -1,9 +1,13 @@
 /**
  * MarkdownRenderer 内存泄漏 + SSR 水合 + 压力测试
  *
- * 测试8: 内存泄漏 — mountedApps/codeBlockCache 在组件卸载后被释放
+ * 测试8: 内存泄漏 — segments/RAF 在组件卸载后被释放
  * 测试11: SSR 水合 — requestAnimationFrame 在 SSR 环境下不报错
  * 测试12: 压力测试 — 大量代码块 + 高频更新下渲染可控
+ *
+ * 注意：MarkdownRenderer 已从 createApp 动态挂载重构为
+ * parseSegments + 声明式 <CodeBlock> 渲染，代码块 DOM 元素
+ * 的类名为 .code-block-wrapper（不再使用 data-vue-mounted）。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -42,6 +46,11 @@ function getContainer(wrapper: VueWrapper): HTMLElement {
   return wrapper.find('.markdown-body').element as HTMLElement
 }
 
+/** 获取声明式渲染的代码块 wrapper DOM 元素 */
+function getCodeBlockWrappers(wrapper: VueWrapper): Element[] {
+  return Array.from(getContainer(wrapper).querySelectorAll('.code-block-wrapper'))
+}
+
 function generateLongContent(codeBlockCount: number, extraText: string): string {
   const parts: string[] = [extraText]
   for (let i = 0; i < codeBlockCount; i++) {
@@ -57,23 +66,21 @@ describe('测试8: 内存泄漏', () => {
   beforeEach(setupRafMock)
   afterEach(restoreRafMock)
 
-  it('组件卸载后 mountedApps 应被清空', async () => {
+  it('组件卸载后 segments 应被清空', async () => {
     const wrapper = mount(MarkdownRenderer, {
       props: { content: '```js\nconst x = 1;\n```' }
     })
 
-    const container = getContainer(wrapper)
-    expect(container.querySelectorAll('[data-vue-mounted]').length).toBe(1)
-
-    const component = wrapper.vm as any
-    expect(component.mountedApps.size).toBe(1)
+    const wrappers = getCodeBlockWrappers(wrapper)
+    expect(wrappers.length).toBe(1)
 
     wrapper.unmount()
 
-    expect(component.mountedApps.size).toBe(0)
+    // 卸载后 document 中不应残留 .code-block-wrapper 元素
+    expect(document.querySelectorAll('.code-block-wrapper').length).toBe(0)
   })
 
-  it('组件卸载后 codeBlockCache 应被清空', async () => {
+  it('组件卸载后 contentStableTimer 应被清除', async () => {
     const wrapper = mount(MarkdownRenderer, {
       props: { content: '```js\nconst x = 1;\n```' }
     })
@@ -81,11 +88,13 @@ describe('测试8: 内存泄漏', () => {
     const component = wrapper.vm as any
 
     await wrapper.setProps({ content: '```js\nconst x = 1;\n```\n追加文字' })
-    await flushRafAndTick()
+    // 触发 watch → scheduleRender → setTimeout(contentStableTimer)
+    expect(component.contentStableTimer).toBeTruthy()
 
     wrapper.unmount()
 
-    expect(component.codeBlockCache.size).toBe(0)
+    // 卸载后 contentStableTimer 应被清除
+    expect(component.contentStableTimer).toBeNull()
   })
 
   it('组件卸载后 RAF 定时器应被取消', async () => {
@@ -109,13 +118,13 @@ describe('测试8: 内存泄漏', () => {
       const wrapper = mount(MarkdownRenderer, {
         props: { content }
       })
-      const container = getContainer(wrapper)
-      expect(container.querySelectorAll('[data-vue-mounted]').length).toBe(1)
+      const wrappers = getCodeBlockWrappers(wrapper)
+      expect(wrappers.length).toBe(1)
       wrapper.unmount()
     }
 
     // 如果没有内存泄漏，5 次循环后不应有残留 DOM
-    expect(document.querySelectorAll('[data-vue-mounted]').length).toBe(0)
+    expect(document.querySelectorAll('.code-block-wrapper').length).toBe(0)
   })
 })
 
@@ -143,30 +152,30 @@ describe('测试11: SSR 水合兼容性', () => {
     window.cancelAnimationFrame = originalCAF
   })
 
-  it('htmlContent 初始值与 SSR 渲染结果一致', () => {
+  it('segments 在组件挂载后应正确填充', () => {
     const wrapper = mount(MarkdownRenderer, {
       props: { content: '# 标题\n\n段落文字' }
     })
 
     const component = wrapper.vm as any
-    const container = getContainer(wrapper)
+    // segments 应包含至少一个 text 类型的片段
+    expect(component.segments.length).toBeGreaterThanOrEqual(1)
+    expect(component.segments[0].type).toBe('text')
 
-    // SSR 输出的 HTML 应与 htmlContent 一致
-    expect(container.innerHTML).toContain('标题')
-    expect(container.innerHTML).toContain('段落文字')
-    expect(component.htmlContent).toBeDefined()
+    const container = getContainer(wrapper)
+    expect(container.textContent).toContain('标题')
+    expect(container.textContent).toContain('段落文字')
   })
 
-  it('onMounted 中的后处理函数不应在 SSR 阶段执行', () => {
+  it('onMounted 中 doRender 应正确渲染代码块', () => {
     const wrapper = mount(MarkdownRenderer, {
       props: { content: '```js\nconst x = 1;\n```' }
     })
 
-    const container = getContainer(wrapper)
-    const mountedElements = container.querySelectorAll('[data-vue-mounted]')
+    const wrappers = getCodeBlockWrappers(wrapper)
 
-    // onMounted 在客户端执行，代码块应被渲染
-    expect(mountedElements.length).toBe(1)
+    // onMounted 在客户端执行，代码块应被渲染为 .code-block-wrapper
+    expect(wrappers.length).toBe(1)
   })
 })
 
@@ -183,7 +192,7 @@ describe('测试12: 压力测试（长文本+多代码块）', () => {
       props: { content: baseContent }
     })
 
-    const originalEls = Array.from(getContainer(wrapper).querySelectorAll('[data-vue-mounted]'))
+    const originalEls = getCodeBlockWrappers(wrapper)
     expect(originalEls.length).toBe(10)
 
     for (let i = 0; i < 100; i++) {
@@ -193,7 +202,7 @@ describe('测试12: 压力测试（长文本+多代码块）', () => {
     }
     await flushRafAndTick()
 
-    const finalEls = Array.from(getContainer(wrapper).querySelectorAll('[data-vue-mounted]'))
+    const finalEls = getCodeBlockWrappers(wrapper)
     expect(finalEls.length).toBe(10)
 
     for (let i = 0; i < 10; i++) {
@@ -259,8 +268,10 @@ describe('测试12: 压力测试（长文本+多代码块）', () => {
       props: { content }
     })
 
+    const wrappers = getCodeBlockWrappers(wrapper)
+    expect(wrappers.length).toBe(10)
+
     const container = getContainer(wrapper)
-    expect(container.querySelectorAll('[data-vue-mounted]').length).toBe(10)
     expect(container.querySelectorAll('.math-inline').length).toBeGreaterThanOrEqual(20)
   })
 })

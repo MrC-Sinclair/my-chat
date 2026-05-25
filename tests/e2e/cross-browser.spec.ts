@@ -53,13 +53,13 @@ test.describe('跨浏览器兼容性', () => {
 
     await page.waitForFunction(
       () => {
-        const els = document.querySelectorAll('[data-vue-mounted]')
+        const els = document.querySelectorAll('.code-block-wrapper')
         return els.length >= 1
       },
       { timeout: 30000 }
     )
 
-    const codeBlock = page.locator('.markdown-body [data-vue-mounted]').first()
+    const codeBlock = page.locator('.markdown-body .code-block-wrapper').first()
     await expect(codeBlock).toBeVisible()
   })
 

@@ -231,9 +231,8 @@ const virtualizer = useVirtualizer(
       return 220
     },
     overscan: 5,
-    measureElement: (el: HTMLElement | null) => {
-      if (!el) return undefined
-      return el.getBoundingClientRect().height
+    measureElement: (element: Element) => {
+      return element.getBoundingClientRect().height
     },
     gap: 8
   }))
@@ -505,8 +504,12 @@ function onDocumentClick(e: Event) {
           >
             <div
               v-for="virtualRow in virtualizer.getVirtualItems()"
-              :key="virtualRow.key"
-              :ref="(el) => virtualizer.measureElement(el as HTMLElement | null)"
+              :key="String(virtualRow.key)"
+              :ref="
+                (el) => {
+                  if (el) virtualizer.measureElement(el as Element)
+                }
+              "
               :data-index="virtualRow.index"
               :style="{
                 position: 'absolute',
@@ -515,7 +518,15 @@ function onDocumentClick(e: Event) {
                 width: '100%',
                 transform: `translateY(${virtualRow.start}px)`
               }"
-              v-memo="[messages[virtualRow.index]?.id, messages[virtualRow.index]?.content, messages[virtualRow.index]?.role, editingIndex === virtualRow.index, copiedMessageId === messages[virtualRow.index]?.id, isLastMessageLoading && virtualRow.index === messages.length - 1, expandedThinkingMap.get(messages[virtualRow.index]?.id) || false]"
+              v-memo="[
+                messages[virtualRow.index]?.id,
+                messages[virtualRow.index]?.content,
+                messages[virtualRow.index]?.role,
+                editingIndex === virtualRow.index,
+                copiedMessageId === messages[virtualRow.index]?.id,
+                isLastMessageLoading && virtualRow.index === messages.length - 1,
+                expandedThinkingMap.get(messages[virtualRow.index]?.id) || false
+              ]"
               :class="[
                 'rounded-xl sm:rounded-2xl px-2.5 sm:px-5 py-1.5 sm:py-3 overflow-hidden',
                 messages[virtualRow.index].role === 'user'
@@ -557,7 +568,10 @@ function onDocumentClick(e: Event) {
                     class="flex gap-1.5 mt-2 flex-wrap"
                   >
                     <img
-                      v-for="img in getMessageImages(messages[virtualRow.index].id, virtualRow.index)"
+                      v-for="img in getMessageImages(
+                        messages[virtualRow.index].id,
+                        virtualRow.index
+                      )"
                       :key="img.id"
                       :src="img.dataUrl"
                       :alt="img.filename"
@@ -598,7 +612,10 @@ function onDocumentClick(e: Event) {
                   @toggle="toggleThinkingExpand(messages[virtualRow.index].id)"
                 />
 
-                <div v-if="getVisibleToolInvocations(messages[virtualRow.index]).length > 0" class="mb-3 space-y-2">
+                <div
+                  v-if="getVisibleToolInvocations(messages[virtualRow.index]).length > 0"
+                  class="mb-3 space-y-2"
+                >
                   <ToolInvocation
                     v-for="invocation in getVisibleToolInvocations(messages[virtualRow.index])"
                     :key="invocation.toolCallId"
@@ -607,7 +624,10 @@ function onDocumentClick(e: Event) {
                 </div>
 
                 <div class="relative inline">
-                  <MarkdownRenderer v-if="messages[virtualRow.index].content" :content="messages[virtualRow.index].content" />
+                  <MarkdownRenderer
+                    v-if="messages[virtualRow.index].content"
+                    :content="messages[virtualRow.index].content"
+                  />
                   <span
                     v-if="isLastMessageLoading && virtualRow.index === messages.length - 1"
                     class="inline-block w-1.5 h-4 ml-0.5 bg-blue-500 cursor-blink align-text-bottom"
@@ -621,7 +641,9 @@ function onDocumentClick(e: Event) {
                   <button
                     class="p-1.5 sm:p-1 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                     v-tooltip="'复制'"
-                    @click="copyMessage(messages[virtualRow.index].content, messages[virtualRow.index].id)"
+                    @click="
+                      copyMessage(messages[virtualRow.index].content, messages[virtualRow.index].id)
+                    "
                   >
                     <svg
                       v-if="copiedMessageId !== messages[virtualRow.index].id"

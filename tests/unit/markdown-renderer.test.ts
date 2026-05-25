@@ -39,10 +39,10 @@ async function flushRafAndTick() {
   await nextTick()
 }
 
-/** 获取容器内的代码块 wrapper DOM 元素 */
+/** 获取容器内的代码块 wrapper DOM 元素（声明式渲染后类名为 .code-block-wrapper） */
 function getCodeBlockWrappers(wrapper: VueWrapper) {
   const containerEl = wrapper.find('.markdown-body').element
-  return containerEl.querySelectorAll('[data-vue-mounted]')
+  return containerEl.querySelectorAll('.code-block-wrapper')
 }
 
 /** 获取容器 div（含 textContent / querySelectorAll） */
@@ -86,7 +86,7 @@ describe('MarkdownRenderer', () => {
       })
       const wrappers = getCodeBlockWrappers(wrapper)
       expect(wrappers.length).toBe(1)
-      expect((wrappers[0] as HTMLElement).dataset.language).toBe('js')
+      expect(wrappers[0].querySelector('.text-xs.text-gray-400.font-mono')?.textContent).toBe('js')
     })
 
     it('应正确渲染数学公式占位符', () => {
@@ -248,7 +248,7 @@ describe('MarkdownRenderer', () => {
       })
 
       const container = getContainer(wrapper)
-      const beforeEl = container.querySelector('[data-vue-mounted]')
+      const beforeEl = container.querySelector('.code-block-wrapper')
 
       // 代码内容变了
       await wrapper.setProps({
@@ -257,10 +257,11 @@ describe('MarkdownRenderer', () => {
 
       await flushRafAndTick()
 
-      const afterEl = container.querySelector('[data-vue-mounted]')
+      const afterEl = container.querySelector('.code-block-wrapper')
       expect(afterEl).toBeTruthy()
-      // 内容变了，不应复用旧元素
-      expect(afterEl).not.toBe(beforeEl)
+      // 声明式渲染下 Vue 复用 DOM 元素，但内容应已更新
+      expect(afterEl).toBe(beforeEl)
+      expect(afterEl!.querySelector('code')?.textContent).toContain('newCode')
     })
 
     it('代码块被删除后不再出现在 DOM 中', async () => {
@@ -296,7 +297,7 @@ describe('MarkdownRenderer', () => {
 
       const wrappers = getCodeBlockWrappers(wrapper)
       expect(wrappers.length).toBe(1)
-      expect((wrappers[0] as HTMLElement).dataset.language).toBe('js')
+      expect(wrappers[0].querySelector('.text-xs.text-gray-400.font-mono')?.textContent).toBe('js')
     })
   })
 

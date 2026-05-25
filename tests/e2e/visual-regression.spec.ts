@@ -92,21 +92,19 @@ test.describe('视觉回归测试', () => {
       }
       container.innerHTML = `
         <p>下面是一个代码块：</p>
-        <div data-vue-mounted="true" data-language="js">
-          <div class="code-block">
-            <div class="code-header">
-              <span class="code-lang">js</span>
-              <button class="copy-btn">复制</button>
-            </div>
-            <pre><code class="hljs language-js"><span class="hljs-keyword">const</span> greeting = <span class="hljs-string">"hello world"</span>;
-<span class="hljs-built_in">console</span>.<span class="hljs-title function_">log</span>(greeting);</code></pre>
+        <div class="code-block-wrapper group relative rounded-lg border border-gray-200 bg-gray-900 my-3">
+          <div class="flex items-center justify-between px-4 py-2 bg-gray-800 rounded-t-lg border-b border-gray-700">
+            <span class="text-xs text-gray-400 font-mono">js</span>
+            <button class="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white rounded transition-colors">复制</button>
           </div>
+          <pre class="p-4 overflow-x-auto"><code class="text-sm font-mono leading-relaxed language-js">const greeting = "hello world";
+console.log(greeting);</code></pre>
         </div>
       `
     })
     await page.waitForTimeout(500)
 
-    const codeBlock = page.locator('.markdown-body [data-vue-mounted]').first()
+    const codeBlock = page.locator('.markdown-body .code-block-wrapper').first()
     await expect(codeBlock).toHaveScreenshot('static-code-block.png', {
       maxDiffPixelRatio: 0.02
     })
