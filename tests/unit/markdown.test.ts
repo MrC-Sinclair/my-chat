@@ -451,5 +451,41 @@ x = np.array([1, 2, 3])
       const html = renderMarkdown(md)
       expect(html).toContain('<blockquote')
     })
+
+    it('引用块中包含表格，表格中包含公式（三层嵌套）', () => {
+      const md = '> | 公式 | 值 |\n> |---|---|\n> | $x^2$ | 4 |\n> | $y^2$ | 9 |'
+      const html = renderMarkdown(md)
+      expect(html).toContain('<blockquote')
+      expect(html).toContain('<table')
+      const inlineCount = (html.match(/class="math-inline"/g) || []).length
+      expect(inlineCount).toBe(2)
+    })
+
+    it('列表后跟代码块，代码块中含 $$ 符号', () => {
+      const md = '- 第一项\n- 第二项\n\n```python\n# 公式 $$x=1$$\nx = 1\n```\n\n- 第三项 $a+b$'
+      const html = renderMarkdown(md)
+      expect(html).toContain('<ul')
+      expect(html).toContain('<pre')
+      // 代码块内的 $$x=1$$ 应原样保留（$$ 被 HTML 实体编码）
+      expect(html).toContain('$$x=1$$')
+      // 列表项中的公式应正常渲染
+      expect(html).toContain('class="math-inline"')
+    })
+
+    it('表格单元格中含行内代码，行内代码含 $ 符号', () => {
+      const md = '| 命令 | 说明 |\n|---|---|\n| `echo $HOME` | 输出家目录 |\n| `ls $PATH` | 列出路径 |'
+      const html = renderMarkdown(md)
+      expect(html).toContain('<code>echo $HOME</code>')
+      expect(html).toContain('<code>ls $PATH</code>')
+      expect(html).not.toContain('class="math-inline"')
+    })
+
+    it('代码块中含 $$ + 代码块外有公式（内外隔离）', () => {
+      const md = '外面公式 $a+b$\n\n```latex\n$$E=mc^2$$\n```\n\n外面公式 $$x^2$$'
+      const html = renderMarkdown(md)
+      expect(html).toContain('$$E=mc^2$$')
+      expect(html).toContain('class="math-inline"')
+      expect(html).toContain('class="math-block"')
+    })
   })
 })
