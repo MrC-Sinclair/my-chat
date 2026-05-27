@@ -1,20 +1,36 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Tech stack: Nuxt 3, Vue 3, Vercel AI SDK, PostgreSQL + Drizzle ORM, Tailwind CSS
+  所有文档和注释使用中文
+  遵循 AGENTS.md 中的代码规范和项目规则
+  提交规范见 .trae/rules/git-commit-message.md
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - 必须包含 Why（为什么做）和 What Changes（改什么）两段
+    - 必须包含 Impact 表格，列出影响的层级（前端/后端/数据库等）
+    - Capabilities 段：新功能必须列出 New Capabilities，修改现有功能必须列出 Modified Capabilities
+    - 用中文描述，保持简洁（不超过 1 页）
+
+  design:
+    - 必须包含 Goals / Non-Goals 两段
+    - 涉及 UI 变更时必须说明手机端（默认）和平板端（sm:）的适配方案
+    - 涉及触摸交互时必须说明触摸目标尺寸（≥36px 或 ≥44px）
+    - Decisions 段必须解释关键技术选型的理由
+    - 涉及 API 变更时必须说明参数校验和错误处理策略
+    - 涉及 SSR 的变更必须说明如何避免水合不匹配
+
+  specs:
+    - 每个 Requirement 必须有至少一个 Scenario
+    - Scenario 标题必须用 #### 格式（四个 #）
+    - Scenario 用 WHEN / THEN 格式描述
+    - 新增能力用 ## ADDED Requirements，修改现有能力用 ## MODIFIED Requirements
+    - 新增 API 规格必须包含参数校验和错误响应
+
+  tasks:
+    - 每个任务必须是可验证的（有明确完成标准）
+    - 任务按依赖关系排序
+    - 涉及代码修改的任务必须包含 lint + typecheck 验证步骤
+    - 涉及数据库 schema 变更的任务必须包含 pnpm db:push 步骤
+    - 涉及 Markdown 渲染变更的任务必须包含 pnpm vitest run tests/unit/markdown.test.ts 步骤
