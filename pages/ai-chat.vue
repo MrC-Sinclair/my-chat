@@ -304,9 +304,10 @@ const quickPrompts = [
     prompt: '请用mermaid语法画一个简单的流程图，展示用户登录流程'
   },
   {
-    icon: '🎬',
-    title: '推荐好看的科幻电影',
-    prompt: '请推荐几部好看的科幻电影，简要介绍每部电影的剧情和看点'
+    icon: '🎨',
+    title: '前端复杂图文混排测试',
+    prompt:
+      '请用以下格式生成一个技术博客预览：1. 先输出一张图片：![技术插图](https://automation.vuejs.org/images/buy_instagram_followers_from_socialwick.png)；2. 写一段关于前端Markdown渲染的介绍；3. 用mermaid画一个简单的渲染流程图；4. 展示一个KaTeX行内公式 $E = mc^2$ 和块级公式 $$\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$$；5. 最后给一个JavaScript代码示例。'
   },
   { icon: '🌐', title: '翻译成英文', prompt: '请帮我把以下文字翻译成英文：' },
   {

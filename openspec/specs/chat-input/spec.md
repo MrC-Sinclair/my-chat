@@ -1,6 +1,10 @@
 # ChatInput 语音输入
 
-## ADDED Requirements
+## Purpose
+
+为移动端用户提供语音输入能力，通过浏览器原生 SpeechRecognition API 将语音转为文字，追加到聊天输入框。
+
+## Requirements
 
 ### Requirement: 语音识别按钮
 
@@ -12,41 +16,37 @@
 
 #### Scenario: 用户点击语音按钮启动录音
 
-- Given 浏览器支持 SpeechRecognition API
-- And 用户未处于 AI 回复等待状态
-- When 用户点击麦克风按钮
-- Then 按钮变为红色脉冲动画状态
-- And 系统启动语音识别
+- **WHEN** 浏览器支持 SpeechRecognition API 且用户未处于 AI 回复等待状态
+- **AND** 用户点击麦克风按钮
+- **THEN** 按钮变为红色脉冲动画状态
+- **AND** 系统启动语音识别
 
 #### Scenario: 浏览器不支持语音识别
 
-- Given 浏览器不支持 SpeechRecognition API
-- Then 语音按钮不渲染
+- **WHEN** 浏览器不支持 SpeechRecognition API
+- **THEN** 语音按钮不渲染
 
 ### Requirement: 语音识别文字追加
 
-系统 SHALL 将语音识别的最终结果（`isFinal === true`）追加到输入框末尾，忽略中间结果。
+系统 SHALL 将语音识别的最终结果追加到输入框末尾，忽略中间结果。
 
 #### Scenario: 语音识别完成后追加文字
 
-- Given 用户正在录音
-- When 语音识别产生 final 结果
-- Then 识别文字追加到输入框末尾
-- And interim 中间结果不追加
+- **WHEN** 用户正在录音且语音识别产生 final 结果
+- **THEN** 识别文字追加到输入框末尾
+- **AND** interim 中间结果不追加
 
 #### Scenario: 用户手动停止录音
 
-- Given 用户正在录音
-- When 用户再次点击麦克风按钮
-- Then 系统停止语音识别
-- And 按钮恢复待机状态
+- **WHEN** 用户正在录音且再次点击麦克风按钮
+- **THEN** 系统停止语音识别
+- **AND** 按钮恢复待机状态
 
 #### Scenario: 语音识别自动结束
 
-- Given 用户正在录音
-- When 语音识别自动结束（用户停止说话）
-- Then 按钮恢复待机状态
-- And 已识别的 final 结果保留在输入框中
+- **WHEN** 用户正在录音且语音识别自动结束（用户停止说话）
+- **THEN** 按钮恢复待机状态
+- **AND** 已识别的 final 结果保留在输入框中
 
 ### Requirement: 语音识别错误处理
 
@@ -54,25 +54,22 @@
 
 #### Scenario: 麦克风权限被拒绝
 
-- Given 用户点击麦克风按钮
-- And 浏览器弹出麦克风权限请求
-- When 用户拒绝权限
-- Then 系统显示 toast 错误提示"麦克风权限被拒绝"
-- And 按钮恢复待机状态
+- **WHEN** 用户点击麦克风按钮后拒绝麦克风权限
+- **THEN** 系统显示 toast 错误提示"麦克风权限被拒绝"
+- **AND** 按钮恢复待机状态
 
 #### Scenario: 语音识别发生其他错误
 
-- Given 用户正在录音
-- When 语音识别发生错误（网络中断等）
-- Then 系统显示 toast 错误提示
-- And 按钮恢复待机状态
+- **WHEN** 语音识别发生错误（网络中断等）
+- **THEN** 系统显示 toast 错误提示
+- **AND** 按钮恢复待机状态
 
 ### Requirement: AI 回复期间禁用语音按钮
 
-系统 SHALL 在 AI 回复期间（`isLoading = true`）禁用语音按钮。
+系统 SHALL 在 AI 回复期间禁用语音按钮。
 
 #### Scenario: AI 回复中点击语音按钮
 
-- Given AI 正在回复（isLoading = true）
-- Then 语音按钮显示为灰色禁用状态
-- And 点击无响应
+- **WHEN** AI 正在回复
+- **THEN** 语音按钮显示为灰色禁用状态
+- **AND** 点击无响应
