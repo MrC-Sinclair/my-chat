@@ -15,6 +15,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MarkdownRenderer from '~/components/chat/MarkdownRenderer.vue'
+import CodeBlock from '~/components/chat/CodeBlock.vue'
 
 let rafCallbacks: Array<() => void> = []
 
@@ -42,6 +43,10 @@ async function flushRafAndTick() {
     cbs.forEach((cb) => cb())
   }
   await nextTick()
+}
+
+const globalStubs = {
+  AsyncCodeBlock: CodeBlock
 }
 
 function getContainer(wrapper: VueWrapper): HTMLElement {
@@ -86,7 +91,8 @@ describe('问题1: RAF 节流减少全量重渲染次数', () => {
     )
 
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '' }
+      props: { content: '' },
+      global: { stubs: globalStubs }
     })
 
     const tokens = Array.from({ length: 50 }, (_, i) => `字${i}`)
@@ -114,7 +120,8 @@ describe('问题1: RAF 节流减少全量重渲染次数', () => {
     )
 
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '' }
+      props: { content: '' },
+      global: { stubs: globalStubs }
     })
 
     const tokens = Array.from({ length: 50 }, (_, i) => `字${i}`)
@@ -143,7 +150,8 @@ describe('问题1: RAF 节流减少全量重渲染次数', () => {
     )
 
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '固定内容' }
+      props: { content: '固定内容' },
+      global: { stubs: globalStubs }
     })
 
     const callsBefore = renderMarkdownSpy.mock.calls.length
@@ -169,7 +177,8 @@ describe('问题2: CodeBlock 实例复用', () => {
   it('流式追加文字（代码块不变）：DOM 元素引用不变 = 实例被复用', async () => {
     const codeBlock = '```js\nconst x = 1;\n```'
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: codeBlock }
+      props: { content: codeBlock },
+      global: { stubs: globalStubs }
     })
 
     const initialElements = getMountedElements(wrapper)
@@ -199,7 +208,8 @@ describe('问题2: CodeBlock 实例复用', () => {
     ].join('\n\n')
 
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: threeBlocks }
+      props: { content: threeBlocks },
+      global: { stubs: globalStubs }
     })
 
     const originalEls = getMountedElements(wrapper)
@@ -223,7 +233,8 @@ describe('问题2: CodeBlock 实例复用', () => {
 
   it('代码块内容变化时 DOM 引用改变 = 创建了新实例', async () => {
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '```js\nconst v1 = 1;\n```' }
+      props: { content: '```js\nconst v1 = 1;\n```' },
+      global: { stubs: globalStubs }
     })
 
     const beforeEl = getMountedElements(wrapper)[0]
@@ -248,7 +259,8 @@ describe('问题3: 大量内容下渲染开销可控', () => {
   it('5 个代码块 + 50 次 token 追加：所有代码块 DOM 引用不变（零重建）', async () => {
     const baseContent = generateLongContent(5, '## 长文本测试\n\n')
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: baseContent }
+      props: { content: baseContent },
+      global: { stubs: globalStubs }
     })
 
     const originalEls = getMountedElements(wrapper)
@@ -280,7 +292,8 @@ describe('问题3: 大量内容下渲染开销可控', () => {
 
     const baseContent = generateLongContent(3, '## 性能测试\n\n')
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: baseContent }
+      props: { content: baseContent },
+      global: { stubs: globalStubs }
     })
 
     const callsBeforeStream = renderMarkdownSpy.mock.calls.length
@@ -301,7 +314,8 @@ describe('问题3: 大量内容下渲染开销可控', () => {
 
   it('逐步新增代码块（模拟 AI 边写边输出代码）：旧代码块不重建', async () => {
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '开始输出\n' }
+      props: { content: '开始输出\n' },
+      global: { stubs: globalStubs }
     })
 
     const codeBlocks = [
@@ -344,7 +358,8 @@ describe('问题3: 大量内容下渲染开销可控', () => {
     ).join('\n')
 
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: manyFormulas }
+      props: { content: manyFormulas },
+      global: { stubs: globalStubs }
     })
 
     const callsBefore = renderMarkdownSpy.mock.calls.length

@@ -1,14 +1,30 @@
 <script setup lang="ts">
 import { useChat } from '@ai-sdk/vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
+import { defineAsyncComponent } from 'vue'
 import MarkdownRenderer from '~/components/chat/MarkdownRenderer.vue'
-import SessionSidebar from '~/components/chat/SessionSidebar.vue'
-import ToolInvocation from '~/components/chat/ToolInvocation.vue'
 import ChatInput, { type UploadedImage } from '~/components/chat/ChatInput.vue'
-import ThinkingProcess from '~/components/chat/ThinkingProcess.vue'
 import { useChatSession } from '~/composables/useChatSession'
 import { useChatConfig } from '~/composables/useChatConfig'
 import { useToast } from '~/composables/useToast'
+
+const AsyncErrorFallback = {
+  props: ['error', 'retry'],
+  template: '<div class="async-error rounded-lg border border-red-200 bg-red-50 my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-red-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-red-700 font-medium">组件加载失败</span></div><button @click="retry" class="text-xs text-red-600 hover:text-red-800 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
+}
+
+const LazySessionSidebar = defineAsyncComponent({
+  loader: () => import('~/components/chat/SessionSidebar.vue'),
+  errorComponent: AsyncErrorFallback
+})
+const LazyToolInvocation = defineAsyncComponent({
+  loader: () => import('~/components/chat/ToolInvocation.vue'),
+  errorComponent: AsyncErrorFallback
+})
+const LazyThinkingProcess = defineAsyncComponent({
+  loader: () => import('~/components/chat/ThinkingProcess.vue'),
+  errorComponent: AsyncErrorFallback
+})
 
 const {
   enableThinking,
@@ -334,6 +350,7 @@ function toggleSidebar() {
 
 function onDocumentClick(e: Event) {
   if (!showSidebar.value) return
+  if (window.innerWidth >= 640) return
   const target = e.target as HTMLElement
   if (target.closest('header')) return
   const sidebarEl = target.closest('[data-mobile-sidebar]')
@@ -346,30 +363,32 @@ function onDocumentClick(e: Event) {
 <template>
   <div class="flex h-screen bg-white">
     <!-- Mobile sidebar panel -->
-    <div
-      v-if="showSidebar"
-      data-mobile-sidebar
-      class="fixed inset-0 z-50 sm:hidden"
-      style="background: rgba(0, 0, 0, 0.5)"
-      @click.self="closeSidebar"
-    >
-      <div class="absolute inset-y-0 left-0 w-[85vw] bg-gray-50">
-        <SessionSidebar
-          :sessions-list="sessionsList"
-          :current-session-id="currentSessionId"
-          @create="createNewSession"
-          @switch="switchSession"
-          @delete="deleteSession"
-          @rename="renameSession"
-          @close="closeSidebar"
-        />
+    <Transition name="slide-left">
+      <div
+        v-if="showSidebar"
+        data-mobile-sidebar
+        class="fixed inset-0 z-50 sm:hidden"
+        style="background: rgba(0, 0, 0, 0.5)"
+        @click.self="closeSidebar"
+      >
+        <div class="absolute inset-y-0 left-0 w-[85vw] bg-gray-50">
+          <LazySessionSidebar
+            :sessions-list="sessionsList"
+            :current-session-id="currentSessionId"
+            @create="createNewSession"
+            @switch="switchSession"
+            @delete="deleteSession"
+            @rename="renameSession"
+            @close="closeSidebar"
+          />
+        </div>
       </div>
-    </div>
+    </Transition>
 
     <!-- Desktop sidebar (inline in flex flow) -->
     <div class="hidden sm:flex">
       <Transition name="sidebar">
-        <SessionSidebar
+        <LazySessionSidebar
           v-show="showSidebar"
           :sessions-list="sessionsList"
           :current-session-id="currentSessionId"
@@ -606,7 +625,7 @@ function onDocumentClick(e: Event) {
               </template>
 
               <template v-else>
-                <ThinkingProcess
+                <LazyThinkingProcess
                   v-if="enableThinking && getReasoningContent(messages[virtualRow.index])"
                   :content="getReasoningContent(messages[virtualRow.index])"
                   :is-expanded="expandedThinkingMap.get(messages[virtualRow.index].id) || false"
@@ -617,7 +636,7 @@ function onDocumentClick(e: Event) {
                   v-if="getVisibleToolInvocations(messages[virtualRow.index]).length > 0"
                   class="mb-3 space-y-2"
                 >
-                  <ToolInvocation
+                  <LazyToolInvocation
                     v-for="invocation in getVisibleToolInvocations(messages[virtualRow.index])"
                     :key="invocation.toolCallId"
                     :invocation="invocation"
@@ -720,6 +739,18 @@ function onDocumentClick(e: Event) {
 </template>
 
 <style scoped>
+.slide-left-enter-active,
+.slide-left-leave-active {
+  transition:
+    transform 0.25s ease,
+    opacity 0.25s ease;
+}
+.slide-left-enter-from,
+.slide-left-leave-to {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+
 .sidebar-enter-active,
 .sidebar-leave-active {
   transition:

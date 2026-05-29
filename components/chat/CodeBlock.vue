@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import hljs from 'highlight.js'
+import { hljs } from '~/utils/highlight'
 
 const props = defineProps<{
   code: string

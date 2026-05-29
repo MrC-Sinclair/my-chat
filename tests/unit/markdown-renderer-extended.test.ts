@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MarkdownRenderer from '~/components/chat/MarkdownRenderer.vue'
+import CodeBlock from '~/components/chat/CodeBlock.vue'
 
 let rafCallbacks: Array<() => void> = []
 
@@ -42,6 +43,10 @@ async function flushRafAndTick() {
   await nextTick()
 }
 
+const globalStubs = {
+  AsyncCodeBlock: CodeBlock
+}
+
 function getContainer(wrapper: VueWrapper): HTMLElement {
   return wrapper.find('.markdown-body').element as HTMLElement
 }
@@ -68,7 +73,8 @@ describe('测试8: 内存泄漏', () => {
 
   it('组件卸载后 segments 应被清空', async () => {
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '```js\nconst x = 1;\n```' }
+      props: { content: '```js\nconst x = 1;\n```' },
+      global: { stubs: globalStubs }
     })
 
     const wrappers = getCodeBlockWrappers(wrapper)
@@ -82,7 +88,8 @@ describe('测试8: 内存泄漏', () => {
 
   it('组件卸载后 contentStableTimer 应被清除', async () => {
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '```js\nconst x = 1;\n```' }
+      props: { content: '```js\nconst x = 1;\n```' },
+      global: { stubs: globalStubs }
     })
 
     const component = wrapper.vm as any
@@ -99,7 +106,8 @@ describe('测试8: 内存泄漏', () => {
 
   it('组件卸载后 RAF 定时器应被取消', async () => {
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '初始内容' }
+      props: { content: '初始内容' },
+      global: { stubs: globalStubs }
     })
 
     await wrapper.setProps({ content: '变更内容' })
@@ -116,7 +124,8 @@ describe('测试8: 内存泄漏', () => {
 
     for (let i = 0; i < 5; i++) {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content }
+        props: { content },
+        global: { stubs: globalStubs }
       })
       const wrappers = getCodeBlockWrappers(wrapper)
       expect(wrappers.length).toBe(1)
@@ -143,7 +152,8 @@ describe('测试11: SSR 水合兼容性', () => {
 
     expect(() => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: '测试内容' }
+        props: { content: '测试内容' },
+        global: { stubs: globalStubs }
       })
       wrapper.unmount()
     }).not.toThrow()
@@ -154,7 +164,8 @@ describe('测试11: SSR 水合兼容性', () => {
 
   it('segments 在组件挂载后应正确填充', () => {
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '# 标题\n\n段落文字' }
+      props: { content: '# 标题\n\n段落文字' },
+      global: { stubs: globalStubs }
     })
 
     const component = wrapper.vm as any
@@ -169,7 +180,8 @@ describe('测试11: SSR 水合兼容性', () => {
 
   it('onMounted 中 doRender 应正确渲染代码块', () => {
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '```js\nconst x = 1;\n```' }
+      props: { content: '```js\nconst x = 1;\n```' },
+      global: { stubs: globalStubs }
     })
 
     const wrappers = getCodeBlockWrappers(wrapper)
@@ -189,7 +201,8 @@ describe('测试12: 压力测试（长文本+多代码块）', () => {
   it('10 个代码块 + 100 次 token 追加：所有代码块 DOM 引用不变', async () => {
     const baseContent = generateLongContent(10, '## 压力测试\n\n')
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: baseContent }
+      props: { content: baseContent },
+      global: { stubs: globalStubs }
     })
 
     const originalEls = getCodeBlockWrappers(wrapper)
@@ -218,7 +231,8 @@ describe('测试12: 压力测试（长文本+多代码块）', () => {
 
     const baseContent = generateLongContent(5, '## 性能测试\n\n')
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: baseContent }
+      props: { content: baseContent },
+      global: { stubs: globalStubs }
     })
 
     const callsBefore = renderMarkdownSpy.mock.calls.length
@@ -237,7 +251,8 @@ describe('测试12: 压力测试（长文本+多代码块）', () => {
 
   it('频繁切换 content（模拟快速打字）不应崩溃', async () => {
     const wrapper = mount(MarkdownRenderer, {
-      props: { content: '' }
+      props: { content: '' },
+      global: { stubs: globalStubs }
     })
 
     for (let i = 0; i < 200; i++) {
@@ -265,7 +280,8 @@ describe('测试12: 压力测试（长文本+多代码块）', () => {
     const content = `## 混合压力测试\n\n${formulas}\n${codeBlocks}`
 
     const wrapper = mount(MarkdownRenderer, {
-      props: { content }
+      props: { content },
+      global: { stubs: globalStubs }
     })
 
     const wrappers = getCodeBlockWrappers(wrapper)

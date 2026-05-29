@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MarkdownRenderer from '~/components/chat/MarkdownRenderer.vue'
+import CodeBlock from '~/components/chat/CodeBlock.vue'
 
 let rafCallbacks: Array<() => void> = []
 
@@ -39,6 +40,16 @@ async function flushRafAndTick() {
   await nextTick()
 }
 
+/**
+ * defineAsyncComponent 在 Vitest 中不会自动解析 loader，
+ * 导致 AsyncCodeBlock 渲染为空注释节点。
+ * 通过 global.stubs 将异步组件替换为同步的 CodeBlock，
+ * 使测试能正常访问 .code-block-wrapper 等 DOM 元素。
+ */
+const globalStubs = {
+  AsyncCodeBlock: CodeBlock
+}
+
 /** 获取容器内的代码块 wrapper DOM 元素（声明式渲染后类名为 .code-block-wrapper） */
 function getCodeBlockWrappers(wrapper: VueWrapper) {
   const containerEl = wrapper.find('.markdown-body').element
@@ -65,7 +76,8 @@ describe('MarkdownRenderer', () => {
   describe('基本渲染', () => {
     it('应正确渲染纯文本内容', () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: '你好世界' }
+        props: { content: '你好世界' },
+        global: { stubs: globalStubs }
       })
       const container = getContainer(wrapper)
       expect(container.textContent).toContain('你好世界')
@@ -73,7 +85,8 @@ describe('MarkdownRenderer', () => {
 
     it('应正确渲染 Markdown 标题', () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: '# 一级标题' }
+        props: { content: '# 一级标题' },
+        global: { stubs: globalStubs }
       })
       const container = getContainer(wrapper)
       expect(container.querySelector('h1')).toBeTruthy()
@@ -82,7 +95,8 @@ describe('MarkdownRenderer', () => {
 
     it('onMounted 时同步渲染代码块（不走 RAF）', () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: '```js\nconst x = 1\n```' }
+        props: { content: '```js\nconst x = 1\n```' },
+        global: { stubs: globalStubs }
       })
       const wrappers = getCodeBlockWrappers(wrapper)
       expect(wrappers.length).toBe(1)
@@ -91,7 +105,8 @@ describe('MarkdownRenderer', () => {
 
     it('应正确渲染数学公式占位符', () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: '解方程 $$x^2 = -1$$' }
+        props: { content: '解方程 $$x^2 = -1$$' },
+        global: { stubs: globalStubs }
       })
       const container = getContainer(wrapper)
       expect(container.querySelector('.math-block')).toBeTruthy()
@@ -99,7 +114,7 @@ describe('MarkdownRenderer', () => {
 
     it('空内容不应崩溃', () => {
       expect(() =>
-        mount(MarkdownRenderer, { props: { content: '' } })
+        mount(MarkdownRenderer, { props: { content: '' }, global: { stubs: globalStubs } })
       ).not.toThrow()
     })
   })
@@ -110,7 +125,8 @@ describe('MarkdownRenderer', () => {
   describe('RAF 节流', () => {
     it('content 变化后未执行 RAF 时，DOM 保持旧内容不变', async () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: '初始内容' }
+        props: { content: '初始内容' },
+        global: { stubs: globalStubs }
       })
       const container = getContainer(wrapper)
       expect(container.textContent).toContain('初始内容')
@@ -124,7 +140,8 @@ describe('MarkdownRenderer', () => {
 
     it('flush RAF 后 DOM 更新为最新 content', async () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: '初始' }
+        props: { content: '初始' },
+        global: { stubs: globalStubs }
       })
 
       await wrapper.setProps({ content: '最新内容' })
@@ -136,7 +153,8 @@ describe('MarkdownRenderer', () => {
 
     it('同一帧内连续 3 次 content 变化，只触发最后一次渲染', async () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: 'first' }
+        props: { content: 'first' },
+        global: { stubs: globalStubs }
       })
 
       // 连续三次变更，均未 flush RAF
@@ -161,7 +179,8 @@ describe('MarkdownRenderer', () => {
 
     it('同一帧内多次变更含 code block，flush 后仅渲染一次', async () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: '```py\nprint("v1")\n```\n段落A' }
+        props: { content: '```py\nprint("v1")\n```\n段落A' },
+        global: { stubs: globalStubs }
       })
 
       const container = getContainer(wrapper)
@@ -186,7 +205,8 @@ describe('MarkdownRenderer', () => {
       const wrapper = mount(MarkdownRenderer, {
         props: {
           content: '```js\nconsole.log("hello")\n```\n这是第一段'
-        }
+        },
+        global: { stubs: globalStubs }
       })
 
       const beforeWrappers = getCodeBlockWrappers(wrapper)
@@ -217,7 +237,8 @@ describe('MarkdownRenderer', () => {
             '```python\nprint("py")\n```',
             '段落'
           ].join('\n')
-        }
+        },
+        global: { stubs: globalStubs }
       })
 
       const beforeWrappers = Array.from(getCodeBlockWrappers(wrapper))
@@ -244,7 +265,8 @@ describe('MarkdownRenderer', () => {
       const wrapper = mount(MarkdownRenderer, {
         props: {
           content: '```js\nconst old = 1\n```'
-        }
+        },
+        global: { stubs: globalStubs }
       })
 
       const container = getContainer(wrapper)
@@ -268,7 +290,8 @@ describe('MarkdownRenderer', () => {
       const wrapper = mount(MarkdownRenderer, {
         props: {
           content: '```js\nconst x = 1\n```\n一些描述文字'
-        }
+        },
+        global: { stubs: globalStubs }
       })
 
       expect(getCodeBlockWrappers(wrapper).length).toBe(1)
@@ -284,7 +307,8 @@ describe('MarkdownRenderer', () => {
 
     it('新增代码块（从无到有）应正确创建实例', async () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: '纯文字，没有代码' }
+        props: { content: '纯文字，没有代码' },
+        global: { stubs: globalStubs }
       })
 
       expect(getCodeBlockWrappers(wrapper).length).toBe(0)
@@ -307,7 +331,8 @@ describe('MarkdownRenderer', () => {
   describe('防重复渲染', () => {
     it('content 无变化时应跳过渲染', async () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: 'samesame' }
+        props: { content: 'samesame' },
+        global: { stubs: globalStubs }
       })
 
       const container = getContainer(wrapper)
@@ -323,7 +348,8 @@ describe('MarkdownRenderer', () => {
 
     it('flush 多次 RAF 只有首次触发渲染，后续为 no-op', async () => {
       const wrapper = mount(MarkdownRenderer, {
-        props: { content: 'first render' }
+        props: { content: 'first render' },
+        global: { stubs: globalStubs }
       })
 
       const container = getContainer(wrapper)

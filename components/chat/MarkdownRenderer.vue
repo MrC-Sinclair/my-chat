@@ -20,8 +20,29 @@
 <script setup lang="ts">
 import { renderMarkdown } from '~/utils/markdown'
 import { renderMath } from '~/utils/katex'
-import CodeBlock from './CodeBlock.vue'
-import MermaidBlock from './MermaidBlock.vue'
+import { defineAsyncComponent } from 'vue'
+
+const AsyncCodeBlock = defineAsyncComponent({
+  loader: () => import('./CodeBlock.vue'),
+  loadingComponent: {
+    template: '<div class="code-block-skeleton rounded-lg border border-gray-200 bg-gray-900 my-3 p-4"><div class="flex items-center gap-2 mb-3"><div class="h-3 w-16 bg-gray-700 rounded animate-pulse" /><div class="h-3 w-10 bg-gray-700 rounded animate-pulse ml-auto" /></div><div class="space-y-2"><div class="h-3 bg-gray-700 rounded animate-pulse w-3/4" /><div class="h-3 bg-gray-700 rounded animate-pulse w-1/2" /><div class="h-3 bg-gray-700 rounded animate-pulse w-2/3" /></div></div>'
+  },
+  errorComponent: {
+    props: ['error', 'retry'],
+    template: '<div class="async-error rounded-lg border border-red-200 bg-red-50 my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-red-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-red-700 font-medium">代码块加载失败</span></div><button @click="retry" class="text-xs text-red-600 hover:text-red-800 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
+  }
+})
+
+const AsyncMermaidBlock = defineAsyncComponent({
+  loader: () => import('./MermaidBlock.vue'),
+  loadingComponent: {
+    template: '<div class="mermaid-skeleton rounded-lg border border-gray-200 bg-white my-3 p-4"><div class="flex items-center gap-2 mb-3"><div class="h-3 w-16 bg-gray-200 rounded animate-pulse" /><div class="h-3 w-10 bg-gray-200 rounded animate-pulse ml-auto" /></div><div class="h-20 bg-gray-100 rounded animate-pulse flex items-center justify-center"><span class="text-xs text-gray-400">图表加载中…</span></div></div>'
+  },
+  errorComponent: {
+    props: ['error', 'retry'],
+    template: '<div class="async-error rounded-lg border border-red-200 bg-red-50 my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-red-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-red-700 font-medium">图表加载失败</span></div><button @click="retry" class="text-xs text-red-600 hover:text-red-800 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
+  }
+})
 
 const props = defineProps<{
   content: string
@@ -151,7 +172,9 @@ function doRender() {
       if (containerRef.value) {
         renderTables()
         renderImages()
-        renderMath(containerRef.value)
+        renderMath(containerRef.value).catch((e) => {
+          console.error('MarkdownRenderer 数学公式渲染失败:', e)
+        })
       }
     } catch (e) {
       console.error('MarkdownRenderer 后处理渲染失败:', e)
@@ -187,7 +210,9 @@ watch(
         isStreaming.value = false
         nextTick(() => {
           if (containerRef.value) {
-            renderMath(containerRef.value)
+            renderMath(containerRef.value).catch((e) => {
+              console.error('MarkdownRenderer 数学公式渲染失败:', e)
+            })
           }
         })
       }, 1500)
@@ -289,10 +314,10 @@ function renderImages() {
       <!-- 文本片段：v-html 渲染（含公式占位符、表格、图片等） -->
       <div v-if="seg.type === 'text'" v-html="seg.html" />
       <!-- 代码块：声明式组件，Vue 自动管理生命周期 -->
-      <CodeBlock v-else-if="seg.type === 'code'" :code="seg.code" :language="seg.language" />
+      <AsyncCodeBlock v-else-if="seg.type === 'code'" :code="seg.code" :language="seg.language" />
       <!-- Mermaid 图表：流式输出期间显示占位符，稳定后再渲染 -->
       <div v-else-if="seg.type === 'mermaid' && isStreaming" class="mermaid-pending">⏳ Mermaid 图表将在输出完成后渲染…</div>
-      <MermaidBlock v-else-if="seg.type === 'mermaid'" :source="seg.source" />
+      <AsyncMermaidBlock v-else-if="seg.type === 'mermaid'" :source="seg.source" />
     </template>
   </div>
 
@@ -305,10 +330,8 @@ function renderImages() {
   </Teleport>
 </template>
 
-<!-- 组件样式：Markdown 排版 + KaTeX 公式样式 -->
+<!-- 组件样式：Markdown 排版 -->
 <style>
-/** 引入 KaTeX 的基础样式 */
-@import 'katex/dist/katex.min.css';
 
 /** Markdown 正文排版 */
 .markdown-body {

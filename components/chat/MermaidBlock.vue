@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import hljs from 'highlight.js'
+import { hljs } from '~/utils/highlight'
 import { renderMermaidDiagram } from '~/utils/mermaid'
 
 const props = defineProps<{

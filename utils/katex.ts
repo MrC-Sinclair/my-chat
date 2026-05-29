@@ -17,9 +17,74 @@
  * 支持的公式格式：
  *   - 块级公式：$$E = mc^2$$  → 居中显示的大公式
  *   - 行内公式：$x^2 + y^2 = r^2$  → 嵌入文本中的小公式
+ *
+ * 性能优化：
+ *   KaTeX JS 和 CSS 均为动态加载，不在首屏同步引入。
+ *   首次调用 renderMath 时才加载，后续调用使用缓存的模块实例。
  */
 
-import katex from 'katex'
+import type KatexType from 'katex'
+
+/** 缓存已加载的 KaTeX 模块实例 */
+let katexCache: typeof KatexType | null = null
+
+/** 标记 KaTeX CSS 是否已注入 */
+let cssInjected = false
+
+/**
+ * 动态加载 KaTeX 模块和 CSS
+ *
+ * 首次调用时动态 import KaTeX JS 并注入 CSS <link> 标签，
+ * 后续调用直接返回缓存的模块实例。
+ */
+async function loadKatex(): Promise<typeof KatexType> {
+  if (katexCache) return katexCache
+
+  const katexModule = await import('katex')
+  katexCache = katexModule.default
+
+  if (!cssInjected && typeof window !== 'undefined') {
+    await injectKatexCss()
+  }
+
+  return katexCache
+}
+
+/**
+ * 动态注入 KaTeX CSS
+ *
+ * 通过创建 <link> 标签注入 katex.min.css，等待 onload 后再返回，
+ * 避免公式渲染时 CSS 未加载完成导致无样式闪烁。
+ */
+function injectKatexCss(): Promise<void> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    cssInjected = true
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve) => {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css'
+    link.onload = () => {
+      cssInjected = true
+      resolve()
+    }
+    link.onerror = () => {
+      console.error('KaTeX CSS 加载失败')
+      resolve()
+    }
+    document.head.appendChild(link)
+
+    // jsdom 等 DOM 模拟环境中 <link> 的 onload 不会触发，设置超时避免永久挂起
+    setTimeout(() => {
+      if (!cssInjected) {
+        cssInjected = true
+        resolve()
+      }
+    }, 100)
+  })
+}
 
 /**
  * 渲染 DOM 元素中的数学公式占位符
@@ -30,32 +95,32 @@ import katex from 'katex'
  * @param element - 包含数学公式占位符的 DOM 容器元素
  *
  * 处理流程：
- *   1. 查找所有 .math-block 元素 → 渲染为块级公式（displayMode: true）
- *   2. 查找所有 .math-inline 元素 → 渲染为行内公式（displayMode: false）
+ *   1. 动态加载 KaTeX 模块和 CSS
+ *   2. 查找所有 .math-block 元素 → 渲染为块级公式（displayMode: true）
+ *   3. 查找所有 .math-inline 元素 → 渲染为行内公式（displayMode: false）
  *
  * 错误处理：
  *   throwOnError: false 表示公式语法错误时不抛异常，
  *   而是在页面上以红色文字显示错误信息（errorColor: '#cc0000'）。
  */
-export function renderMath(element: HTMLElement): void {
+export async function renderMath(element: HTMLElement): Promise<void> {
+  if (typeof window === 'undefined') return
+
+  const katex = await loadKatex()
+
   /** 处理块级公式（$$...$$） */
   const blockElements = element.querySelectorAll('.math-block')
   /** 处理行内公式（$...$） */
   const inlineElements = element.querySelectorAll('.math-inline')
 
   blockElements.forEach((el) => {
-    /** 从 data-formula 属性中获取原始 LaTeX 公式文本 */
     const formula = (el as HTMLElement).dataset.formula || el.textContent || ''
     try {
       el.innerHTML = katex.renderToString(formula, {
-        /** displayMode: true 表示块级模式，公式居中显示 */
         displayMode: true,
-        /** 不抛出异常，而是在页面上显示错误 */
         throwOnError: false,
-        /** 公式语法错误时的文字颜色 */
         errorColor: '#cc0000'
       })
-      /** 添加 katex-display 类，用于 CSS 样式（如横向滚动） */
       el.classList.add('katex-display')
     } catch (err) {
       console.error('KaTeX 块级公式渲染失败:', err, formula)
@@ -66,7 +131,6 @@ export function renderMath(element: HTMLElement): void {
     const formula = (el as HTMLElement).dataset.formula || el.textContent || ''
     try {
       el.innerHTML = katex.renderToString(formula, {
-        /** displayMode: false 表示行内模式，公式嵌入文本中 */
         displayMode: false,
         throwOnError: false,
         errorColor: '#cc0000'
