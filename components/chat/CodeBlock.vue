@@ -13,6 +13,7 @@ const emit = defineEmits<{
 const copied = ref(false)
 
 const highlightedCode = computed(() => {
+  if (!props.code) return ''
   if (props.language && hljs.getLanguage(props.language)) {
     return hljs.highlight(props.code, {
       language: props.language
