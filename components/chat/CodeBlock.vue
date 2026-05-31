@@ -11,15 +11,53 @@ const emit = defineEmits<{
 }>()
 
 const copied = ref(false)
+const wrapperRef = ref<HTMLElement | null>(null)
+const isVisible = ref(false)
+let observer: IntersectionObserver | null = null
 
 const highlightedCode = computed(() => {
-  if (!props.code) return ''
+  if (!isVisible.value || !props.code) return ''
   if (props.language && hljs.getLanguage(props.language)) {
     return hljs.highlight(props.code, {
       language: props.language
     }).value
   }
   return hljs.highlightAuto(props.code).value
+})
+
+onMounted(() => {
+  if (!wrapperRef.value) return
+
+  const checkVisible = () => {
+    if (!wrapperRef.value) return
+    const rect = wrapperRef.value.getBoundingClientRect()
+    if (rect.top < window.innerHeight + 200 && rect.bottom > -200) {
+      isVisible.value = true
+      observer?.disconnect()
+      observer = null
+    }
+  }
+
+  checkVisible()
+
+  if (!isVisible.value) {
+    observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          isVisible.value = true
+          observer?.disconnect()
+          observer = null
+        }
+      },
+      { rootMargin: '200px 0px' }
+    )
+    observer.observe(wrapperRef.value)
+  }
+})
+
+onUnmounted(() => {
+  observer?.disconnect()
+  observer = null
 })
 
 async function handleCopy() {
@@ -37,7 +75,7 @@ async function handleCopy() {
 </script>
 
 <template>
-  <div class="code-block-wrapper group relative rounded-lg border border-gray-200 bg-gray-900 my-3">
+  <div ref="wrapperRef" class="code-block-wrapper group relative rounded-lg border border-gray-200 bg-gray-900 my-3">
     <div class="flex items-center justify-between px-4 py-2 bg-gray-800 rounded-t-lg border-b border-gray-700">
       <span class="text-xs text-gray-400 font-mono">{{ language || 'text' }}</span>
       <button
@@ -54,11 +92,18 @@ async function handleCopy() {
         {{ copied ? '已复制' : '复制' }}
       </button>
     </div>
-    <pre class="p-4 overflow-x-auto"><code
+    <pre v-if="isVisible" class="p-4 overflow-x-auto"><code
       class="text-sm font-mono leading-relaxed"
       :class="`language-${language || 'plaintext'}`"
       v-html="highlightedCode"
     /></pre>
+    <div v-else class="p-4">
+      <div class="space-y-2">
+        <div class="h-3 bg-gray-700 rounded animate-pulse w-3/4" />
+        <div class="h-3 bg-gray-700 rounded animate-pulse w-1/2" />
+        <div class="h-3 bg-gray-700 rounded animate-pulse w-2/3" />
+      </div>
+    </div>
   </div>
 </template>
 

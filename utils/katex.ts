@@ -87,56 +87,98 @@ function injectKatexCss(): Promise<void> {
 }
 
 /**
- * 渲染 DOM 元素中的数学公式占位符
+ * 渲染单个公式元素
  *
- * 本函数在 Markdown 渲染完成后调用，查找所有 .math-block 和 .math-inline 元素，
- * 读取其 data-formula 属性中的 LaTeX 公式文本，用 KaTeX 渲染后替换元素内容。
+ * @param katex - KaTeX 模块实例
+ * @param el - 公式占位符元素（.math-block 或 .math-inline）
+ *
+ * 渲染后标记 data-katex-rendered 属性，避免重复渲染。
+ */
+function renderSingleFormula(katex: typeof KatexType, el: HTMLElement): void {
+  if (el.hasAttribute('data-katex-rendered')) return
+
+  const formula = el.dataset.formula || el.textContent || ''
+  const isBlock = el.classList.contains('math-block')
+
+  try {
+    el.innerHTML = katex.renderToString(formula, {
+      displayMode: isBlock,
+      throwOnError: false,
+      errorColor: '#cc0000'
+    })
+    if (isBlock) el.classList.add('katex-display')
+    el.setAttribute('data-katex-rendered', 'true')
+  } catch (err) {
+    console.error(`KaTeX ${isBlock ? '块级' : '行内'}公式渲染失败:`, err, formula)
+  }
+}
+
+/** 公式数量较少时直接全量渲染的阈值，避免 observer 开销 */
+const LAZY_RENDER_THRESHOLD = 5
+
+/** IntersectionObserver 预渲染距离（视口外 200px 即开始渲染） */
+const OBSERVER_ROOT_MARGIN = '200px 0px'
+
+/**
+ * 渲染 DOM 元素中的数学公式占位符（支持 IntersectionObserver 延迟渲染）
+ *
+ * 优化策略：
+ *   1. 跳过已渲染的公式（data-katex-rendered 属性）
+ *   2. 公式数量 ≤ LAZY_RENDER_THRESHOLD 时全量渲染（observer 开销不值得）
+ *   3. 公式数量多时，视口内的立即渲染，视口外的用 IntersectionObserver 延迟渲染
+ *   4. 返回 cleanup 函数，调用方可断开 observer
  *
  * @param element - 包含数学公式占位符的 DOM 容器元素
- *
- * 处理流程：
- *   1. 动态加载 KaTeX 模块和 CSS
- *   2. 查找所有 .math-block 元素 → 渲染为块级公式（displayMode: true）
- *   3. 查找所有 .math-inline 元素 → 渲染为行内公式（displayMode: false）
- *
- * 错误处理：
- *   throwOnError: false 表示公式语法错误时不抛异常，
- *   而是在页面上以红色文字显示错误信息（errorColor: '#cc0000'）。
+ * @returns cleanup 函数，断开 IntersectionObserver
  */
-export async function renderMath(element: HTMLElement): Promise<void> {
-  if (typeof window === 'undefined') return
+export async function renderMath(element: HTMLElement): Promise<() => void> {
+  if (typeof window === 'undefined') return () => {}
 
   const katex = await loadKatex()
 
-  /** 处理块级公式（$$...$$） */
   const blockElements = element.querySelectorAll('.math-block')
-  /** 处理行内公式（$...$） */
   const inlineElements = element.querySelectorAll('.math-inline')
 
-  blockElements.forEach((el) => {
-    const formula = (el as HTMLElement).dataset.formula || el.textContent || ''
-    try {
-      el.innerHTML = katex.renderToString(formula, {
-        displayMode: true,
-        throwOnError: false,
-        errorColor: '#cc0000'
+  const allElements = [...blockElements, ...inlineElements] as HTMLElement[]
+
+  const unrendered = allElements.filter((el) => !el.hasAttribute('data-katex-rendered'))
+
+  if (unrendered.length === 0) return () => {}
+
+  if (unrendered.length <= LAZY_RENDER_THRESHOLD) {
+    unrendered.forEach((el) => renderSingleFormula(katex, el))
+    return () => {}
+  }
+
+  let observer: IntersectionObserver | null = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          renderSingleFormula(katex, entry.target as HTMLElement)
+          observer?.unobserve(entry.target)
+        }
       })
-      el.classList.add('katex-display')
-    } catch (err) {
-      console.error('KaTeX 块级公式渲染失败:', err, formula)
+    },
+    { rootMargin: OBSERVER_ROOT_MARGIN }
+  )
+
+  unrendered.forEach((el) => {
+    const rect = el.getBoundingClientRect()
+    const isVisible = rect.top < window.innerHeight + 200 && rect.bottom > -200
+
+    if (isVisible) {
+      renderSingleFormula(katex, el)
+    } else {
+      observer!.observe(el)
     }
   })
 
-  inlineElements.forEach((el) => {
-    const formula = (el as HTMLElement).dataset.formula || el.textContent || ''
-    try {
-      el.innerHTML = katex.renderToString(formula, {
-        displayMode: false,
-        throwOnError: false,
-        errorColor: '#cc0000'
-      })
-    } catch (err) {
-      console.error('KaTeX 行内公式渲染失败:', err, formula)
+  const cleanup = () => {
+    if (observer) {
+      observer.disconnect()
+      observer = null
     }
-  })
+  }
+
+  return cleanup
 }

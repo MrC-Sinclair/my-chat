@@ -156,6 +156,8 @@ let rafId: number | null = null
 /** 初始化为 null 确保 onMounted 中首次 doRender 不会被跳过 */
 let lastRenderedContent: string | null = null
 let contentStableTimer: ReturnType<typeof setTimeout> | null = null
+/** renderMath 返回的 cleanup 函数，断开 IntersectionObserver */
+let mathCleanup: (() => void) | null = null
 
 function doRender() {
   if (props.content === lastRenderedContent) return
@@ -172,7 +174,13 @@ function doRender() {
       if (containerRef.value) {
         renderTables()
         renderImages()
-        renderMath(containerRef.value).catch((e) => {
+        if (mathCleanup) {
+          mathCleanup()
+          mathCleanup = null
+        }
+        renderMath(containerRef.value).then((cleanup) => {
+          mathCleanup = cleanup
+        }).catch((e) => {
           console.error('MarkdownRenderer 数学公式渲染失败:', e)
         })
       }
@@ -210,7 +218,13 @@ watch(
         isStreaming.value = false
         nextTick(() => {
           if (containerRef.value) {
-            renderMath(containerRef.value).catch((e) => {
+            if (mathCleanup) {
+              mathCleanup()
+              mathCleanup = null
+            }
+            renderMath(containerRef.value).then((cleanup) => {
+              mathCleanup = cleanup
+            }).catch((e) => {
               console.error('MarkdownRenderer 数学公式渲染失败:', e)
             })
           }
@@ -237,6 +251,10 @@ onUnmounted(() => {
   if (contentStableTimer) {
     clearTimeout(contentStableTimer)
     contentStableTimer = null
+  }
+  if (mathCleanup) {
+    mathCleanup()
+    mathCleanup = null
   }
 })
 
