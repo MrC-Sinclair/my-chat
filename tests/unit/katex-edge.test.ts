@@ -1,5 +1,16 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { renderMath } from '~/utils/katex'
+
+class MockIntersectionObserver {
+  callback: IntersectionObserverCallback
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback
+  }
+  observe = vi.fn()
+  unobserve = vi.fn()
+  disconnect = vi.fn()
+  takeRecords = vi.fn().mockReturnValue([])
+}
 
 describe('KaTeX 动态加载 - 边界测试', () => {
   let container: HTMLElement
@@ -7,6 +18,11 @@ describe('KaTeX 动态加载 - 边界测试', () => {
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
+    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('连续调用 renderMath 不应重复加载 KaTeX', async () => {
