@@ -1,8 +1,9 @@
-import { streamText } from 'ai'
+import { streamText, stepCountIs, createUIMessageStream, createUIMessageStreamResponse } from 'ai'
+import { createMCPClient } from '@ai-sdk/mcp'
+import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio'
 import { db } from '~/server/db'
 import { messages as messagesTable, sessions } from '~/server/db/schema'
 import { eq } from 'drizzle-orm'
-import { weatherTool } from '~/server/tools/weather'
 import { webSearchTool } from '~/server/tools/web-search'
 import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/models'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
@@ -77,7 +78,7 @@ export default defineEventHandler(async (event) => {
     messages,
     sessionId,
     enable_thinking,
-    thinking_budget,
+    thinking_budget: _thinking_budget,
     model,
     images,
     enable_web_search
@@ -185,12 +186,20 @@ export default defineEventHandler(async (event) => {
 
   const thinkingEnabled = enable_thinking ?? DEFAULT_ENABLE_THINKING
   const modelSupportsThinking = !caps.vision && !caps.reasoning
+  // AI SDK v5 中 enableThinking/thinkingBudget 通过 providerOptions 传递
   const thinkingOptions =
     thinkingEnabled && modelSupportsThinking
-      ? { enableThinking: true, thinkingBudget: thinking_budget || 4096 }
+      ? {
+          providerOptions: {
+            openai: {
+              reasoningEffort: 'high' as const
+            }
+          }
+        }
       : {}
 
   const maxSteps = caps.vision || caps.reasoning ? 1 : 5
+  const stopWhen = stepCountIs(maxSteps)
   const webSearchEnabled = enable_web_search !== false
 
   let finalSystemPrompt = DEFAULT_SYSTEM_PROMPT
@@ -209,19 +218,52 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
+    // 创建 MCP 客户端连接 Weather Server（stdio 传输）
+    let mcpTools: Record<string, any> = {}
+    if (caps.toolCalling) {
+      try {
+        const mcpClient = await createMCPClient({
+          transport: new Experimental_StdioMCPTransport({
+            // Windows 下需要用 shell 模式执行 npx，否则 spawn ENOENT
+            // AI SDK 的 StdioMCPTransport 使用 shell: false，所以 Windows 上需要用完整命令
+            command: process.platform === 'win32' ? 'cmd' : 'npx',
+            args:
+              process.platform === 'win32'
+                ? ['/c', 'npx', 'tsx', 'server/mcp/weather-server.ts']
+                : ['tsx', 'server/mcp/weather-server.ts'],
+            stderr: 'pipe'
+          })
+        })
+        mcpTools = await mcpClient.tools()
+      } catch (err) {
+        console.error('MCP Weather Server 连接失败，天气工具不可用:', err)
+        // 继续运行，只是没有天气工具
+      }
+    }
+
+    const toolsConfig: Record<string, any> = {
+      ...mcpTools,
+      ...(webSearchEnabled && { webSearch: webSearchTool })
+    }
+
     const result = streamText({
       model: llmProvider(useModel),
       system: finalSystemPrompt,
-      messages: llmMessages as Parameters<typeof streamText>[0]['messages'],
-      maxSteps,
+      messages: llmMessages as any,
+      stopWhen,
       temperature: caps.vision ? 0.7 : void 0,
-      ...(caps.toolCalling && {
-        tools: {
-          weather: weatherTool,
-          ...(webSearchEnabled && { webSearch: webSearchTool })
-        }
-      }),
+      ...(caps.toolCalling &&
+        Object.keys(toolsConfig).length > 0 && {
+          tools: toolsConfig as Parameters<typeof streamText>[0]['tools']
+        }),
       ...thinkingOptions,
+      // 硅基流动不支持 OpenAI 的 structuredOutputs（strict 模式），需要禁用
+      providerOptions: {
+        openai: {
+          structuredOutputs: false,
+          ...(thinkingOptions.providerOptions?.openai || {})
+        }
+      },
       onFinish: async ({ text }) => {
         if (!sessionId) return
         try {
@@ -244,152 +286,262 @@ export default defineEventHandler(async (event) => {
       }
     })
 
+    // 使用 createUIMessageStream 构建 UIMessage 流
     // 将 fullStream 中的 text-delta 按 REASONING 标记分类：
-    // - 带 REASONING_PREFIX 的 → 转为 reasoning 事件（思考过程）
+    // - 带 REASONING_PREFIX 的 → 转为 reasoning-delta 事件（思考过程）
     // - 带 REASONING_END 的 → 切换回 text-delta（正式回答开始）
-    // - 其他 → 原样传递
-    const dataStream = result.fullStream.pipeThrough(
-      new TransformStream({
-        transform(chunk, controller) {
-          if (chunk.type === 'text-delta') {
-            const delta = chunk.textDelta
+    // - 其他 → 原样转为 UIMessageChunk 格式
+    const uiStream = createUIMessageStream({
+      execute({ writer }) {
+        // 追踪 reasoning 状态和文本 ID
+        let isReasoning = false
+        let textId = ''
+        let reasoningId = ''
 
-            // 整个 delta 以 REASONING_PREFIX 开头：纯 reasoning 片段
-            if (delta.startsWith(REASONING_PREFIX)) {
-              const reasoningText = delta.slice(REASONING_PREFIX.length)
-              if (reasoningText) {
-                controller.enqueue({ type: 'reasoning', textDelta: reasoningText })
-              }
-              return
-            }
+        const reader = result.fullStream.getReader()
 
-            // delta 中间包含 REASONING_PREFIX：reasoning 和其他内容混合
-            if (delta.includes(REASONING_PREFIX)) {
-              const parts = delta.split(REASONING_PREFIX)
-              for (const part of parts) {
-                if (!part) continue
-                if (part.includes(REASONING_END)) {
-                  // reasoning → 正式回答的切换点
-                  const subParts = part.split(REASONING_END)
-                  if (subParts[0]) {
-                    controller.enqueue({ type: 'reasoning', textDelta: subParts[0] })
+        function processChunk(): Promise<void> {
+          return reader.read().then(({ done, value: chunk }) => {
+            if (done) return
+
+            if (chunk.type === 'text-delta') {
+              const delta = chunk.text
+
+              // 整个 delta 以 REASONING_PREFIX 开头：纯 reasoning 片段
+              if (delta.startsWith(REASONING_PREFIX)) {
+                const reasoningText = delta.slice(REASONING_PREFIX.length)
+                if (reasoningText) {
+                  if (!isReasoning) {
+                    isReasoning = true
+                    reasoningId = `rs-${Date.now()}`
+                    writer.write({ type: 'reasoning-start', id: reasoningId })
                   }
-                  if (subParts[1]) {
-                    controller.enqueue({ type: 'text-delta', textDelta: subParts[1] })
-                  }
-                } else {
-                  controller.enqueue({ type: 'reasoning', textDelta: part })
+                  writer.write({ type: 'reasoning-delta', id: reasoningId, delta: reasoningText })
                 }
+                return processChunk()
               }
-              return
+
+              // delta 中间包含 REASONING_PREFIX：reasoning 和其他内容混合
+              if (delta.includes(REASONING_PREFIX)) {
+                const parts = delta.split(REASONING_PREFIX)
+                for (const part of parts) {
+                  if (!part) continue
+                  if (part.includes(REASONING_END)) {
+                    // reasoning → 正式回答的切换点
+                    const subParts = part.split(REASONING_END)
+                    if (subParts[0]) {
+                      if (!isReasoning) {
+                        isReasoning = true
+                        reasoningId = `rs-${Date.now()}`
+                        writer.write({ type: 'reasoning-start', id: reasoningId })
+                      }
+                      writer.write({ type: 'reasoning-delta', id: reasoningId, delta: subParts[0] })
+                    }
+                    if (isReasoning) {
+                      writer.write({ type: 'reasoning-end', id: reasoningId })
+                      isReasoning = false
+                    }
+                    if (subParts[1]) {
+                      if (!textId) {
+                        textId = `ts-${Date.now()}`
+                        writer.write({ type: 'text-start', id: textId })
+                      }
+                      writer.write({ type: 'text-delta', id: textId, delta: subParts[1] })
+                    }
+                  } else {
+                    if (!isReasoning) {
+                      isReasoning = true
+                      reasoningId = `rs-${Date.now()}`
+                      writer.write({ type: 'reasoning-start', id: reasoningId })
+                    }
+                    writer.write({ type: 'reasoning-delta', id: reasoningId, delta: part })
+                  }
+                }
+                return processChunk()
+              }
+
+              // delta 以 REASONING_END 开头：正式回答开始
+              if (delta.startsWith(REASONING_END)) {
+                const textAfter = delta.slice(REASONING_END.length)
+                if (isReasoning) {
+                  writer.write({ type: 'reasoning-end', id: reasoningId })
+                  isReasoning = false
+                }
+                if (textAfter) {
+                  if (!textId) {
+                    textId = `ts-${Date.now()}`
+                    writer.write({ type: 'text-start', id: textId })
+                  }
+                  writer.write({ type: 'text-delta', id: textId, delta: textAfter })
+                }
+                return processChunk()
+              }
+
+              // delta 中间包含 REASONING_END：reasoning 尾部和正式回答开头
+              if (delta.includes(REASONING_END)) {
+                const parts = delta.split(REASONING_END)
+                if (parts[0]) {
+                  if (!isReasoning) {
+                    isReasoning = true
+                    reasoningId = `rs-${Date.now()}`
+                    writer.write({ type: 'reasoning-start', id: reasoningId })
+                  }
+                  writer.write({ type: 'reasoning-delta', id: reasoningId, delta: parts[0] })
+                }
+                if (isReasoning) {
+                  writer.write({ type: 'reasoning-end', id: reasoningId })
+                  isReasoning = false
+                }
+                if (parts[1]) {
+                  if (!textId) {
+                    textId = `ts-${Date.now()}`
+                    writer.write({ type: 'text-start', id: textId })
+                  }
+                  writer.write({ type: 'text-delta', id: textId, delta: parts[1] })
+                }
+                return processChunk()
+              }
+
+              // 普通 text-delta
+              if (isReasoning) {
+                writer.write({ type: 'reasoning-delta', id: reasoningId, delta })
+              } else {
+                if (!textId) {
+                  textId = `ts-${Date.now()}`
+                  writer.write({ type: 'text-start', id: textId })
+                }
+                writer.write({ type: 'text-delta', id: textId, delta })
+              }
+              return processChunk()
             }
 
-            // delta 以 REASONING_END 开头：正式回答开始
-            if (delta.startsWith(REASONING_END)) {
-              const textAfter = delta.slice(REASONING_END.length)
-              if (textAfter) {
-                controller.enqueue({ type: 'text-delta', textDelta: textAfter })
+            if (chunk.type === 'reasoning-delta') {
+              // 原生 reasoning-delta 事件（如果 provider 支持）
+              if (!isReasoning) {
+                isReasoning = true
+                reasoningId = chunk.id || `rs-${Date.now()}`
+                writer.write({ type: 'reasoning-start', id: reasoningId })
               }
-              return
+              writer.write({ type: 'reasoning-delta', id: reasoningId, delta: chunk.text })
+              return processChunk()
             }
 
-            // delta 中间包含 REASONING_END：reasoning 尾部和正式回答开头
-            if (delta.includes(REASONING_END)) {
-              const parts = delta.split(REASONING_END)
-              if (parts[0]) {
-                controller.enqueue({ type: 'reasoning', textDelta: parts[0] })
-              }
-              if (parts[1]) {
-                controller.enqueue({ type: 'text-delta', textDelta: parts[1] })
-              }
-              return
+            if (chunk.type === 'reasoning-start') {
+              isReasoning = true
+              reasoningId = chunk.id
+              writer.write(chunk)
+              return processChunk()
             }
 
-            // 普通 text-delta，直接传递
-            controller.enqueue(chunk)
-            return
-          }
+            if (chunk.type === 'reasoning-end') {
+              isReasoning = false
+              writer.write(chunk)
+              return processChunk()
+            }
 
-          // 非 text-delta 事件（tool-call、error、finish 等）直接传递
-          controller.enqueue(chunk)
+            if (chunk.type === 'text-start') {
+              textId = chunk.id
+              writer.write(chunk)
+              return processChunk()
+            }
+
+            if (chunk.type === 'text-end') {
+              writer.write(chunk)
+              return processChunk()
+            }
+
+            if (chunk.type === 'tool-call') {
+              writer.write({
+                type: 'tool-input-available',
+                toolCallId: chunk.toolCallId,
+                toolName: chunk.toolName,
+                input: chunk.input
+              })
+              return processChunk()
+            }
+
+            if (chunk.type === 'tool-input-delta') {
+              writer.write({
+                type: 'tool-input-delta',
+                toolCallId: chunk.id,
+                inputTextDelta: chunk.delta
+              })
+              return processChunk()
+            }
+
+            if (chunk.type === 'tool-input-start') {
+              writer.write({
+                type: 'tool-input-start',
+                toolCallId: chunk.id,
+                toolName: chunk.toolName
+              })
+              return processChunk()
+            }
+
+            if (chunk.type === 'tool-input-end') {
+              // UIMessageChunk 中没有 tool-input-end，跳过
+              return processChunk()
+            }
+
+            if (chunk.type === 'tool-result') {
+              writer.write({
+                type: 'tool-output-available',
+                toolCallId: chunk.toolCallId,
+                output: chunk.output
+              })
+              return processChunk()
+            }
+
+            if (chunk.type === 'tool-error') {
+              writer.write({
+                type: 'tool-output-error',
+                toolCallId: chunk.toolCallId,
+                errorText: chunk.error instanceof Error ? chunk.error.message : String(chunk.error)
+              })
+              return processChunk()
+            }
+
+            if (chunk.type === 'error') {
+              writer.write({
+                type: 'error',
+                errorText: chunk.error instanceof Error ? chunk.error.message : String(chunk.error)
+              })
+              return processChunk()
+            }
+
+            if (chunk.type === 'finish') {
+              // 关闭未关闭的 text/reasoning
+              if (isReasoning && reasoningId) {
+                writer.write({ type: 'reasoning-end', id: reasoningId })
+              }
+              if (textId) {
+                writer.write({ type: 'text-end', id: textId })
+              }
+              writer.write({
+                type: 'finish',
+                finishReason: chunk.finishReason
+              })
+              return processChunk()
+            }
+
+            // 其他事件类型（start, start-step, finish-step 等）直接写入
+            if (
+              chunk.type === 'start' ||
+              chunk.type === 'start-step' ||
+              chunk.type === 'finish-step'
+            ) {
+              writer.write(chunk)
+            }
+
+            return processChunk()
+          })
         }
-      })
-    )
 
-    // 手动序列化为 AI SDK 数据流格式
-    // 格式说明：0=文本, g=推理, 9=工具调用, c=工具调用增量, a=工具结果, 3=错误, d=完成
-    const encoder = new TextEncoder()
-    const readableStream = dataStream.pipeThrough(
-      new TransformStream({
-        transform(chunk, controller) {
-          switch (chunk.type) {
-            case 'text-delta':
-              controller.enqueue(encoder.encode(`0:${JSON.stringify(chunk.textDelta)}\n`))
-              break
-            case 'reasoning':
-              controller.enqueue(encoder.encode(`g:${JSON.stringify(chunk.textDelta)}\n`))
-              break
-            case 'tool-call':
-              controller.enqueue(
-                encoder.encode(
-                  `9:${JSON.stringify({
-                    toolCallId: chunk.toolCallId,
-                    toolName: chunk.toolName,
-                    args: chunk.args
-                  })}\n`
-                )
-              )
-              break
-            case 'tool-call-delta':
-              controller.enqueue(
-                encoder.encode(
-                  `c:${JSON.stringify({
-                    toolCallId: chunk.toolCallId,
-                    argsTextDelta: chunk.argsTextDelta
-                  })}\n`
-                )
-              )
-              break
-            case 'tool-result':
-              controller.enqueue(
-                encoder.encode(
-                  `a:${JSON.stringify({
-                    toolCallId: chunk.toolCallId,
-                    result: chunk.result
-                  })}\n`
-                )
-              )
-              break
-            case 'error':
-              controller.enqueue(
-                encoder.encode(
-                  `3:${JSON.stringify(chunk.error instanceof Error ? chunk.error.message : String(chunk.error))}\n`
-                )
-              )
-              break
-            case 'finish':
-              controller.enqueue(
-                encoder.encode(
-                  `d:${JSON.stringify({
-                    finishReason: chunk.finishReason,
-                    usage: chunk.usage
-                  })}\n`
-                )
-              )
-              break
-            default:
-              break
-          }
-        }
-      })
-    )
-
-    return new Response(readableStream, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'X-Vercel-AI-Data-Stream': 'v1'
+        return processChunk()
       }
     })
+
+    return createUIMessageStreamResponse({ stream: uiStream })
   } catch (err) {
     console.error('streamText 调用失败:', err)
     throw createError({

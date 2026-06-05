@@ -27,10 +27,12 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^1.2.0",
-    "@ai-sdk/vue": "^1.1.0",
+    "@ai-sdk/mcp": "^1.0.45",
+    "@ai-sdk/openai": "^2.0.106",
+    "@ai-sdk/vue": "^2.0.195",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@tanstack/vue-virtual": "^3.13.24",
-    "ai": "^4.1.0",
+    "ai": "^5.0.196",
     "drizzle-orm": "^0.36.0",
     "nuxt": "^3.15.0",
     "postgres": "^3.4.5",
@@ -61,6 +63,7 @@
     "playwright": "^1.49.0",
     "prettier": "^3.4.0",
     "tailwindcss": "^3.4.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.7.0",
     "unplugin-auto-import": "^21.0.0",
     "vitest": "^3.0.0",

@@ -44,7 +44,7 @@ export async function searchWithTavily(query: string): Promise<SearchResultItem[
 export const webSearchTool = tool({
   description:
     '搜索互联网获取实时信息。当用户问题涉及新闻、最新数据、当前事件、或任何可能随时间变化的信息时，必须调用此工具。即使你认为自己知道答案，也必须搜索以确认信息的时效性。不确定时，优先使用搜索工具。',
-  parameters: z.object({
+  inputSchema: z.object({
     query: z
       .string()
       .describe('搜索关键词，应简洁精准。例如："2025年高考政策变化" 或 "React 19 新特性"')

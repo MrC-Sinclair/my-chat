@@ -1,17 +1,27 @@
 /**
  * 自定义 OpenAI-compatible Provider
  *
- * 解决 @ai-sdk/openai 不处理 reasoning_content 字段的问题。
- * SiliconFlow 等兼容 API 会在 SSE 流的 delta 中返回 reasoning_content，
- * 但 @ai-sdk/openai v1.3.24 的流式解析器只处理 delta.content 和 delta.tool_calls，
- * 直接忽略了 reasoning_content，导致思考过程数据在 provider 层被静默丢弃。
+ * 解决 @ai-sdk/openai v2 与硅基流动等兼容 API 的兼容性问题：
  *
- * 方案：通过自定义 fetch 拦截原始 SSE 响应流，将 reasoning_content 映射为
- * 带特殊前缀的 content，让 provider 能正常解析，后续在 chat.post.ts 中
- * 再将带前缀的 text-delta 转换为 reasoning 事件。
+ * 1. reasoning_content 字段处理：
+ *    SiliconFlow 等兼容 API 会在 SSE 流的 delta 中返回 reasoning_content，
+ *    但 @ai-sdk/openai 的流式解析器只处理 delta.content 和 delta.tool_calls，
+ *    直接忽略了 reasoning_content，导致思考过程数据在 provider 层被静默丢弃。
+ *    方案：通过自定义 fetch 拦截原始 SSE 响应流，将 reasoning_content 映射为
+ *    带特殊前缀的 content，让 provider 能正常解析。
+ *
+ * 2. developer 角色修复：
+ *    @ai-sdk/openai v2 对非 gpt-3/4/5-chat 的模型 ID 一律判定为 isReasoningModel，
+ *    导致 system 消息被转为 developer 角色，但硅基流动不支持 developer 角色。
+ *    方案：在自定义 fetch 中将请求体里的 developer 角色替换为 system。
+ *
+ * 3. structuredOutputs 禁用：
+ *    @ai-sdk/openai v2 默认启用 structuredOutputs（strict 模式），
+ *    硅基流动不支持 strict 参数，会导致 400 Bad Request。
+ *    方案：通过 .chat() 的 providerOptions 禁用。
  */
 import { createOpenAI } from '@ai-sdk/openai'
-import type { LanguageModelV1 } from 'ai'
+import type { LanguageModel } from 'ai'
 
 /** reasoning 内容的前缀标记，用于在 text-delta 中标识思考过程片段 */
 const REASONING_PREFIX = '\x00REASONING:'
@@ -22,6 +32,27 @@ const baseProvider = createOpenAI({
   baseURL: process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1',
   apiKey: process.env.OPENAI_API_KEY,
   fetch: async (url, options) => {
+    // 修复请求体：将 developer 角色替换为 system（硅基流动不支持 developer）
+    if (options?.body && typeof options.body === 'string') {
+      try {
+        const body = JSON.parse(options.body)
+        if (body.messages && Array.isArray(body.messages)) {
+          let modified = false
+          for (const msg of body.messages) {
+            if (msg.role === 'developer') {
+              msg.role = 'system'
+              modified = true
+            }
+          }
+          if (modified) {
+            options = { ...options, body: JSON.stringify(body) }
+          }
+        }
+      } catch {
+        // JSON 解析失败，透传原始请求
+      }
+    }
+
     const response = await globalThis.fetch(url, options)
 
     // 非 SSE 响应或错误响应直接透传
@@ -107,7 +138,9 @@ const baseProvider = createOpenAI({
 
 /** 创建支持 reasoning_content 的 provider 实例 */
 export function createReasoningProvider() {
-  return (modelId: string): LanguageModelV1 => baseProvider(modelId)
+  // @ai-sdk/openai v2 默认使用 Responses API，硅基流动不支持
+  // 需要显式使用 .chat() 方法走 Chat Completions API
+  return (modelId: string): LanguageModel => baseProvider.chat(modelId) as unknown as LanguageModel
 }
 
 export { REASONING_PREFIX, REASONING_END }

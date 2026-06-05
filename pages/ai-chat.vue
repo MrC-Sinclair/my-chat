@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { useChat } from '@ai-sdk/vue'
+import { Chat } from '@ai-sdk/vue'
+import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { defineAsyncComponent } from 'vue'
 import MarkdownRenderer from '~/components/chat/MarkdownRenderer.vue'
@@ -43,31 +44,28 @@ const pendingMessageImages = ref<UploadedImage[]>([])
 const messageImages = ref<Map<string, UploadedImage[]>>(new Map())
 const nextMessageIndex = ref<number>(0)
 
-const { messages, input, handleSubmit, isLoading, stop, reload, setMessages } = useChat({
-  api: '/api/chat',
-  body: computed(() => ({
-    sessionId: currentSessionId.value || undefined,
-    enable_thinking: enableThinking.value,
-    thinking_budget: enableThinking.value ? thinkingBudget : undefined,
-    model: currentModel.value,
-    enable_web_search: enableWebSearch.value,
-    images:
-      uploadedImages.value.length > 0 ? uploadedImages.value.map((img) => img.dataUrl) : undefined
-  })),
-  onFinish: () => {
+const input = ref('')
+
+const chat = new Chat({
+  transport: new DefaultChatTransport({
+    api: '/api/chat',
+    body: () => ({
+      sessionId: currentSessionId.value || undefined,
+      enable_thinking: enableThinking.value,
+      thinking_budget: enableThinking.value ? thinkingBudget : undefined,
+      model: currentModel.value,
+      enable_web_search: enableWebSearch.value,
+      images:
+        uploadedImages.value.length > 0 ? uploadedImages.value.map((img) => img.dataUrl) : undefined
+    })
+  }),
+  onFinish: ({ message }) => {
     uploadedImages.value = []
     if (pendingMessageImages.value.length > 0) {
       nextTick(() => {
-        const targetMsg = messages.value[nextMessageIndex.value]
-        console.log(
-          '[chat] onFinish, targetMsg:',
-          targetMsg?.id,
-          targetMsg?.role,
-          targetMsg?.content
-        )
+        const targetMsg = message
         if (targetMsg && targetMsg.role === 'user') {
           messageImages.value.set(targetMsg.id, [...pendingMessageImages.value])
-          console.log('[chat] images associated to msg:', targetMsg.id)
         }
         pendingMessageImages.value = []
       })
@@ -76,7 +74,7 @@ const { messages, input, handleSubmit, isLoading, stop, reload, setMessages } = 
   onError: (err) => {
     uploadedImages.value = []
     if (pendingMessageImages.value.length > 0) {
-      const targetMsg = messages.value[nextMessageIndex.value]
+      const targetMsg = chat.messages[nextMessageIndex.value]
       if (targetMsg && targetMsg.role === 'user') {
         messageImages.value.set(targetMsg.id, [...pendingMessageImages.value])
       }
@@ -86,13 +84,33 @@ const { messages, input, handleSubmit, isLoading, stop, reload, setMessages } = 
   }
 })
 
-const originalHandleSubmit = handleSubmit
-const wrappedHandleSubmit = () => {
+const messages = computed(() => chat.messages)
+const isLoading = computed(() => chat.status === 'streaming' || chat.status === 'submitted')
+
+function setMessages(msgs: UIMessage[]) {
+  chat.messages = msgs
+}
+
+async function wrappedHandleSubmit() {
   if (uploadedImages.value.length > 0) {
     pendingMessageImages.value = [...uploadedImages.value]
   }
-  nextMessageIndex.value = messages.value.length
-  originalHandleSubmit()
+  nextMessageIndex.value = chat.messages.length
+  const text = input.value
+  input.value = ''
+  await chat.sendMessage({ text })
+}
+
+async function handleReload() {
+  try {
+    await chat.regenerate()
+  } catch {
+    toast.error('重新生成失败，请重试')
+  }
+}
+
+async function handleStop() {
+  await chat.stop()
 }
 
 function getMessageImages(msgId: string, index: number): UploadedImage[] {
@@ -107,6 +125,14 @@ function getMessageImages(msgId: string, index: number): UploadedImage[] {
   }
 
   return []
+}
+
+/** 从 UIMessage 的 parts 数组中提取文本内容 */
+function getMessageText(msg: UIMessage): string {
+  return msg.parts
+    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+    .map((p) => p.text)
+    .join('')
 }
 
 const editingIndex = ref(-1)
@@ -180,10 +206,14 @@ onMounted(async () => {
   await loadSessions()
 })
 
-function getToolInvocations(msg: any): any[] {
-  const invocations = msg.toolInvocations
-  if (!Array.isArray(invocations)) return []
-  return invocations
+function getToolInvocations(msg: UIMessage): any[] {
+  // v5 中工具调用在 parts 数组中，类型为 'tool-xxx' 或 'dynamic-tool'
+  if (msg.parts && Array.isArray(msg.parts)) {
+    return msg.parts.filter((p: any) =>
+      p.type.startsWith('tool-') || p.type === 'dynamic-tool'
+    )
+  }
+  return []
 }
 
 /**
@@ -191,20 +221,22 @@ function getToolInvocations(msg: any): any[] {
  * - enableWebSearch 关闭时，隐藏 webSearch 工具
  * - 其他工具（如 weather）始终显示
  */
-function getVisibleToolInvocations(msg: any): any[] {
+function getVisibleToolInvocations(msg: UIMessage): any[] {
   const all = getToolInvocations(msg)
   if (enableWebSearch.value) return all
-  return all.filter((inv: any) => inv.toolName !== 'webSearch')
+  return all.filter((inv: any) => {
+    // v5 中工具名在 toolName 字段（dynamic-tool）或从 type 中提取
+    const toolName = inv.toolName || (inv.type?.startsWith('tool-') ? inv.type.slice(5) : '')
+    return toolName !== 'webSearch'
+  })
 }
 
-/** 从消息对象中提取思考过程内容，兼容 AI SDK 的两种字段格式 */
-function getReasoningContent(msg: any): string {
-  // 旧版 AI SDK 使用 msg.reasoning 字段
-  if (msg.reasoning) return msg.reasoning
-  // 新版 AI SDK 使用 msg.parts 数组中的 reasoning 类型 part
+/** 从消息对象中提取思考过程内容（v5 parts 格式） */
+function getReasoningContent(msg: UIMessage): string {
   if (msg.parts && Array.isArray(msg.parts)) {
-    const reasoningPart = msg.parts.find((p: any) => p.type === 'reasoning')
-    if (reasoningPart) return reasoningPart.reasoning
+    const reasoningParts = msg.parts.filter((p: any) => p.type === 'reasoning')
+    // v5 中 reasoning part 的文本字段是 text（旧版是 reasoning）
+    return reasoningParts.map((p: any) => p.text || p.reasoning || '').join('')
   }
   return ''
 }
@@ -274,7 +306,10 @@ watch(
 )
 
 watch(
-  () => messages.value[messages.value.length - 1]?.content,
+  () => {
+    const lastMsg = messages.value[messages.value.length - 1]
+    return lastMsg ? getMessageText(lastMsg) : ''
+  },
   () => {
     if (isLoading.value) {
       virtualizer.value.scrollToIndex(messages.value.length - 1, {
@@ -295,14 +330,6 @@ async function copyMessage(content: string, msgId: string) {
     }, 2000)
   } catch {
     toast.error('复制失败')
-  }
-}
-
-async function handleReload() {
-  try {
-    await reload()
-  } catch {
-    toast.error('重新生成失败，请重试')
   }
 }
 
@@ -540,7 +567,7 @@ function onDocumentClick(e: Event) {
               }"
               v-memo="[
                 messages[virtualRow.index]?.id,
-                messages[virtualRow.index]?.content,
+                getMessageText(messages[virtualRow.index]),
                 messages[virtualRow.index]?.role,
                 editingIndex === virtualRow.index,
                 copiedMessageId === messages[virtualRow.index]?.id,
@@ -581,7 +608,7 @@ function onDocumentClick(e: Event) {
                 </div>
                 <div v-else class="group">
                   <div class="whitespace-pre-wrap break-words leading-relaxed">
-                    {{ messages[virtualRow.index].content }}
+                    {{ getMessageText(messages[virtualRow.index]) }}
                   </div>
                   <div
                     v-if="getMessageImages(messages[virtualRow.index].id, virtualRow.index).length"
@@ -604,7 +631,7 @@ function onDocumentClick(e: Event) {
                     <button
                       class="p-1.5 sm:p-1 text-gray-400 hover:text-gray-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                       v-tooltip="'编辑消息'"
-                      @click="startEditing(virtualRow.index, messages[virtualRow.index].content)"
+                      @click="startEditing(virtualRow.index, getMessageText(messages[virtualRow.index]))"
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -645,8 +672,8 @@ function onDocumentClick(e: Event) {
 
                 <div class="relative inline">
                   <MarkdownRenderer
-                    v-if="messages[virtualRow.index].content"
-                    :content="messages[virtualRow.index].content"
+                    v-if="getMessageText(messages[virtualRow.index])"
+                    :content="getMessageText(messages[virtualRow.index])"
                   />
                   <span
                     v-if="isLastMessageLoading && virtualRow.index === messages.length - 1"
@@ -655,14 +682,14 @@ function onDocumentClick(e: Event) {
                 </div>
 
                 <div
-                  v-if="messages[virtualRow.index].content"
+                  v-if="getMessageText(messages[virtualRow.index])"
                   class="flex items-center gap-1 mt-1.5 sm:mt-2 pt-1.5 sm:pt-2 border-t border-gray-100 sm:border-gray-200"
                 >
                   <button
                     class="p-1.5 sm:p-1 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                     v-tooltip="'复制'"
                     @click="
-                      copyMessage(messages[virtualRow.index].content, messages[virtualRow.index].id)
+                      copyMessage(getMessageText(messages[virtualRow.index]), messages[virtualRow.index].id)
                     "
                   >
                     <svg
@@ -731,7 +758,7 @@ function onDocumentClick(e: Event) {
         :supports-vision="supportsVision"
         :current-capabilities="currentCapabilities"
         @submit="wrappedHandleSubmit"
-        @stop="stop"
+        @stop="handleStop"
         @speech-error="(msg: string) => toast.error(msg)"
       />
     </div>

@@ -1,5 +1,6 @@
 import { useToast } from '~/composables/useToast'
 import { useConfirmDialog } from '~/composables/useConfirmDialog'
+import type { UIMessage } from 'ai'
 
 export interface SessionItem {
   id: string
@@ -18,7 +19,7 @@ export interface MessageRecord {
 }
 
 export function useChatSession(
-  setMessages: (msgs: Array<{ id: string; role: 'user' | 'assistant' | 'system'; content: string }>) => void
+  setMessages: (msgs: UIMessage[]) => void
 ) {
   const sessionsList = ref<SessionItem[]>([])
   const currentSessionId = ref<string>('')
@@ -58,8 +59,8 @@ export function useChatSession(
         setMessages(
           historyMessages.map((msg) => ({
             id: msg.id,
-            role: msg.role as 'user' | 'assistant' | 'system',
-            content: msg.content
+            role: msg.role as 'user' | 'assistant',
+            parts: [{ type: 'text' as const, text: msg.content }]
           }))
         )
       } else {

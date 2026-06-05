@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { hljs } from '~/utils/highlight'
 
 describe('highlight.js 按需引入 - 边界测试', () => {
