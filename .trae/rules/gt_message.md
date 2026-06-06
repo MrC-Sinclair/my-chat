@@ -1,3 +1,8 @@
+---
+description: Git 提交规范，使用中文 Conventional Commits 格式。当用户要求提交代码、写 commit message、或涉及 git commit 相关操作时生效
+alwaysApply: false
+---
+
 # Git 提交规范
 
 使用中文 Conventional Commits 格式。
