@@ -5,11 +5,16 @@
  *   - Firefox (Gecko)
  *   - WebKit (Safari)
  *
- * 此文件仅包含跨浏览器兼容性相关的测试用例。
- * 通用 E2E 测试在 chat.spec.ts 和 streaming-perf.spec.ts 中，
- * 它们会通过 playwright.config.ts 的多 project 配置自动在所有浏览器上运行。
+ * 使用 mock API 消除 LLM 不确定性。
  */
 import { test, expect } from '@playwright/test'
+import {
+  buildTextStream,
+  buildCodeBlockStream,
+  mockChatAPI
+} from './helpers/mock-chat'
+
+test.setTimeout(90000)
 
 test.describe('跨浏览器兼容性', () => {
   test.beforeEach(async ({ page }) => {
@@ -22,6 +27,8 @@ test.describe('跨浏览器兼容性', () => {
   })
 
   test('发送消息后 AI 回复渲染正常', async ({ page }) => {
+    await mockChatAPI(page, buildTextStream('测试通过！'), 80)
+
     const textarea = page.getByTestId('chat-input')
     await textarea.click()
     await page.waitForTimeout(200)
@@ -43,6 +50,8 @@ test.describe('跨浏览器兼容性', () => {
   })
 
   test('代码块在所有浏览器中正确渲染', async ({ page }) => {
+    await mockChatAPI(page, buildCodeBlockStream(), 80)
+
     const textarea = page.getByTestId('chat-input')
     await textarea.click()
     await page.waitForTimeout(200)
@@ -51,12 +60,15 @@ test.describe('跨浏览器兼容性', () => {
     await expect(page.getByTestId('send-btn')).toBeEnabled({ timeout: 5000 })
     await page.getByTestId('send-btn').click()
 
+    // 等待回复完成
+    await page.waitForSelector('[data-testid="send-btn"]', { timeout: 30000 })
+    // 等待 CodeBlock 异步组件加载（可能需要更长时间）
+    await page.waitForTimeout(3000)
+
+    // 使用 waitForFunction 等待 code-block-wrapper 出现
     await page.waitForFunction(
-      () => {
-        const els = document.querySelectorAll('.code-block-wrapper')
-        return els.length >= 1
-      },
-      { timeout: 30000 }
+      () => document.querySelectorAll('.code-block-wrapper').length >= 1,
+      { timeout: 10000 }
     )
 
     const codeBlock = page.locator('.markdown-body .code-block-wrapper').first()
@@ -64,6 +76,9 @@ test.describe('跨浏览器兼容性', () => {
   })
 
   test('流式输出打字机效果在所有浏览器中正常', async ({ page }) => {
+    const longText = '这是一首关于春天的诗。春风拂面花满枝，细雨润物细无声。燕子归来寻旧垒，桃花依旧笑春风。'
+    await mockChatAPI(page, buildTextStream(longText, 2), 60)
+
     const textarea = page.getByTestId('chat-input')
     await textarea.click()
     await page.waitForTimeout(200)
@@ -75,26 +90,28 @@ test.describe('跨浏览器兼容性', () => {
     const contentLengths: number[] = []
     const startTime = Date.now()
 
-    while (Date.now() - startTime < 20000) {
+    while (Date.now() - startTime < 15000) {
       const markdownEl = page.locator('.markdown-body').first()
       if (await markdownEl.isVisible()) {
         const text = (await markdownEl.textContent()) || ''
         contentLengths.push(text.length)
       }
       if (await page.locator('[data-testid="send-btn"]').isVisible()) break
-      await page.waitForTimeout(300)
+      await page.waitForTimeout(200)
     }
 
     expect(contentLengths.length).toBeGreaterThan(1)
   })
 
-  test('console 不应有渲染相关 error', async ({ page, browserName }) => {
+  test('console 不应有渲染相关 error', async ({ page }) => {
     const consoleErrors: string[] = []
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
         consoleErrors.push(msg.text())
       }
     })
+
+    await mockChatAPI(page, buildTextStream('你好！'), 80)
 
     const textarea = page.getByTestId('chat-input')
     await textarea.click()

@@ -24,116 +24,145 @@ import { createOpenAI } from '@ai-sdk/openai'
 import type { LanguageModel } from 'ai'
 
 /** reasoning 内容的前缀标记，用于在 text-delta 中标识思考过程片段 */
-const REASONING_PREFIX = '\x00REASONING:'
+export const REASONING_PREFIX = '\x00REASONING:'
 /** reasoning 结束的分隔标记，用于区分思考过程和正式回答的边界 */
-const REASONING_END = '\x00REASONING_END'
+export const REASONING_END = '\x00REASONING_END'
 
-const baseProvider = createOpenAI({
-  baseURL: process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1',
-  apiKey: process.env.OPENAI_API_KEY,
-  fetch: async (url, options) => {
-    // 修复请求体：将 developer 角色替换为 system（硅基流动不支持 developer）
-    if (options?.body && typeof options.body === 'string') {
-      try {
-        const body = JSON.parse(options.body)
-        if (body.messages && Array.isArray(body.messages)) {
-          let modified = false
-          for (const msg of body.messages) {
-            if (msg.role === 'developer') {
-              msg.role = 'system'
-              modified = true
-            }
-          }
-          if (modified) {
-            options = { ...options, body: JSON.stringify(body) }
+/**
+ * 自定义 fetch：拦截请求和响应，处理 reasoning_content 和 developer 角色
+ *
+ * 1. 请求拦截：将请求体中的 role: 'developer' 替换为 role: 'system'
+ * 2. 响应拦截：将 SSE 流中的 reasoning_content 映射为带 REASONING_PREFIX 前缀的 content
+ */
+export async function customFetch(
+  url: RequestInfo | URL,
+  options?: RequestInit
+): Promise<Response> {
+  // 修复请求体：将 developer 角色替换为 system（硅基流动不支持 developer）
+  if (options?.body && typeof options.body === 'string') {
+    try {
+      const body = JSON.parse(options.body)
+      if (body.messages && Array.isArray(body.messages)) {
+        let modified = false
+        for (const msg of body.messages) {
+          if (msg.role === 'developer') {
+            msg.role = 'system'
+            modified = true
           }
         }
-      } catch {
-        // JSON 解析失败，透传原始请求
+        if (modified) {
+          options = { ...options, body: JSON.stringify(body) }
+        }
       }
+    } catch {
+      // JSON 解析失败，透传原始请求
     }
+  }
 
-    const response = await globalThis.fetch(url, options)
+  const response = await globalThis.fetch(url, options)
 
-    // 非 SSE 响应或错误响应直接透传
-    if (!response.ok || !response.body) {
-      return response
-    }
+  // 非 SSE 响应或错误响应直接透传
+  if (!response.ok || !response.body) {
+    return response
+  }
 
-    const contentType = response.headers.get('content-type') || ''
-    if (!contentType.includes('text/event-stream')) {
-      return response
-    }
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('text/event-stream')) {
+    return response
+  }
 
-    // 追踪是否处于 reasoning 阶段，用于在 reasoning→content 切换时插入分隔标记
-    let wasReasoning = false
+  // 追踪是否处于 reasoning 阶段，用于在 reasoning→content 切换时插入分隔标记
+  let wasReasoning = false
+  // 行缓冲区：处理 SSE 行跨 TCP 包边界的情况
+  let lineBuffer = ''
 
-    // 拦截 SSE 响应流，将 reasoning_content 映射为带前缀的 content
-    const transformedBody = response.body.pipeThrough(
-      new TransformStream({
-        transform(chunk, controller) {
-          const text = new TextDecoder().decode(chunk, { stream: true })
-          const lines = text.split('\n')
+  // 拦截 SSE 响应流，将 reasoning_content 映射为带前缀的 content
+  const transformedBody = response.body.pipeThrough(
+    new TransformStream({
+      transform(chunk, controller) {
+        const text = new TextDecoder().decode(chunk, { stream: true })
+        // 将新数据拼接到缓冲区，按 \n 分割
+        lineBuffer += text
+        const lines = lineBuffer.split('\n')
+        // 只有最后一个元素非空时才是不完整的行，保留在缓冲区
+        // 如果最后一个元素为空，说明输入以 \n 结尾，所有行都是完整的
+        if (lines[lines.length - 1] !== '') {
+          lineBuffer = lines.pop()!
+        } else {
+          lineBuffer = ''
+        }
 
-          const modifiedLines: string[] = []
+        const modifiedLines: string[] = []
 
-          for (const line of lines) {
-            // 非 SSE data 行直接透传
-            if (!line.startsWith('data: ') || line === 'data: [DONE]') {
+        for (const line of lines) {
+          // 非 SSE data 行直接透传
+          if (!line.startsWith('data: ') || line === 'data: [DONE]') {
+            modifiedLines.push(line)
+            continue
+          }
+
+          try {
+            const json = JSON.parse(line.slice(6))
+            const delta = json?.choices?.[0]?.delta
+
+            if (!delta) {
               modifiedLines.push(line)
               continue
             }
 
-            try {
-              const json = JSON.parse(line.slice(6))
-              const delta = json?.choices?.[0]?.delta
-
-              if (!delta) {
-                modifiedLines.push(line)
-                continue
-              }
-
-              // 有 reasoning_content 且非空：映射为带前缀的 content
-              if (delta.reasoning_content != null && delta.reasoning_content !== '') {
-                delta.content = REASONING_PREFIX + delta.reasoning_content
-                delete delta.reasoning_content
-                wasReasoning = true
-                modifiedLines.push('data: ' + JSON.stringify(json))
-                continue
-              }
-
-              // reasoning_content 为空字符串（首帧标记）：仅删除该字段
-              if (delta.reasoning_content === '') {
-                delete delta.reasoning_content
-                modifiedLines.push('data: ' + JSON.stringify(json))
-                continue
-              }
-
-              // 从 reasoning 阶段切换到 content 阶段：插入分隔标记
-              if (wasReasoning && delta.content != null) {
-                delta.content = REASONING_END + delta.content
-                wasReasoning = false
-                modifiedLines.push('data: ' + JSON.stringify(json))
-                continue
-              }
-
-              modifiedLines.push(line)
-            } catch {
-              modifiedLines.push(line)
+            // 有 reasoning_content 且非空：映射为带前缀的 content
+            if (delta.reasoning_content != null && delta.reasoning_content !== '') {
+              delta.content = REASONING_PREFIX + delta.reasoning_content
+              delete delta.reasoning_content
+              wasReasoning = true
+              modifiedLines.push('data: ' + JSON.stringify(json))
+              continue
             }
+
+            // reasoning_content 为空字符串（首帧标记）：仅删除该字段
+            if (delta.reasoning_content === '') {
+              delete delta.reasoning_content
+              modifiedLines.push('data: ' + JSON.stringify(json))
+              continue
+            }
+
+            // 从 reasoning 阶段切换到 content 阶段：插入分隔标记
+            if (wasReasoning && delta.content != null) {
+              delta.content = REASONING_END + delta.content
+              wasReasoning = false
+              modifiedLines.push('data: ' + JSON.stringify(json))
+              continue
+            }
+
+            modifiedLines.push(line)
+          } catch {
+            modifiedLines.push(line)
           }
-
-          controller.enqueue(new TextEncoder().encode(modifiedLines.join('\n')))
         }
-      })
-    )
 
-    return new Response(transformedBody, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers
+        controller.enqueue(new TextEncoder().encode(modifiedLines.join('\n') + '\n'))
+      },
+      flush(controller) {
+        // 流结束时，将缓冲区中残留的不完整行输出
+        if (lineBuffer) {
+          controller.enqueue(new TextEncoder().encode(lineBuffer))
+          lineBuffer = ''
+        }
+      }
     })
-  }
+  )
+
+  return new Response(transformedBody, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers
+  })
+}
+
+const baseProvider = createOpenAI({
+  baseURL: process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1',
+  apiKey: process.env.OPENAI_API_KEY,
+  fetch: customFetch
 })
 
 /** 创建支持 reasoning_content 的 provider 实例 */
@@ -142,5 +171,3 @@ export function createReasoningProvider() {
   // 需要显式使用 .chat() 方法走 Chat Completions API
   return (modelId: string): LanguageModel => baseProvider.chat(modelId) as unknown as LanguageModel
 }
-
-export { REASONING_PREFIX, REASONING_END }

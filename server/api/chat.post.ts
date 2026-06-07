@@ -127,24 +127,28 @@ export default defineEventHandler(async (event) => {
 
   let imageUrls: string[] = []
   if (images && Array.isArray(images) && images.length > 0) {
+    if (!process.env.IMGBB_API_KEY) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: '图片对话功能不可用：未配置 IMGBB_API_KEY。请在 .env 中设置 IMGBB_API_KEY 后重试。'
+      })
+    }
     const uploadPromises = images.map(async (img: string) => {
       if (img.startsWith('data:')) {
-        if (process.env.IMGBB_API_KEY) {
-          const localPath = saveBase64Image(img)
-          const fullPath = join(process.cwd(), 'public', localPath)
+        const localPath = saveBase64Image(img)
+        const fullPath = join(process.cwd(), 'public', localPath)
+        try {
+          const publicUrl = await uploadToImgBb(fullPath)
+          return publicUrl
+        } catch (err) {
+          console.error('ImgBB 上传失败，降级使用 base64:', (err as Error).message)
           try {
-            const publicUrl = await uploadToImgBb(fullPath)
-            return publicUrl
-          } catch (err) {
-            console.error('ImgBB 上传失败，降级使用 base64:', (err as Error).message)
-            try {
-              if (existsSync(fullPath)) unlinkSync(fullPath)
-            } catch {
-              // 忽略清理错误
-            }
+            if (existsSync(fullPath)) unlinkSync(fullPath)
+          } catch {
+            // 忽略清理错误
           }
+          return img
         }
-        return img
       }
       return img
     })
@@ -219,10 +223,11 @@ export default defineEventHandler(async (event) => {
 
   try {
     // 创建 MCP 客户端连接 Weather Server（stdio 传输）
+    let mcpClient: Awaited<ReturnType<typeof createMCPClient>> | null = null
     let mcpTools: Record<string, any> = {}
     if (caps.toolCalling) {
       try {
-        const mcpClient = await createMCPClient({
+        mcpClient = await createMCPClient({
           transport: new Experimental_StdioMCPTransport({
             // Windows 下需要用 shell 模式执行 npx，否则 spawn ENOENT
             // AI SDK 的 StdioMCPTransport 使用 shell: false，所以 Windows 上需要用完整命令
@@ -279,7 +284,7 @@ export default defineEventHandler(async (event) => {
             // 只有 reasoning 没有正式回答（极端情况）
             cleanText = ''
           }
-          await saveMessagesToDb(sessionId, messages, cleanText, hasImages ? imageUrls : undefined)
+          await saveMessagesToDb(sessionId, messages, cleanText, useModel, hasImages ? imageUrls : undefined)
         } catch (err) {
           console.error('保存消息到数据库失败:', err)
         }
@@ -297,6 +302,9 @@ export default defineEventHandler(async (event) => {
         let isReasoning = false
         let textId = ''
         let reasoningId = ''
+        // 追踪是否已发送结束事件，避免重复发送
+        let textEnded = false
+        let reasoningEnded = false
 
         const reader = result.fullStream.getReader()
 
@@ -340,6 +348,7 @@ export default defineEventHandler(async (event) => {
                     if (isReasoning) {
                       writer.write({ type: 'reasoning-end', id: reasoningId })
                       isReasoning = false
+                      reasoningEnded = true
                     }
                     if (subParts[1]) {
                       if (!textId) {
@@ -366,6 +375,7 @@ export default defineEventHandler(async (event) => {
                 if (isReasoning) {
                   writer.write({ type: 'reasoning-end', id: reasoningId })
                   isReasoning = false
+                  reasoningEnded = true
                 }
                 if (textAfter) {
                   if (!textId) {
@@ -391,6 +401,7 @@ export default defineEventHandler(async (event) => {
                 if (isReasoning) {
                   writer.write({ type: 'reasoning-end', id: reasoningId })
                   isReasoning = false
+                  reasoningEnded = true
                 }
                 if (parts[1]) {
                   if (!textId) {
@@ -435,6 +446,7 @@ export default defineEventHandler(async (event) => {
 
             if (chunk.type === 'reasoning-end') {
               isReasoning = false
+              reasoningEnded = true
               writer.write(chunk)
               return processChunk()
             }
@@ -446,6 +458,7 @@ export default defineEventHandler(async (event) => {
             }
 
             if (chunk.type === 'text-end') {
+              textEnded = true
               writer.write(chunk)
               return processChunk()
             }
@@ -510,27 +523,35 @@ export default defineEventHandler(async (event) => {
             }
 
             if (chunk.type === 'finish') {
-              // 关闭未关闭的 text/reasoning
-              if (isReasoning && reasoningId) {
+              // 关闭未关闭的 text/reasoning（避免重复发送已关闭的）
+              if (isReasoning && reasoningId && !reasoningEnded) {
                 writer.write({ type: 'reasoning-end', id: reasoningId })
               }
-              if (textId) {
+              if (textId && !textEnded) {
                 writer.write({ type: 'text-end', id: textId })
               }
               writer.write({
                 type: 'finish',
                 finishReason: chunk.finishReason
               })
+              // 流结束后关闭 MCP 客户端，释放子进程资源
+              if (mcpClient) {
+                mcpClient.close().catch((err: unknown) =>
+                  console.error('MCP 客户端关闭失败:', err)
+                )
+              }
               return processChunk()
             }
 
-            // 其他事件类型（start, start-step, finish-step 等）直接写入
-            if (
-              chunk.type === 'start' ||
-              chunk.type === 'start-step' ||
-              chunk.type === 'finish-step'
-            ) {
-              writer.write(chunk)
+            // start / start-step / finish-step 事件需要剥离 fullStream 特有字段
+            // uiMessageChunkSchema 使用 strictObject，不允许未定义的字段
+            if (chunk.type === 'start') {
+              writer.write({ type: 'start', messageId: crypto.randomUUID() })
+            } else if (chunk.type === 'start-step') {
+              // start-step 不需要 request/warnings 字段，客户端不使用
+              writer.write({ type: 'start-step' })
+            } else if (chunk.type === 'finish-step') {
+              writer.write({ type: 'finish-step' })
             }
 
             return processChunk()
@@ -555,6 +576,7 @@ async function saveMessagesToDb(
   sessionId: string,
   chatMessages: Array<{ role: string; content: unknown }>,
   assistantText: string,
+  modelName: string,
   imageUrls?: string[]
 ) {
   if (chatMessages.length === 0) return
@@ -581,7 +603,7 @@ async function saveMessagesToDb(
     sessionId,
     role: 'assistant',
     content: assistantText,
-    metadata: { model: DEFAULT_LLM_MODEL },
+    metadata: { model: modelName },
     createdAt: new Date()
   })
   await db.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))

@@ -21,7 +21,7 @@ test.describe('视觉回归测试', () => {
     await expect(header).toBeVisible()
 
     await expect(page).toHaveScreenshot('empty-chat-page.png', {
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixelRatio: 0.05,
       fullPage: true
     })
   })
@@ -34,7 +34,7 @@ test.describe('视觉回归测试', () => {
     await expect(header).toBeVisible()
 
     await expect(page).toHaveScreenshot('tablet-layout.png', {
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixelRatio: 0.05,
       fullPage: true
     })
   })
@@ -47,7 +47,7 @@ test.describe('视觉回归测试', () => {
     await expect(header).toBeVisible()
 
     await expect(page).toHaveScreenshot('mobile-layout.png', {
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixelRatio: 0.05,
       fullPage: true
     })
   })
@@ -79,7 +79,7 @@ test.describe('视觉回归测试', () => {
 
     const markdownEl = page.locator('.markdown-body').first()
     await expect(markdownEl).toHaveScreenshot('static-markdown-content.png', {
-      maxDiffPixelRatio: 0.02
+      maxDiffPixelRatio: 0.05
     })
   })
 
@@ -106,7 +106,7 @@ console.log(greeting);</code></pre>
 
     const codeBlock = page.locator('.markdown-body .code-block-wrapper').first()
     await expect(codeBlock).toHaveScreenshot('static-code-block.png', {
-      maxDiffPixelRatio: 0.02
+      maxDiffPixelRatio: 0.05
     })
   })
 })

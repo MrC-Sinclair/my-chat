@@ -1,4 +1,10 @@
+/**
+ * AI 对话全流程 E2E 测试
+ *
+ * 使用 mock API 确保测试稳定。
+ */
 import { test, expect } from '@playwright/test'
+import { buildTextStream, mockChatAPI } from './helpers/mock-chat'
 
 test.setTimeout(60000)
 
@@ -23,11 +29,13 @@ test.describe('AI对话全流程', () => {
   })
 
   test('发送消息后应显示用户气泡', async ({ page }) => {
+    await mockChatAPI(page, buildTextStream('你好！'), 80)
     await typeAndSubmit(page, '你好')
     await expect(page.locator('.message-user')).toBeVisible({ timeout: 10000 })
   })
 
   test('加载中应显示停止按钮', async ({ page }) => {
+    await mockChatAPI(page, buildTextStream('1+1=2'), 80)
     await typeAndSubmit(page, '1+1=?')
     await expect(page.getByTestId('stop-btn')).toBeVisible({ timeout: 5000 })
   })

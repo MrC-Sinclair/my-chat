@@ -10,7 +10,8 @@ export default [
       '.output/**',
       'node_modules/**',
       'dist/**',
-      '.docs/**'
+      '.docs/**',
+      'playwright-report/**'
     ]
   },
   js.configs.recommended,
