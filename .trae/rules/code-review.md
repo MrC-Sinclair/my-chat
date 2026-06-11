@@ -89,6 +89,8 @@ alwaysApply: false
 | 7 | **saveMessagesToDb 重复插入** | 该函数只保存最后一条用户消息（反向查找），注意调用方式避免重复插入 |
 | 8 | **enable_thinking 参数兼容性** | 视觉/推理模型不支持此参数，需通过 `getModelCapabilities()` 判断后决定是否启用 |
 | 9 | **单文件过长** | `ai-chat.vue` 等核心文件持续膨胀，新增逻辑应考虑拆分到 composables/ |
+| 10| **测试用例过期** | 业务逻辑已变更，但测试用例/测试文件未同步更新，需检查是否符合最新业务 |
+| 11| ****修改 `server/db/schema.ts` 后必须同步更新 `docs/db-schema.md`，并运行 `pnpm db:push`**** | `docs/db-schema.md` 是表结构的唯一文档来源，禁止代码与文档脱节；`db:push` 确保数据库实际同步 |
 
 ## 审查输出格式
 
