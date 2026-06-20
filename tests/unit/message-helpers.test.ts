@@ -4,7 +4,8 @@
  * AI SDK v5 中消息结构从 content: string 变为 parts: Array<{type, text, ...}>
  * 测试从 parts 中提取内容的辅助函数：
  * - getMessageText：提取所有 text part 拼接
- * - getToolInvocations：提取所有 tool-* 和 dynamic-tool part
+ * - getToolInvocations：提取所有 tool-* 和 dynamic-tool part，并归一化 toolName
+ *   （v5 中静态工具 part 无 toolName 字段，需从 type=tool-xxx 提取）
  * - getReasoningContent：提取所有 reasoning part 的文本
  * - getVisibleToolInvocations：过滤出需要显示的工具调用
  */
@@ -21,7 +22,9 @@ interface TextPart {
 interface ToolInvocationPart {
   type: string
   toolCallId: string
-  toolName: string
+  // v5 中静态工具 part 没有 toolName 字段（工具名编码在 type 中：tool-xxx），
+  // 动态工具（dynamic-tool）才有 toolName 字段
+  toolName?: string
   input: Record<string, unknown>
   state: 'input-streaming' | 'input-available' | 'output-available' | 'output-error'
   output?: unknown
@@ -50,14 +53,19 @@ function getMessageText(msg: UIMessage): string {
     .join('')
 }
 
-/** 从消息中提取所有工具调用 part */
+/** 从消息中提取所有工具调用 part，并归一化 toolName 字段 */
 function getToolInvocations(msg: UIMessage): ToolInvocationPart[] {
-  if (msg.parts && Array.isArray(msg.parts)) {
-    return msg.parts.filter(
+  if (!msg.parts || !Array.isArray(msg.parts)) return []
+  return msg.parts
+    .filter(
       (p): p is ToolInvocationPart => p.type.startsWith('tool-') || p.type === 'dynamic-tool'
     )
-  }
-  return []
+    .map((p) => {
+      if (p.toolName) return p
+      // 静态工具：从 type 中提取工具名（tool-webSearch → webSearch）
+      const name = p.type.startsWith('tool-') ? p.type.slice(5) : ''
+      return { ...p, toolName: name }
+    })
 }
 
 /** 从消息中提取推理内容 */
@@ -76,10 +84,8 @@ function getVisibleToolInvocations(
 ): ToolInvocationPart[] {
   const all = getToolInvocations(msg)
   if (enableWebSearch) return all
-  return all.filter((inv) => {
-    const toolName = inv.toolName || (inv.type?.startsWith('tool-') ? inv.type.slice(5) : '')
-    return toolName !== 'webSearch'
-  })
+  // 归一化后 toolName 一定存在
+  return all.filter((inv) => inv.toolName !== 'webSearch')
 }
 
 import { describe, it, expect } from 'vitest'
@@ -106,16 +112,15 @@ describe('getMessageText', () => {
     expect(getMessageText(msg)).toBe('第一段第二段')
   })
 
-  it('包含 text + tool-invocation 的消息 → 只提取文本', () => {
+  it('包含 text + tool part 的消息 → 只提取文本', () => {
     const msg: UIMessage = {
       id: '3',
       role: 'assistant',
       parts: [
         { type: 'text', text: '让我查一下天气' },
         {
-          type: 'tool-invocation',
+          type: 'tool-weather',
           toolCallId: 'call-1',
-          toolName: 'weather',
           input: { city: '北京' },
           state: 'output-available'
         },
@@ -140,9 +145,8 @@ describe('getMessageText', () => {
       role: 'assistant',
       parts: [
         {
-          type: 'tool-invocation',
+          type: 'tool-webSearch',
           toolCallId: 'call-2',
-          toolName: 'webSearch',
           input: { query: 'test' },
           state: 'input-streaming'
         }
@@ -162,16 +166,15 @@ describe('getMessageText', () => {
 })
 
 describe('getToolInvocations', () => {
-  it('包含 tool-invocation part → 正确提取', () => {
+  it('静态工具 part（tool-weather，无 toolName 字段）→ 归一化后 toolName 从 type 提取', () => {
     const msg: UIMessage = {
       id: '1',
       role: 'assistant',
       parts: [
         { type: 'text', text: '查询中' },
         {
-          type: 'tool-invocation',
+          type: 'tool-weather',
           toolCallId: 'call-1',
-          toolName: 'weather',
           input: { city: '北京' },
           state: 'output-available'
         }
@@ -179,10 +182,11 @@ describe('getToolInvocations', () => {
     }
     const tools = getToolInvocations(msg)
     expect(tools).toHaveLength(1)
+    // 归一化：从 type='tool-weather' 提取出 toolName='weather'
     expect(tools[0].toolName).toBe('weather')
   })
 
-  it('包含 dynamic-tool part → 正确提取', () => {
+  it('包含 dynamic-tool part → 正确提取（toolName 已存在，不覆盖）', () => {
     const msg: UIMessage = {
       id: '2',
       role: 'assistant',
@@ -210,23 +214,21 @@ describe('getToolInvocations', () => {
     expect(getToolInvocations(msg)).toHaveLength(0)
   })
 
-  it('多个工具调用 → 全部提取', () => {
+  it('多个静态工具调用 → 全部提取并归一化 toolName', () => {
     const msg: UIMessage = {
       id: '4',
       role: 'assistant',
       parts: [
         {
-          type: 'tool-invocation',
+          type: 'tool-weather',
           toolCallId: 'call-a',
-          toolName: 'weather',
           input: { city: '上海' },
           state: 'output-available'
         },
         { type: 'text', text: '中间文本' },
         {
-          type: 'tool-invocation',
+          type: 'tool-webSearch',
           toolCallId: 'call-b',
-          toolName: 'webSearch',
           input: { query: 'test' },
           state: 'output-available'
         }
@@ -245,6 +247,28 @@ describe('getToolInvocations', () => {
       parts: []
     }
     expect(getToolInvocations(msg)).toHaveLength(0)
+  })
+
+  it('静态工具 part 保留原始字段（input/state/output 不丢失）', () => {
+    const msg: UIMessage = {
+      id: '6',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-weather',
+          toolCallId: 'call-c',
+          input: { city: '深圳' },
+          state: 'output-available',
+          output: { city: '深圳', current: { temperature: '30°C' } }
+        }
+      ]
+    }
+    const tools = getToolInvocations(msg)
+    expect(tools).toHaveLength(1)
+    expect(tools[0].toolName).toBe('weather')
+    expect(tools[0].input).toEqual({ city: '深圳' })
+    expect(tools[0].state).toBe('output-available')
+    expect(tools[0].output).toEqual({ city: '深圳', current: { temperature: '30°C' } })
   })
 })
 
@@ -305,22 +329,20 @@ describe('getReasoningContent', () => {
 })
 
 describe('getVisibleToolInvocations', () => {
-  it('enableWebSearch 开启时 → 显示所有工具调用', () => {
+  it('enableWebSearch 开启时 → 显示所有工具调用（含静态工具归一化）', () => {
     const msg: UIMessage = {
       id: '1',
       role: 'assistant',
       parts: [
         {
-          type: 'tool-invocation',
+          type: 'tool-weather',
           toolCallId: 'call-1',
-          toolName: 'weather',
           input: { city: '北京' },
           state: 'output-available'
         },
         {
-          type: 'tool-invocation',
+          type: 'tool-webSearch',
           toolCallId: 'call-2',
-          toolName: 'webSearch',
           input: { query: 'test' },
           state: 'output-available'
         }
@@ -330,22 +352,20 @@ describe('getVisibleToolInvocations', () => {
     expect(visible).toHaveLength(2)
   })
 
-  it('enableWebSearch 关闭时 → 隐藏 webSearch 工具', () => {
+  it('enableWebSearch 关闭时 → 隐藏 webSearch 工具（静态工具无 toolName 也能正确过滤）', () => {
     const msg: UIMessage = {
       id: '2',
       role: 'assistant',
       parts: [
         {
-          type: 'tool-invocation',
+          type: 'tool-weather',
           toolCallId: 'call-1',
-          toolName: 'weather',
           input: { city: '北京' },
           state: 'output-available'
         },
         {
-          type: 'tool-invocation',
+          type: 'tool-webSearch',
           toolCallId: 'call-2',
-          toolName: 'webSearch',
           input: { query: 'test' },
           state: 'output-available'
         }
@@ -362,9 +382,8 @@ describe('getVisibleToolInvocations', () => {
       role: 'assistant',
       parts: [
         {
-          type: 'tool-invocation',
+          type: 'tool-webSearch',
           toolCallId: 'call-1',
-          toolName: 'webSearch',
           input: { query: 'test' },
           state: 'output-available'
         }

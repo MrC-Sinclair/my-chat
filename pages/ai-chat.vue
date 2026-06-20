@@ -70,6 +70,12 @@ const chat = new Chat({
         pendingMessageImages.value = []
       })
     }
+    // 刷新会话列表以更新消息数。
+    // 服务端在 streamText 的 onFinish 中写库，客户端流结束时写库可能尚未完成，
+    // 延迟 500ms 规避竞态，确保 loadSessions 能读到最新消息数。
+    setTimeout(() => {
+      loadSessions().catch(() => {})
+    }, 500)
   },
   onError: (err) => {
     uploadedImages.value = []
@@ -207,13 +213,21 @@ onMounted(async () => {
 })
 
 function getToolInvocations(msg: UIMessage): any[] {
-  // v5 中工具调用在 parts 数组中，类型为 'tool-xxx' 或 'dynamic-tool'
-  if (msg.parts && Array.isArray(msg.parts)) {
-    return msg.parts.filter((p: any) =>
-      p.type.startsWith('tool-') || p.type === 'dynamic-tool'
+  // v5 中工具调用在 parts 数组中：
+  // - 静态工具（如 webSearch）part.type = `tool-${name}`，但【没有】toolName 字段
+  // - 动态工具（如 MCP weather）part.type = 'dynamic-tool'，有 toolName 字段
+  // 这里做归一化：为静态工具补上 toolName，避免下游组件因 toolName 缺失而不渲染
+  if (!msg.parts || !Array.isArray(msg.parts)) return []
+  return msg.parts
+    .filter(
+      (p: any) => p.type.startsWith('tool-') || p.type === 'dynamic-tool'
     )
-  }
-  return []
+    .map((p: any) => {
+      if (p.toolName) return p
+      // 静态工具：从 type 中提取工具名（tool-webSearch → webSearch）
+      const name = p.type.startsWith('tool-') ? p.type.slice(5) : ''
+      return { ...p, toolName: name }
+    })
 }
 
 /**
@@ -224,11 +238,8 @@ function getToolInvocations(msg: UIMessage): any[] {
 function getVisibleToolInvocations(msg: UIMessage): any[] {
   const all = getToolInvocations(msg)
   if (enableWebSearch.value) return all
-  return all.filter((inv: any) => {
-    // v5 中工具名在 toolName 字段（dynamic-tool）或从 type 中提取
-    const toolName = inv.toolName || (inv.type?.startsWith('tool-') ? inv.type.slice(5) : '')
-    return toolName !== 'webSearch'
-  })
+  // 归一化后 toolName 一定存在
+  return all.filter((inv: any) => inv.toolName !== 'webSearch')
 }
 
 /** 从消息对象中提取思考过程内容（v5 parts 格式） */
