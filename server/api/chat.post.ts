@@ -52,6 +52,34 @@ const MAX_IMAGE_SIZE = 4 * 1024 * 1024
 const MAX_IMAGES_PER_MESSAGE = 5
 const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads')
 
+/**
+ * 从消息中提取纯文本内容。
+ * AI SDK v5 的 UIMessage 格式将文本放在 parts 数组中（{ type: 'text', text: '...' }），
+ * 而旧格式直接用 content 字符串。此处兼容两种格式。
+ */
+function extractTextFromMessage(msg: {
+  content?: unknown
+  parts?: unknown
+}): string {
+  // AI SDK v5：优先从 parts 数组提取文本
+  if (Array.isArray(msg.parts)) {
+    const text = msg.parts
+      .filter(
+        (p: unknown) =>
+          typeof p === 'object' &&
+          p !== null &&
+          (p as { type?: string }).type === 'text' &&
+          typeof (p as { text?: string }).text === 'string'
+      )
+      .map((p: unknown) => (p as { text: string }).text)
+      .join('')
+    if (text) return text
+  }
+  // 旧格式或 parts 为空时回退到 content
+  if (typeof msg.content === 'string') return msg.content
+  return String(msg.content || '')
+}
+
 function saveBase64Image(base64: string): string {
   const match = base64.match(/^data:image\/(\w+);base64,(.+)$/)
   if (!match) throw new Error('Invalid image format')
@@ -97,7 +125,8 @@ export default defineEventHandler(async (event) => {
   }
 
   for (const msg of messages) {
-    if (typeof msg.content === 'string' && msg.content.length > MAX_MESSAGE_LENGTH) {
+    const text = extractTextFromMessage(msg)
+    if (text.length > MAX_MESSAGE_LENGTH) {
       throw createError({
         statusCode: 400,
         statusMessage: `单条消息长度超过限制（最多 ${MAX_MESSAGE_LENGTH} 字符）`
@@ -160,8 +189,8 @@ export default defineEventHandler(async (event) => {
 
   const llmMessages = contextMessages
     .filter((msg: { role: string }) => msg.role !== 'system')
-    .map((msg: { role: string; content: unknown }) => {
-      const textContent = typeof msg.content === 'string' ? msg.content : String(msg.content || '')
+    .map((msg: { role: string; content: unknown; parts?: unknown }) => {
+      const textContent = extractTextFromMessage(msg)
 
       if (msg.role === 'assistant') return { role: 'assistant' as const, content: textContent }
 
@@ -212,7 +241,7 @@ export default defineEventHandler(async (event) => {
     const lastUserMsg =
       contextMessages
         .filter((m: { role: string }) => m.role === 'user')
-        .map((m: { content: unknown }) => (typeof m.content === 'string' ? m.content : ''))
+        .map((m: { content: unknown; parts?: unknown }) => extractTextFromMessage(m))
         .pop() || ''
 
     if (TIME_KEYWORDS.some((kw) => lastUserMsg.includes(kw))) {
@@ -586,14 +615,13 @@ async function saveMessagesToDb(
     if (imageUrls && imageUrls.length > 0) {
       meta.images = imageUrls.map((url, i) => ({ index: i, url }))
     }
+    // 兼容 AI SDK v5 的 parts 格式和旧 content 字符串格式
+    const userText = extractTextFromMessage(lastUserMessage)
     await db.insert(messagesTable).values({
       id: crypto.randomUUID(),
       sessionId,
       role: 'user',
-      content:
-        typeof lastUserMessage.content === 'string'
-          ? lastUserMessage.content
-          : JSON.stringify(lastUserMessage.content),
+      content: userText,
       metadata: Object.keys(meta).length > 0 ? meta : undefined,
       createdAt: new Date()
     })
