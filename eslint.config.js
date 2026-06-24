@@ -84,7 +84,7 @@ export default [
     },
     rules: {
       'vue/multi-word-component-names': 'off',
-      'no-console': 'warn',
+      'no-console': 'off',
       'no-undef': 'off',
       'no-unused-vars': ['error', { args: 'none', varsIgnorePattern: '^_' }]
     }
@@ -136,7 +136,7 @@ export default [
       }
     },
     rules: {
-      'no-console': 'warn',
+      'no-console': 'off',
       'no-undef': 'off',
       'no-unused-vars': ['error', { args: 'none', varsIgnorePattern: '^_' }]
     }
