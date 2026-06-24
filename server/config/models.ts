@@ -2,8 +2,8 @@
 export interface ModelCapabilities {
   /** 是否支持图片理解（多模态） */
   vision: boolean
-  /** 是否支持深度思考/推理 */
-  reasoning: boolean
+  /** 是否自带原生深度思考模式（API 返回 reasoning_content） */
+  deepThinking: boolean
   /** 是否支持工具调用（function calling） */
   toolCalling: boolean
 }
@@ -23,17 +23,18 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
   {
     label: 'Qwen3-8B',
     value: 'Qwen/Qwen3-8B',
-    capabilities: { vision: false, reasoning: false, toolCalling: true }
+    capabilities: { vision: false, deepThinking: false, toolCalling: true }
   },
   {
     label: 'DeepSeek-R1-0528-Qwen3-8B',
     value: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
-    capabilities: { vision: false, reasoning: true, toolCalling: false }
+    capabilities: { vision: false, deepThinking: true, toolCalling: false }
   },
+  // 已被废弃，需检查
   {
     label: 'GLM-4.1V-9B-Thinking',
     value: 'THUDM/GLM-4.1V-9B-Thinking',
-    capabilities: { vision: true, reasoning: true, toolCalling: false }
+    capabilities: { vision: true, deepThinking: true, toolCalling: false }
   }
 ]
 
@@ -51,7 +52,7 @@ export function getModelCapabilities(modelValue: string): ModelCapabilities {
   return (
     MODEL_CONFIG_MAP.get(modelValue)?.capabilities ?? {
       vision: false,
-      reasoning: false,
+      deepThinking: false,
       toolCalling: true
     }
   )

@@ -218,7 +218,7 @@ export default defineEventHandler(async (event) => {
     })
 
   const thinkingEnabled = enable_thinking ?? DEFAULT_ENABLE_THINKING
-  const modelSupportsThinking = !caps.vision && !caps.reasoning
+  const modelSupportsThinking = !caps.vision && !caps.deepThinking
   // AI SDK v5 中 enableThinking/thinkingBudget 通过 providerOptions 传递
   const thinkingOptions =
     thinkingEnabled && modelSupportsThinking
@@ -231,7 +231,7 @@ export default defineEventHandler(async (event) => {
         }
       : {}
 
-  const maxSteps = caps.vision || caps.reasoning ? 1 : 5
+  const maxSteps = caps.vision || caps.deepThinking ? 1 : 5
   const stopWhen = stepCountIs(maxSteps)
   const webSearchEnabled = enable_web_search !== false
 

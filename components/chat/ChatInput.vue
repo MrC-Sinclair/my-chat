@@ -349,7 +349,7 @@ function toggleSpeechRecognition() {
               : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
           "
           v-tooltip="
-            currentCapabilities.reasoning
+            currentCapabilities.deepThinking
               ? enableThinking
                 ? '思考过程已显示'
                 : '点击显示思考过程'
@@ -372,7 +372,7 @@ function toggleSpeechRecognition() {
             <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
             <path d="M12 12V2a10 10 0 0 1 8.66 14.34" />
           </svg>
-          {{ currentCapabilities.reasoning ? '思考' : '思考' }}
+          {{ currentCapabilities.deepThinking ? '思考' : '思考' }}
         </button>
 
         <button

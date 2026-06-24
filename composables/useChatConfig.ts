@@ -1,6 +1,6 @@
 export interface ModelCapabilities {
   vision: boolean
-  reasoning: boolean
+  deepThinking: boolean
   toolCalling: boolean
 }
 
@@ -14,17 +14,17 @@ const FALLBACK_MODELS: ModelOption[] = [
   {
     label: 'Qwen3-8B',
     value: 'Qwen/Qwen3-8B',
-    capabilities: { vision: false, reasoning: false, toolCalling: true }
+    capabilities: { vision: false, deepThinking: false, toolCalling: true }
   },
   {
     label: 'DeepSeek-R1-0528-Qwen3-8B',
     value: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
-    capabilities: { vision: false, reasoning: true, toolCalling: false }
+    capabilities: { vision: false, deepThinking: true, toolCalling: false }
   },
   {
     label: 'GLM-4.1V-9B-Thinking',
     value: 'THUDM/GLM-4.1V-9B-Thinking',
-    capabilities: { vision: true, reasoning: true, toolCalling: false }
+    capabilities: { vision: true, deepThinking: true, toolCalling: false }
   }
 ]
 
@@ -45,13 +45,13 @@ export function useChatConfig() {
 
   const currentCapabilities = computed(() => {
     const found = modelOptions.value.find((opt) => opt.value === currentModel.value)
-    return found?.capabilities ?? { vision: false, reasoning: false, toolCalling: true }
+    return found?.capabilities ?? { vision: false, deepThinking: false, toolCalling: true }
   })
 
   const supportsVision = computed(() => currentCapabilities.value.vision)
 
   watch(currentModel, () => {
-    enableThinking.value = !currentCapabilities.value.reasoning
+    enableThinking.value = !currentCapabilities.value.deepThinking
   })
 
   async function loadModels() {
