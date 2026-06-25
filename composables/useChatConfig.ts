@@ -1,16 +1,9 @@
-export interface ModelCapabilities {
-  vision: boolean
-  deepThinking: boolean
-  toolCalling: boolean
-}
+import type { ModelCapabilities, ModelConfig } from '~/server/config/models'
 
-export interface ModelOption {
-  label: string
-  value: string
-  capabilities: ModelCapabilities
-}
+// 重新导出类型，供前端组件直接从 useChatConfig 引入，避免类型定义分散导致漂移
+export type { ModelCapabilities, ModelConfig }
 
-const FALLBACK_MODELS: ModelOption[] = [
+const FALLBACK_MODELS: ModelConfig[] = [
   {
     label: 'Qwen3-8B',
     value: 'Qwen/Qwen3-8B',
@@ -21,10 +14,11 @@ const FALLBACK_MODELS: ModelOption[] = [
     value: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
     capabilities: { vision: false, deepThinking: true, toolCalling: false }
   },
+  // GLM-Z1-9B-0414：强制思考模式（关闭开关也会思考），无多模态，不支持工具调用
   {
-    label: 'GLM-4.1V-9B-Thinking',
-    value: 'THUDM/GLM-4.1V-9B-Thinking',
-    capabilities: { vision: true, deepThinking: true, toolCalling: false }
+    label: 'GLM-Z1-9B-0414',
+    value: 'THUDM/GLM-Z1-9B-0414',
+    capabilities: { vision: false, deepThinking: true, toolCalling: false }
   }
 ]
 
@@ -39,7 +33,7 @@ export function useChatConfig() {
 
   const showSidebar = ref(false)
 
-  const modelOptions = ref<ModelOption[]>(FALLBACK_MODELS)
+  const modelOptions = ref<ModelConfig[]>(FALLBACK_MODELS)
 
   const thinkingBudget = 4096
 
@@ -56,7 +50,7 @@ export function useChatConfig() {
 
   async function loadModels() {
     try {
-      const data = await $fetch<ModelOption[]>('/api/models')
+      const data = await $fetch<ModelConfig[]>('/api/models')
       if (data && data.length > 0) {
         modelOptions.value = data
       }

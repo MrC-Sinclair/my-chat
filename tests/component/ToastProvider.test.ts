@@ -10,7 +10,7 @@
  * 策略：通过子组件调用 useToast() 并 defineExpose 暴露给测试
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, h, nextTick } from 'vue'
 import ToastProvider from '~/components/ToastProvider.vue'

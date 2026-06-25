@@ -27,7 +27,7 @@ const visionCapabilities: ModelCapabilities = {
   toolCalling: false
 }
 
-function mountChatInput(overrides: Partial<Parameters<typeof mountChatInput>[0]> = {}) {
+function mountChatInput(overrides: { props?: Partial<InstanceType<typeof ChatInput>['$props']> } = {}) {
   const props = {
     input: '',
     isLoading: false,

@@ -372,7 +372,7 @@ function toggleSpeechRecognition() {
             <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
             <path d="M12 12V2a10 10 0 0 1 8.66 14.34" />
           </svg>
-          {{ currentCapabilities.deepThinking ? '思考' : '思考' }}
+          {{ currentCapabilities.deepThinking ? '思考' : '深度思考' }}
         </button>
 
         <button

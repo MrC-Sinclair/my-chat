@@ -30,11 +30,11 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     value: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
     capabilities: { vision: false, deepThinking: true, toolCalling: false }
   },
-  // 已被废弃，需检查
+  // GLM-Z1-9B-0414：强制思考模式（关闭开关也会思考），无多模态，不支持工具调用
   {
-    label: 'GLM-4.1V-9B-Thinking',
-    value: 'THUDM/GLM-4.1V-9B-Thinking',
-    capabilities: { vision: true, deepThinking: true, toolCalling: false }
+    label: 'GLM-Z1-9B-0414',
+    value: 'THUDM/GLM-Z1-9B-0414',
+    capabilities: { vision: false, deepThinking: true, toolCalling: false }
   }
 ]
 

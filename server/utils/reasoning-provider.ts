@@ -110,6 +110,25 @@ export async function customFetch(
               continue
             }
 
+            // 过滤无效的 tool_calls 首帧
+            // 部分模型（如 GLM-4-9B-0414）会发送 id=null、function.name="" 的空 tool_calls，
+            // AI SDK v5 解析后生成 toolCallId=null 的 tool-input-start 事件，触发 schema 校验失败
+            if (Array.isArray(delta.tool_calls)) {
+              const validToolCalls = delta.tool_calls.filter(
+                (tc: { id?: unknown; function?: { name?: string } }) =>
+                  tc.id != null && tc.function && tc.function.name !== ''
+              )
+              if (validToolCalls.length === 0) {
+                delete delta.tool_calls
+                // content 为 null 时整个 delta 无有效内容，跳过该帧避免触发空 tool 事件
+                if (delta.content == null) {
+                  continue
+                }
+              } else {
+                delta.tool_calls = validToolCalls
+              }
+            }
+
             // 有 reasoning_content 且非空：映射为带前缀的 content
             if (delta.reasoning_content != null && delta.reasoning_content !== '') {
               delta.content = REASONING_PREFIX + delta.reasoning_content
