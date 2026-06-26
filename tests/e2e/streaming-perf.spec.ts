@@ -8,6 +8,7 @@ import { test, expect } from '@playwright/test'
 import {
   buildTextStream,
   buildCodeBlockStream,
+  buildReasoningStream,
   mockChatAPI,
   typeAndSubmit
 } from './helpers/mock-chat'
@@ -105,5 +106,39 @@ test.describe('流式渲染性能', () => {
         e.includes('render') || e.includes('KaTeX') || e.includes('marked') || e.includes('mount')
     )
     expect(renderErrors).toEqual([])
+  })
+
+  test('reasoning 流式输出期间思考内容应逐步增长（验证 v-memo 不屏蔽 reasoning 增量）', async ({ page }) => {
+    // 长 reasoning 文本 + 小 chunk + 延迟，确保采样到多个 reasoning 增量
+    // 此用例覆盖 v-memo 依赖数组遗漏 reasoning 导致的"一次性显示"回归
+    const reasoningText = '让我分析一下这个问题。首先需要理解用户的核心诉求，即流式输出与渲染性能能否兼得。从技术角度看，Vue3 的 v-memo 指令在依赖未变化时会跳过子树 patch。关键在于依赖数组是否包含 reasoning 内容。若遗漏则 reasoning 增量到来时整个子树被跳过，直到 text 开始才一次性显示。'
+    const answerText = '可以兼得。'
+    await mockChatAPI(page, buildReasoningStream(reasoningText, answerText, 2), 60)
+
+    await typeAndSubmit(page, '分析流式输出问题')
+
+    // 等待思考过程区域出现
+    await page.waitForSelector('.thinking-process', { timeout: 30000 })
+
+    const reasoningLengths: number[] = []
+    const startTime = Date.now()
+
+    // 在 reasoning 阶段（text 开始前）采样思考内容长度
+    while (Date.now() - startTime < 15000) {
+      const thinkingEl = page.locator('.thinking-process .whitespace-pre-wrap').first()
+      if (await thinkingEl.isVisible()) {
+        const text = (await thinkingEl.textContent()) || ''
+        reasoningLengths.push(text.length)
+      }
+      // text 开始后（markdown-body 出现）即可停止采样
+      if (await page.locator('.markdown-body').first().isVisible()) break
+      await page.waitForTimeout(200)
+    }
+
+    expect(reasoningLengths.length).toBeGreaterThan(1)
+    // reasoning 内容必须随时间逐步增长，而非一次性出现
+    // 若 v-memo 遗漏 reasoning 依赖，此处会失败（只有一个长度值或长度不变）
+    const uniqueLengths = new Set(reasoningLengths)
+    expect(uniqueLengths.size).toBeGreaterThanOrEqual(2)
   })
 })

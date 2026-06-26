@@ -37,19 +37,24 @@ export function buildTextStream(text: string, chunkSize = 3): string {
 }
 
 /** 模拟带推理过程的流式响应 */
-export function buildReasoningStream(reasoningText: string, answerText: string): string {
+export function buildReasoningStream(reasoningText: string, answerText: string, chunkSize = 3): string {
   const chunks: string[] = []
   chunks.push(sseChunk({ type: 'start' }))
   chunks.push(sseChunk({ type: 'start-step' }))
 
   const reasoningId = 'rsn-1'
   chunks.push(sseChunk({ type: 'reasoning-start', id: reasoningId }))
-  chunks.push(sseChunk({ type: 'reasoning-delta', id: reasoningId, delta: reasoningText }))
+  // 按 chunkSize 切片，模拟真实流式 reasoning 逐 chunk 到达
+  for (let i = 0; i < reasoningText.length; i += chunkSize) {
+    chunks.push(sseChunk({ type: 'reasoning-delta', id: reasoningId, delta: reasoningText.slice(i, i + chunkSize) }))
+  }
   chunks.push(sseChunk({ type: 'reasoning-end', id: reasoningId }))
 
   const textId = 'txt-1'
   chunks.push(sseChunk({ type: 'text-start', id: textId }))
-  chunks.push(sseChunk({ type: 'text-delta', id: textId, delta: answerText }))
+  for (let i = 0; i < answerText.length; i += chunkSize) {
+    chunks.push(sseChunk({ type: 'text-delta', id: textId, delta: answerText.slice(i, i + chunkSize) }))
+  }
   chunks.push(sseChunk({ type: 'text-end', id: textId }))
 
   chunks.push(sseChunk({ type: 'finish-step' }))

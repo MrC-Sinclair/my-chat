@@ -579,6 +579,7 @@ function onDocumentClick(e: Event) {
               v-memo="[
                 messages[virtualRow.index]?.id,
                 getMessageText(messages[virtualRow.index]),
+                getReasoningContent(messages[virtualRow.index]),
                 messages[virtualRow.index]?.role,
                 editingIndex === virtualRow.index,
                 copiedMessageId === messages[virtualRow.index]?.id,
