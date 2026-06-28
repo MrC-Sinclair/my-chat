@@ -106,7 +106,27 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
   })
 
   /**
-   * 第二步：提取行内公式，用占位符替换
+   * 第二步半：处理流式输出中未闭合的 $$（关键 FOUC 修复）
+   *
+   * 背景：流式输出时，AI 正在逐 token 输出块级公式，$$ 还没闭合。
+   * 此时 mathBlockRegex 匹配不到闭合的 $$...$$，LaTeX 源码会被
+   * marked 当作纯文本直接显示给用户（如 \int_0^\infty 字符），
+   * 等 $$ 闭合后才变成公式，整个流式期间持续 FOUC。
+   *
+   * 修复：检测到未闭合的 $$ 时，把 $$ 及其后到文本末尾的内容
+   * 替换为骨架屏占位符。$$ 闭合后，mathBlockRegex 会正常提取，
+   * 占位符自动消失，恢复正常渲染。
+   *
+   * 注意：$$ 后的所有内容都会被骨架屏占位。流式输出中 $$ 一旦出现，
+   * 通常就是要开始块级公式，后续内容都是公式的一部分，这是合理的。
+   */
+  processedText = processedText.replace(
+    /\$\$([\s\S]*)$/,
+    '\n%%MATHBLOCK_UNCLOSED%%\n'
+  )
+
+  /**
+   * 第三步：提取行内公式，用占位符替换
    *
    * $x^2$ → %%MATHINLINE0%%
    */
@@ -188,15 +208,26 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
    * data-formula 属性存储原始 LaTeX 公式，供 katex.ts 的 renderMath 读取。
    */
   mathBlocks.forEach((formula, index) => {
+    /**
+     * 块级公式占位内容使用骨架屏，而非 LaTeX 源码字符。
+     *
+     * 历史问题：原先占位 div 内直接放 escapeHtml(formula)，导致 KaTeX JS/CSS
+     * 异步加载完成前，用户会先看到 LaTeX 源码字符（如 \int_0^\infty...），
+     * 加载后才替换为渲染后的公式，产生 FOUC（Flash of Unstyled Content）。
+     *
+     * 现改用骨架屏占位，KaTeX 渲染时 el.innerHTML 会被整体覆盖，无需手动清理。
+     * 注意：行内公式因公式短、闪现不明显，保持原逻辑不动（用户要求只修块级）。
+     */
+    const blockPlaceholder = `<span class="math-block-placeholder" aria-label="公式加载中"></span>`
     /** 处理被 <p> 包裹的情况 */
     sanitizedHtml = sanitizedHtml.replace(
       `<p>%%MATHBLOCK${index}%%</p>`,
-      `<div class="math-block" data-formula="${escapeAttr(formula)}">${escapeHtml(formula)}</div>`
+      `<div class="math-block" data-formula="${escapeAttr(formula)}">${blockPlaceholder}</div>`
     )
     /** 处理未被 <p> 包裹的情况 */
     sanitizedHtml = sanitizedHtml.replace(
       `%%MATHBLOCK${index}%%`,
-      `<div class="math-block" data-formula="${escapeAttr(formula)}">${escapeHtml(formula)}</div>`
+      `<div class="math-block" data-formula="${escapeAttr(formula)}">${blockPlaceholder}</div>`
     )
   })
 
@@ -207,6 +238,23 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
       `<span class="math-inline" data-formula="${escapeAttr(formula)}">${escapeHtml(formula)}</span>`
     )
   })
+
+  /**
+   * 还原未闭合块级公式的占位符
+   *
+   * 流式输出中 $$ 未闭合时，用骨架屏占位 div 替换。
+   * data-pending="true" 标记让 renderMath 跳过此元素，
+   * 等 $$ 闭合后占位符自动消失，正常渲染。
+   */
+  const unclosedPlaceholder = `<div class="math-block" data-pending="true"><span class="math-block-placeholder" aria-label="公式加载中"></span></div>`
+  sanitizedHtml = sanitizedHtml.replace(
+    `<p>%%MATHBLOCK_UNCLOSED%%</p>`,
+    unclosedPlaceholder
+  )
+  sanitizedHtml = sanitizedHtml.replace(
+    `%%MATHBLOCK_UNCLOSED%%`,
+    unclosedPlaceholder
+  )
 
   return sanitizedHtml
 }

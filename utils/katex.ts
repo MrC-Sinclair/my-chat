@@ -96,6 +96,8 @@ function injectKatexCss(): Promise<void> {
  */
 function renderSingleFormula(katex: typeof KatexType, el: HTMLElement): void {
   if (el.hasAttribute('data-katex-rendered')) return
+  /** 流式输出中未闭合的块级公式（$$ 还没闭合），跳过渲染 */
+  if (el.hasAttribute('data-pending')) return
 
   const formula = el.dataset.formula || el.textContent || ''
   const isBlock = el.classList.contains('math-block')

@@ -154,11 +154,15 @@ describe('renderMarkdown', () => {
     expect(html).toContain('$$x^2$$')
   })
 
-  it('不完整的 $$ 公式应作为纯文本保留', () => {
+  it('不完整的 $$ 公式应渲染为骨架屏占位（流式 FOUC 修复）', () => {
     const html = renderMarkdown('这是一个不完整的公式 $$\\int_0^1 f(x)')
-    // 没有闭合的 $$ 不应被当作公式
-    expect(html).not.toContain('class="math-block"')
-    expect(html).toContain('$$')
+    // 未闭合的 $$ 用骨架屏占位，避免流式输出时暴露 LaTeX 源码字符
+    expect(html).toContain('class="math-block"')
+    expect(html).toContain('data-pending="true"')
+    expect(html).toContain('math-block-placeholder')
+    // 不应直接暴露 LaTeX 源码字符
+    expect(html).not.toContain('$$\\int_0')
+    expect(html).not.toContain('\\int_0^1')
   })
 
   it('空代码块应正常渲染', () => {

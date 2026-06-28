@@ -483,6 +483,32 @@ function renderImages() {
   margin: 0.8em 0;
 }
 
+/**
+ * 块级公式加载占位骨架屏
+ *
+ * KaTeX JS/CSS 异步加载完成前显示，避免直接暴露 LaTeX 源码字符（FOUC）。
+ * KaTeX 渲染后 el.innerHTML 会被整体覆盖，骨架屏自动消失。
+ */
+.markdown-body .math-block-placeholder {
+  display: inline-block;
+  min-width: 140px;
+  height: 1.5em;
+  vertical-align: middle;
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: math-block-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes math-block-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 /** 图片加载失败容错样式 */
 .markdown-body .img-error {
   display: inline-flex;
