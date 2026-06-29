@@ -57,10 +57,7 @@ const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads')
  * AI SDK v5 的 UIMessage 格式将文本放在 parts 数组中（{ type: 'text', text: '...' }），
  * 而旧格式直接用 content 字符串。此处兼容两种格式。
  */
-function extractTextFromMessage(msg: {
-  content?: unknown
-  parts?: unknown
-}): string {
+function extractTextFromMessage(msg: { content?: unknown; parts?: unknown }): string {
   // AI SDK v5：优先从 parts 数组提取文本
   if (Array.isArray(msg.parts)) {
     const text = msg.parts
@@ -159,7 +156,8 @@ export default defineEventHandler(async (event) => {
     if (!process.env.IMGBB_API_KEY) {
       throw createError({
         statusCode: 400,
-        statusMessage: '图片对话功能不可用：未配置 IMGBB_API_KEY。请在 .env 中设置 IMGBB_API_KEY 后重试。'
+        statusMessage:
+          '图片对话功能不可用：未配置 IMGBB_API_KEY。请在 .env 中设置 IMGBB_API_KEY 后重试。'
       })
     }
     const uploadPromises = images.map(async (img: string) => {
@@ -313,7 +311,13 @@ export default defineEventHandler(async (event) => {
             // 只有 reasoning 没有正式回答（极端情况）
             cleanText = ''
           }
-          await saveMessagesToDb(sessionId, messages, cleanText, useModel, hasImages ? imageUrls : undefined)
+          await saveMessagesToDb(
+            sessionId,
+            messages,
+            cleanText,
+            useModel,
+            hasImages ? imageUrls : undefined
+          )
         } catch (err) {
           console.error('保存消息到数据库失败:', err)
         }
@@ -565,9 +569,7 @@ export default defineEventHandler(async (event) => {
               })
               // 流结束后关闭 MCP 客户端，释放子进程资源
               if (mcpClient) {
-                mcpClient.close().catch((err: unknown) =>
-                  console.error('MCP 客户端关闭失败:', err)
-                )
+                mcpClient.close().catch((err: unknown) => console.error('MCP 客户端关闭失败:', err))
               }
               return processChunk()
             }

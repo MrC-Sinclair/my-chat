@@ -477,7 +477,8 @@ x = np.array([1, 2, 3])
     })
 
     it('表格单元格中含行内代码，行内代码含 $ 符号', () => {
-      const md = '| 命令 | 说明 |\n|---|---|\n| `echo $HOME` | 输出家目录 |\n| `ls $PATH` | 列出路径 |'
+      const md =
+        '| 命令 | 说明 |\n|---|---|\n| `echo $HOME` | 输出家目录 |\n| `ls $PATH` | 列出路径 |'
       const html = renderMarkdown(md)
       expect(html).toContain('<code>echo $HOME</code>')
       expect(html).toContain('<code>ls $PATH</code>')

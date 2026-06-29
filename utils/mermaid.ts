@@ -24,10 +24,7 @@ async function getMermaid() {
 
 let renderCounter = 0
 
-export async function renderMermaidDiagram(
-  source: string,
-  container: HTMLElement
-): Promise<void> {
+export async function renderMermaidDiagram(source: string, container: HTMLElement): Promise<void> {
   if (!import.meta.client) return
 
   const mermaid = await getMermaid()

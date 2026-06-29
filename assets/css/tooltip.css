@@ -18,7 +18,9 @@
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.15s ease, visibility 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    visibility 0.15s ease;
   z-index: 9999;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
@@ -34,7 +36,9 @@
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.15s ease, visibility 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    visibility 0.15s ease;
   z-index: 9999;
 }
 
@@ -46,12 +50,12 @@
   }
 }
 
-[data-tooltip-position="bottom"]::after {
+[data-tooltip-position='bottom']::after {
   bottom: auto;
   top: calc(100% + 8px);
 }
 
-[data-tooltip-position="bottom"]::before {
+[data-tooltip-position='bottom']::before {
   bottom: auto;
   top: calc(100% + 2px);
   border-top-color: transparent;

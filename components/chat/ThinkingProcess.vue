@@ -41,12 +41,12 @@ const hasContent = computed(() => props.content && props.content.trim().length >
       </span>
 
       <!-- 标题 -->
-      <span class="text-xs sm:text-sm font-medium text-gray-600 flex-1">
-        已深度思考
-      </span>
+      <span class="text-xs sm:text-sm font-medium text-gray-600 flex-1"> 已深度思考 </span>
 
       <!-- 展开/收起指示 -->
-      <span class="text-[10px] sm:text-xs text-gray-400 group-hover:text-gray-500 transition-colors">
+      <span
+        class="text-[10px] sm:text-xs text-gray-400 group-hover:text-gray-500 transition-colors"
+      >
         {{ isExpanded ? '收起' : '展开' }}
       </span>
 
@@ -77,11 +77,7 @@ const hasContent = computed(() => props.content && props.content.trim().length >
       >
         <!-- 结构化段落展示 -->
         <div class="space-y-2.5">
-          <p
-            v-for="(para, idx) in paragraphs"
-            :key="idx"
-            class="whitespace-pre-wrap italic"
-          >
+          <p v-for="(para, idx) in paragraphs" :key="idx" class="whitespace-pre-wrap italic">
             {{ para }}
           </p>
         </div>

@@ -86,7 +86,9 @@ describe('KaTeX IntersectionObserver 延迟渲染', () => {
     container.innerHTML = html
 
     let callIndex = 0
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
       callIndex++
       const isVisible = callIndex <= 3
       return {
@@ -180,7 +182,8 @@ describe('KaTeX IntersectionObserver 延迟渲染', () => {
   })
 
   it('所有公式已渲染时应返回空 cleanup 且不创建 observer', async () => {
-    container.innerHTML = '<span class="math-inline" data-formula="x" data-katex-rendered="true">x</span>'
+    container.innerHTML =
+      '<span class="math-inline" data-formula="x" data-katex-rendered="true">x</span>'
     const cleanup = await renderMath(container)
     expect(typeof cleanup).toBe('function')
     expect(MockIntersectionObserver.instances.length).toBe(0)
@@ -305,7 +308,9 @@ describe('KaTeX IntersectionObserver 延迟渲染', () => {
     container.innerHTML = html
 
     let callIdx = 0
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
       callIdx++
       const nearTop = callIdx === 1
       return {
@@ -335,18 +340,20 @@ describe('KaTeX IntersectionObserver 延迟渲染', () => {
     container.innerHTML = html
 
     let callIdx = 0
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
       callIdx++
       const nearBottom = callIdx === 1
       return {
-        top: nearBottom ? (window.innerHeight + 150) : -9999,
-        bottom: nearBottom ? (window.innerHeight + 180) : -9000,
+        top: nearBottom ? window.innerHeight + 150 : -9999,
+        bottom: nearBottom ? window.innerHeight + 180 : -9000,
         left: 0,
         right: 100,
         width: 100,
         height: 30,
         x: 0,
-        y: nearBottom ? (window.innerHeight + 150) : -9999,
+        y: nearBottom ? window.innerHeight + 150 : -9999,
         toJSON: () => ({})
       } as DOMRect
     })

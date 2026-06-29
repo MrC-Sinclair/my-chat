@@ -37,7 +37,11 @@ export function buildTextStream(text: string, chunkSize = 3): string {
 }
 
 /** 模拟带推理过程的流式响应 */
-export function buildReasoningStream(reasoningText: string, answerText: string, chunkSize = 3): string {
+export function buildReasoningStream(
+  reasoningText: string,
+  answerText: string,
+  chunkSize = 3
+): string {
   const chunks: string[] = []
   chunks.push(sseChunk({ type: 'start' }))
   chunks.push(sseChunk({ type: 'start-step' }))
@@ -46,14 +50,22 @@ export function buildReasoningStream(reasoningText: string, answerText: string, 
   chunks.push(sseChunk({ type: 'reasoning-start', id: reasoningId }))
   // 按 chunkSize 切片，模拟真实流式 reasoning 逐 chunk 到达
   for (let i = 0; i < reasoningText.length; i += chunkSize) {
-    chunks.push(sseChunk({ type: 'reasoning-delta', id: reasoningId, delta: reasoningText.slice(i, i + chunkSize) }))
+    chunks.push(
+      sseChunk({
+        type: 'reasoning-delta',
+        id: reasoningId,
+        delta: reasoningText.slice(i, i + chunkSize)
+      })
+    )
   }
   chunks.push(sseChunk({ type: 'reasoning-end', id: reasoningId }))
 
   const textId = 'txt-1'
   chunks.push(sseChunk({ type: 'text-start', id: textId }))
   for (let i = 0; i < answerText.length; i += chunkSize) {
-    chunks.push(sseChunk({ type: 'text-delta', id: textId, delta: answerText.slice(i, i + chunkSize) }))
+    chunks.push(
+      sseChunk({ type: 'text-delta', id: textId, delta: answerText.slice(i, i + chunkSize) })
+    )
   }
   chunks.push(sseChunk({ type: 'text-end', id: textId }))
 
@@ -73,22 +85,32 @@ export function buildWeatherToolStream(): string {
   chunks.push(sseChunk({ type: 'tool-input-start', toolCallId, toolName: 'get_weather' }))
   chunks.push(sseChunk({ type: 'tool-input-delta', toolCallId, inputTextDelta: '{"city":"' }))
   chunks.push(sseChunk({ type: 'tool-input-delta', toolCallId, inputTextDelta: '深圳"}' }))
-  chunks.push(sseChunk({
-    type: 'tool-input-available',
-    toolCallId,
-    toolName: 'get_weather',
-    input: { city: '深圳' }
-  }))
-  chunks.push(sseChunk({
-    type: 'tool-output-available',
-    toolCallId,
-    output: '深圳今天天气：晴，温度 28°C，湿度 65%，风速 12km/h'
-  }))
+  chunks.push(
+    sseChunk({
+      type: 'tool-input-available',
+      toolCallId,
+      toolName: 'get_weather',
+      input: { city: '深圳' }
+    })
+  )
+  chunks.push(
+    sseChunk({
+      type: 'tool-output-available',
+      toolCallId,
+      output: '深圳今天天气：晴，温度 28°C，湿度 65%，风速 12km/h'
+    })
+  )
 
   // 工具调用后的文本回复
   const textId = 'txt-1'
   chunks.push(sseChunk({ type: 'text-start', id: textId }))
-  chunks.push(sseChunk({ type: 'text-delta', id: textId, delta: '根据查询结果，深圳今天天气晴朗，温度28°C，湿度65%，风速12km/h。' }))
+  chunks.push(
+    sseChunk({
+      type: 'text-delta',
+      id: textId,
+      delta: '根据查询结果，深圳今天天气晴朗，温度28°C，湿度65%，风速12km/h。'
+    })
+  )
   chunks.push(sseChunk({ type: 'text-end', id: textId }))
 
   chunks.push(sseChunk({ type: 'finish-step' }))
@@ -118,79 +140,86 @@ export function buildCodeBlockStream(): string {
  * @param chunkDelay 每个 SSE 事件之间的延迟（毫秒），默认 50ms
  */
 export async function mockChatAPI(page: Page, streamBody: string, chunkDelay = 50) {
-  await page.evaluate(({ body, delay }) => {
-    const originalFetch = window.fetch.bind(window)
-    const events = body.split('\n\n').filter((e: string) => e.trim())
-    const encoder = new TextEncoder()
+  await page.evaluate(
+    ({ body, delay }) => {
+      const originalFetch = window.fetch.bind(window)
+      const events = body.split('\n\n').filter((e: string) => e.trim())
+      const encoder = new TextEncoder()
 
-    ;(window as any).__originalFetch = originalFetch
-    ;(window as any).fetch = async function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-      const url = typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.href
-          : (input as Request).url
+      ;(window as any).__originalFetch = originalFetch
+      ;(window as any).fetch = async function (
+        input: RequestInfo | URL,
+        init?: RequestInit
+      ): Promise<Response> {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : (input as Request).url
 
-      // 只拦截 /api/chat POST 请求
-      if (url?.includes('/api/chat')) {
-        const signal = init?.signal
-        let eventIndex = 0
-        let cancelled = false
+        // 只拦截 /api/chat POST 请求
+        if (url?.includes('/api/chat')) {
+          const signal = init?.signal
+          let eventIndex = 0
+          let cancelled = false
 
-        // 如果请求已被 abort，直接抛出 AbortError
-        if (signal?.aborted) {
-          const error = new DOMException('The operation was aborted.', 'AbortError')
-          return Promise.reject(error)
-        }
-
-        // 监听 abort 信号，取消流
-        if (signal) {
-          signal.addEventListener('abort', () => {
-            cancelled = true
-          })
-        }
-
-        const stream = new ReadableStream({
-          async pull(controller) {
-            // 检查 abort 状态
-            if (cancelled || signal?.aborted) {
-              controller.error(new DOMException('The operation was aborted.', 'AbortError'))
-              return
-            }
-            if (eventIndex >= events.length) {
-              controller.close()
-              return
-            }
-            // 第一个事件立即发送，后续事件加延迟
-            if (eventIndex > 0) {
-              await new Promise(resolve => setTimeout(resolve, delay))
-            }
-            // 延迟后再次检查 abort 状态
-            if (cancelled || signal?.aborted) {
-              controller.error(new DOMException('The operation was aborted.', 'AbortError'))
-              return
-            }
-            controller.enqueue(encoder.encode(events[eventIndex] + '\n\n'))
-            eventIndex++
-          },
-          cancel() {
-            cancelled = true
+          // 如果请求已被 abort，直接抛出 AbortError
+          if (signal?.aborted) {
+            const error = new DOMException('The operation was aborted.', 'AbortError')
+            return Promise.reject(error)
           }
-        })
 
-        return new Response(stream, {
-          status: 200,
-          headers: new Headers({
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'X-Accel-Buffering': 'no'
+          // 监听 abort 信号，取消流
+          if (signal) {
+            signal.addEventListener('abort', () => {
+              cancelled = true
+            })
+          }
+
+          const stream = new ReadableStream({
+            async pull(controller) {
+              // 检查 abort 状态
+              if (cancelled || signal?.aborted) {
+                controller.error(new DOMException('The operation was aborted.', 'AbortError'))
+                return
+              }
+              if (eventIndex >= events.length) {
+                controller.close()
+                return
+              }
+              // 第一个事件立即发送，后续事件加延迟
+              if (eventIndex > 0) {
+                await new Promise((resolve) => setTimeout(resolve, delay))
+              }
+              // 延迟后再次检查 abort 状态
+              if (cancelled || signal?.aborted) {
+                controller.error(new DOMException('The operation was aborted.', 'AbortError'))
+                return
+              }
+              controller.enqueue(encoder.encode(events[eventIndex] + '\n\n'))
+              eventIndex++
+            },
+            cancel() {
+              cancelled = true
+            }
           })
-        })
-      }
 
-      return originalFetch(input, init)
-    }
-  }, { body: streamBody, delay: chunkDelay })
+          return new Response(stream, {
+            status: 200,
+            headers: new Headers({
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'X-Accel-Buffering': 'no'
+            })
+          })
+        }
+
+        return originalFetch(input, init)
+      }
+    },
+    { body: streamBody, delay: chunkDelay }
+  )
 }
 
 // ==================== 通用测试辅助函数 ====================
@@ -208,10 +237,9 @@ export async function typeAndSubmit(page: Page, text: string) {
 
 /** 等待 AI 回复完成（stop 按钮消失） */
 export async function waitForResponse(page: Page, timeout = 60000) {
-  await page.waitForFunction(
-    () => !document.querySelector('button[data-testid="stop-btn"]'),
-    { timeout }
-  )
+  await page.waitForFunction(() => !document.querySelector('button[data-testid="stop-btn"]'), {
+    timeout
+  })
   await page.waitForTimeout(1000)
 }
 

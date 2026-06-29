@@ -4,15 +4,15 @@
 
 ## 总览
 
-| 方法     | 路径                  | 说明                       | 鉴权 |
-| -------- | --------------------- | -------------------------- | ---- |
-| `POST`   | `/api/chat`           | AI 对话（流式 SSE）        | 无   |
-| `GET`    | `/api/sessions`       | 获取会话列表               | 无   |
-| `POST`   | `/api/sessions`       | 创建新会话                 | 无   |
-| `GET`    | `/api/sessions/:id`   | 获取会话历史消息           | 无   |
-| `PATCH`  | `/api/sessions/:id`   | 重命名会话                 | 无   |
-| `DELETE` | `/api/sessions/:id`   | 删除会话（级联删除消息和反馈） | 无   |
-| `GET`    | `/api/models`         | 获取可用模型列表           | 无   |
+| 方法     | 路径                | 说明                           | 鉴权 |
+| -------- | ------------------- | ------------------------------ | ---- |
+| `POST`   | `/api/chat`         | AI 对话（流式 SSE）            | 无   |
+| `GET`    | `/api/sessions`     | 获取会话列表                   | 无   |
+| `POST`   | `/api/sessions`     | 创建新会话                     | 无   |
+| `GET`    | `/api/sessions/:id` | 获取会话历史消息               | 无   |
+| `PATCH`  | `/api/sessions/:id` | 重命名会话                     | 无   |
+| `DELETE` | `/api/sessions/:id` | 删除会话（级联删除消息和反馈） | 无   |
+| `GET`    | `/api/models`       | 获取可用模型列表               | 无   |
 
 ## 通用约定
 
@@ -39,13 +39,13 @@
 
 所有 `/api/*` 请求经过 [security.ts](file:///d:/code/my-chat/server/middleware/security.ts) 中间件，统一处理：
 
-| 能力             | 配置                                                                                                |
-| ---------------- | --------------------------------------------------------------------------------------------------- |
+| 能力             | 配置                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
 | CSP              | `default-src 'self'`；`script-src` 允许 `'unsafe-inline' 'unsafe-eval'`；`connect-src` 仅允许硅基流动 |
-| 安全响应头       | `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy`、`Permissions-Policy` |
-| CORS             | 仅允许 `http://localhost:3000`，支持 `GET/POST/PATCH/DELETE/OPTIONS`                               |
-| 限流             | 60 秒内最多 30 次/IP，超出返回 `429`，响应头 `X-RateLimit-Remaining` / `X-RateLimit-Limit`          |
-| 会话 ID 格式校验 | `/api/sessions/:id` 路径必须匹配 UUID 正则                                                          |
+| 安全响应头       | `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy`、`Permissions-Policy`   |
+| CORS             | 仅允许 `http://localhost:3000`，支持 `GET/POST/PATCH/DELETE/OPTIONS`                                  |
+| 限流             | 60 秒内最多 30 次/IP，超出返回 `429`，响应头 `X-RateLimit-Remaining` / `X-RateLimit-Limit`            |
+| 会话 ID 格式校验 | `/api/sessions/:id` 路径必须匹配 UUID 正则                                                            |
 
 ---
 
@@ -57,15 +57,15 @@ AI 对话核心接口，使用 Vercel AI SDK 的 `streamText` 流式生成回复
 
 **请求体**
 
-| 字段                | 类型                  | 必填 | 默认值              | 说明                                                                       |
-| ------------------- | --------------------- | ---- | ------------------- | -------------------------------------------------------------------------- |
-| `messages`          | `UIMessage[]`         | 是   | —                   | 对话历史，最后一个为当前用户消息。注意：`system` 角色消息会被服务端过滤，最终使用服务端 system prompt |
-| `sessionId`         | `string` (UUID)       | 否   | —                   | 会话 ID，传入时会在 `onFinish` 中持久化用户消息和 AI 回复                  |
-| `model`             | `string`              | 否   | `LLM_MODEL` 环境变量 | 模型标识，必须在 `/api/models` 白名单内，否则回退到默认模型                |
-| `enable_thinking`   | `boolean`             | 否   | `true`              | 是否启用深度思考（仅对非视觉、非推理模型生效）                             |
-| `thinking_budget`   | `number`              | 否   | —                   | 思考预算（保留字段，当前未使用）                                           |
-| `images`            | `string[]`            | 否   | —                   | 图片数组，元素为 `data:image/...;base64,...` 或公网 URL                    |
-| `enable_web_search` | `boolean`             | 否   | `true`              | 是否启用网页搜索工具                                                       |
+| 字段                | 类型            | 必填 | 默认值               | 说明                                                                                                  |
+| ------------------- | --------------- | ---- | -------------------- | ----------------------------------------------------------------------------------------------------- |
+| `messages`          | `UIMessage[]`   | 是   | —                    | 对话历史，最后一个为当前用户消息。注意：`system` 角色消息会被服务端过滤，最终使用服务端 system prompt |
+| `sessionId`         | `string` (UUID) | 否   | —                    | 会话 ID，传入时会在 `onFinish` 中持久化用户消息和 AI 回复                                             |
+| `model`             | `string`        | 否   | `LLM_MODEL` 环境变量 | 模型标识，必须在 `/api/models` 白名单内，否则回退到默认模型                                           |
+| `enable_thinking`   | `boolean`       | 否   | `true`               | 是否启用深度思考（仅对非视觉、非推理模型生效）                                                        |
+| `thinking_budget`   | `number`        | 否   | —                    | 思考预算（保留字段，当前未使用）                                                                      |
+| `images`            | `string[]`      | 否   | —                    | 图片数组，元素为 `data:image/...;base64,...` 或公网 URL                                               |
+| `enable_web_search` | `boolean`       | 否   | `true`               | 是否启用网页搜索工具                                                                                  |
 
 **messages 元素结构**（AI SDK v5 UIMessage）
 
@@ -79,23 +79,23 @@ AI 对话核心接口，使用 Vercel AI SDK 的 `streamText` 流式生成回复
 
 **限制**
 
-| 限制项                  | 值          | 触发错误码 |
-| ----------------------- | ----------- | ---------- |
-| 单条消息长度            | 1000 字符   | `400`      |
-| 上下文消息数            | 50 条       | 自动截断   |
-| 单次图片数量            | 5 张        | `400`      |
-| 单张图片大小            | 4 MB        | `400`      |
-| 未配置 `IMGBB_API_KEY`  | —           | `400`      |
+| 限制项                 | 值        | 触发错误码 |
+| ---------------------- | --------- | ---------- |
+| 单条消息长度           | 1000 字符 | `400`      |
+| 上下文消息数           | 50 条     | 自动截断   |
+| 单次图片数量           | 5 张      | `400`      |
+| 单张图片大小           | 4 MB      | `400`      |
+| 未配置 `IMGBB_API_KEY` | —         | `400`      |
 
 **模型能力与工具可用性**
 
 不同模型的能力差异会影响工具调用行为：
 
-| 模型                               | vision | reasoning | toolCalling | maxSteps | 天气 | 网页搜索 | 深度思考 |
-| ---------------------------------- | ------ | --------- | ----------- | -------- | ---- | -------- | -------- |
-| Qwen/Qwen3-8B                      | —      | —         | ✓           | 5        | ✓    | ✓        | ✓        |
-| deepseek-ai/DeepSeek-R1-0528-...   | —      | ✓         | —           | 1        | ✗    | ✗        | —        |
-| THUDM/GLM-4.1V-9B-Thinking         | ✓      | ✓         | —           | 1        | ✗    | ✗        | —        |
+| 模型                             | vision | reasoning | toolCalling | maxSteps | 天气 | 网页搜索 | 深度思考 |
+| -------------------------------- | ------ | --------- | ----------- | -------- | ---- | -------- | -------- |
+| Qwen/Qwen3-8B                    | —      | —         | ✓           | 5        | ✓    | ✓        | ✓        |
+| deepseek-ai/DeepSeek-R1-0528-... | —      | ✓         | —           | 1        | ✗    | ✗        | —        |
+| THUDM/GLM-4.1V-9B-Thinking       | ✓      | ✓         | —           | 1        | ✗    | ✗        | —        |
 
 > `maxSteps` 为 1 时 LLM 只执行一轮生成，无法调用工具。天气和网页搜索依赖 `toolCalling`，因此仅 Qwen3-8B 可用。网页搜索额外要求 `!vision`，视觉模型无法使用。
 
@@ -110,24 +110,24 @@ AI 对话核心接口，使用 Vercel AI SDK 的 `streamText` 流式生成回复
 
 `Content-Type: text/event-stream`，按 [UIMessageChunk](https://ai-sdk.dev/docs/ai-sdk-ui/chatbot#streaming-protocol) 协议推送，主要事件类型：
 
-| 事件类型              | 字段                              | 说明                         |
-| --------------------- | --------------------------------- | ---------------------------- |
-| `start`               | `messageId`                       | 流开始                       |
-| `start-step`          | —                                 | 单步开始（多步工具调用场景） |
-| `reasoning-start`     | `id`                              | 思考过程开始                 |
-| `reasoning-delta`     | `id`, `delta`                     | 思考过程增量                 |
-| `reasoning-end`       | `id`                              | 思考过程结束                 |
-| `text-start`          | `id`                              | 正式回答开始                 |
-| `text-delta`          | `id`, `delta`                     | 正式回答增量（打字机效果）   |
-| `text-end`            | `id`                              | 正式回答结束                 |
-| `tool-input-start`    | `toolCallId`, `toolName`          | 工具调用开始                 |
-| `tool-input-delta`    | `toolCallId`, `inputTextDelta`    | 工具入参增量                 |
-| `tool-input-available`| `toolCallId`, `toolName`, `input` | 工具入参就绪                 |
-| `tool-output-available`| `toolCallId`, `output`           | 工具结果就绪                 |
-| `tool-output-error`   | `toolCallId`, `errorText`         | 工具调用失败                 |
-| `error`               | `errorText`                       | 流错误                       |
-| `finish`              | `finishReason`                    | 流结束                       |
-| `finish-step`         | —                                 | 单步结束                     |
+| 事件类型                | 字段                              | 说明                         |
+| ----------------------- | --------------------------------- | ---------------------------- |
+| `start`                 | `messageId`                       | 流开始                       |
+| `start-step`            | —                                 | 单步开始（多步工具调用场景） |
+| `reasoning-start`       | `id`                              | 思考过程开始                 |
+| `reasoning-delta`       | `id`, `delta`                     | 思考过程增量                 |
+| `reasoning-end`         | `id`                              | 思考过程结束                 |
+| `text-start`            | `id`                              | 正式回答开始                 |
+| `text-delta`            | `id`, `delta`                     | 正式回答增量（打字机效果）   |
+| `text-end`              | `id`                              | 正式回答结束                 |
+| `tool-input-start`      | `toolCallId`, `toolName`          | 工具调用开始                 |
+| `tool-input-delta`      | `toolCallId`, `inputTextDelta`    | 工具入参增量                 |
+| `tool-input-available`  | `toolCallId`, `toolName`, `input` | 工具入参就绪                 |
+| `tool-output-available` | `toolCallId`, `output`            | 工具结果就绪                 |
+| `tool-output-error`     | `toolCallId`, `errorText`         | 工具调用失败                 |
+| `error`                 | `errorText`                       | 流错误                       |
+| `finish`                | `finishReason`                    | 流结束                       |
+| `finish-step`           | —                                 | 单步结束                     |
 
 **思考过程（reasoning）处理**
 
@@ -159,12 +159,12 @@ curl -N -X POST http://localhost:3000/api/chat \
 
 **错误码**
 
-| 状态码 | 触发条件                                          |
-| ------ | ------------------------------------------------- |
-| `400`  | `messages` 缺失/非数组；单条消息超长；图片超限    |
-| `400`  | 启用图片但未配置 `IMGBB_API_KEY`                  |
-| `429`  | 触发限流                                          |
-| `500`  | `streamText` 调用失败                             |
+| 状态码 | 触发条件                                       |
+| ------ | ---------------------------------------------- |
+| `400`  | `messages` 缺失/非数组；单条消息超长；图片超限 |
+| `400`  | 启用图片但未配置 `IMGBB_API_KEY`               |
+| `429`  | 触发限流                                       |
+| `500`  | `streamText` 调用失败                          |
 
 ---
 
@@ -180,8 +180,8 @@ curl -N -X POST http://localhost:3000/api/chat \
 interface SessionListItem {
   id: string
   title: string
-  createdAt: string  // ISO timestamp
-  updatedAt: string  // ISO timestamp
+  createdAt: string // ISO timestamp
+  updatedAt: string // ISO timestamp
   messageCount: number
 }
 ```
@@ -208,8 +208,8 @@ interface SessionListItem {
 
 **请求体**（可选）
 
-| 字段    | 类型     | 必填 | 默认值                                | 说明     |
-| ------- | -------- | ---- | ------------------------------------- | -------- |
+| 字段    | 类型     | 必填 | 默认值                   | 说明     |
+| ------- | -------- | ---- | ------------------------ | -------- |
 | `title` | `string` | 否   | `新对话 ${当前本地时间}` | 会话标题 |
 
 **响应**：`Session`
@@ -239,9 +239,9 @@ curl -X POST http://localhost:3000/api/sessions \
 
 **路径参数**
 
-| 字段 | 类型             | 必填 | 说明                |
-| ---- | ---------------- | ---- | ------------------- |
-| `id` | `string` (UUID)  | 是   | 会话 ID，必须为 UUID |
+| 字段 | 类型            | 必填 | 说明                 |
+| ---- | --------------- | ---- | -------------------- |
+| `id` | `string` (UUID) | 是   | 会话 ID，必须为 UUID |
 
 **响应**：`Message[]`
 
@@ -263,9 +263,9 @@ interface Message {
 
 **错误码**
 
-| 状态码 | 触发条件             |
-| ------ | -------------------- |
-| `400`  | `id` 非 UUID 格式    |
+| 状态码 | 触发条件          |
+| ------ | ----------------- |
+| `400`  | `id` 非 UUID 格式 |
 
 ---
 
@@ -277,9 +277,9 @@ interface Message {
 
 **请求体**
 
-| 字段    | 类型     | 必填 | 说明           |
-| ------- | -------- | ---- | -------------- |
-| `title` | `string` | 是   | 新标题，非空   |
+| 字段    | 类型     | 必填 | 说明         |
+| ------- | -------- | ---- | ------------ |
+| `title` | `string` | 是   | 新标题，非空 |
 
 **响应**
 
@@ -289,9 +289,9 @@ interface Message {
 
 **错误码**
 
-| 状态码 | 触发条件                    |
-| ------ | --------------------------- |
-| `400`  | `id` 非 UUID；`title` 为空  |
+| 状态码 | 触发条件                   |
+| ------ | -------------------------- |
+| `400`  | `id` 非 UUID；`title` 为空 |
 
 ---
 
@@ -325,12 +325,12 @@ interface Message {
 
 ```ts
 interface ModelConfig {
-  label: string  // 前端显示名称
-  value: string  // 模型唯一标识，对应 /api/chat 的 model 参数
+  label: string // 前端显示名称
+  value: string // 模型唯一标识，对应 /api/chat 的 model 参数
   capabilities: {
-    vision: boolean       // 是否支持图片理解
-    reasoning: boolean    // 是否支持深度思考
-    toolCalling: boolean  // 是否支持工具调用
+    vision: boolean // 是否支持图片理解
+    reasoning: boolean // 是否支持深度思考
+    toolCalling: boolean // 是否支持工具调用
   }
 }
 ```
@@ -372,7 +372,9 @@ interface ModelConfig {
 **输入**
 
 ```ts
-{ city: string }  // 城市名，支持中文或英文
+{
+  city: string
+} // 城市名，支持中文或英文
 ```
 
 **输出**（JSON 字符串）
@@ -410,7 +412,9 @@ interface ModelConfig {
 **输入**
 
 ```ts
-{ query: string }  // 搜索关键词
+{
+  query: string
+} // 搜索关键词
 ```
 
 **输出**
@@ -434,32 +438,32 @@ interface ModelConfig {
 
 ## 环境变量
 
-| 变量名              | 必填 | 说明                                                          |
-| ------------------- | ---- | ------------------------------------------------------------- |
-| `OPENAI_API_KEY`    | 是   | LLM Provider API Key（硅基流动）                              |
-| `OPENAI_BASE_URL`   | 否   | LLM API 基地址，默认 `https://api.siliconflow.cn/v1`          |
-| `LLM_MODEL`         | 否   | 默认模型，默认 `Qwen/Qwen3-8B`                                |
-| `ENABLE_THINKING`   | 否   | 默认是否启用思考，默认 `true`（设为 `false` 关闭）            |
-| `SYSTEM_PROMPT`     | 否   | 自定义系统提示词                                              |
-| `IMGBB_API_KEY`     | 否   | ImgBB 图床 API Key，启用图片对话必填                          |
-| `TAVILY_API_KEY`    | 否   | Tavily 搜索 API Key，启用网页搜索必填                         |
-| `DATABASE_URL`      | 是   | PostgreSQL 连接串，开发端口 5434                              |
+| 变量名            | 必填 | 说明                                                 |
+| ----------------- | ---- | ---------------------------------------------------- |
+| `OPENAI_API_KEY`  | 是   | LLM Provider API Key（硅基流动）                     |
+| `OPENAI_BASE_URL` | 否   | LLM API 基地址，默认 `https://api.siliconflow.cn/v1` |
+| `LLM_MODEL`       | 否   | 默认模型，默认 `Qwen/Qwen3-8B`                       |
+| `ENABLE_THINKING` | 否   | 默认是否启用思考，默认 `true`（设为 `false` 关闭）   |
+| `SYSTEM_PROMPT`   | 否   | 自定义系统提示词                                     |
+| `IMGBB_API_KEY`   | 否   | ImgBB 图床 API Key，启用图片对话必填                 |
+| `TAVILY_API_KEY`  | 否   | Tavily 搜索 API Key，启用网页搜索必填                |
+| `DATABASE_URL`    | 是   | PostgreSQL 连接串，开发端口 5434                     |
 
 ---
 
 ## 相关文件
 
-| 文件                                                              | 职责                                          |
-| ----------------------------------------------------------------- | --------------------------------------------- |
-| [server/api/chat.post.ts](file:///d:/code/my-chat/server/api/chat.post.ts) | AI 对话流式接口                               |
-| [server/api/sessions.ts](file:///d:/code/my-chat/server/api/sessions.ts) | 会话列表 GET/POST                             |
-| [server/api/sessions/[id].ts](file:///d:/code/my-chat/server/api/sessions/[id].ts) | 单会话 GET/PATCH/DELETE                       |
-| [server/api/models.ts](file:///d:/code/my-chat/server/api/models.ts) | 模型列表 GET                                  |
-| [server/middleware/security.ts](file:///d:/code/my-chat/server/middleware/security.ts) | CSP/限流/CORS/UUID 校验                       |
-| [server/config/models.ts](file:///d:/code/my-chat/server/config/models.ts) | 模型白名单与能力定义                          |
-| [server/tools/web-search.ts](file:///d:/code/my-chat/server/tools/web-search.ts) | Tavily 网页搜索工具                           |
-| [server/tools/weather.ts](file:///d:/code/my-chat/server/tools/weather.ts) | Open-Meteo 天气查询核心函数                   |
-| [server/mcp/weather-server.ts](file:///d:/code/my-chat/server/mcp/weather-server.ts) | MCP Weather Server（stdio）                   |
-| [server/utils/imgbb.ts](file:///d:/code/my-chat/server/utils/imgbb.ts) | ImgBB 图床上传                                |
+| 文件                                                                                             | 职责                                             |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| [server/api/chat.post.ts](file:///d:/code/my-chat/server/api/chat.post.ts)                       | AI 对话流式接口                                  |
+| [server/api/sessions.ts](file:///d:/code/my-chat/server/api/sessions.ts)                         | 会话列表 GET/POST                                |
+| [server/api/sessions/[id].ts](file:///d:/code/my-chat/server/api/sessions/[id].ts)               | 单会话 GET/PATCH/DELETE                          |
+| [server/api/models.ts](file:///d:/code/my-chat/server/api/models.ts)                             | 模型列表 GET                                     |
+| [server/middleware/security.ts](file:///d:/code/my-chat/server/middleware/security.ts)           | CSP/限流/CORS/UUID 校验                          |
+| [server/config/models.ts](file:///d:/code/my-chat/server/config/models.ts)                       | 模型白名单与能力定义                             |
+| [server/tools/web-search.ts](file:///d:/code/my-chat/server/tools/web-search.ts)                 | Tavily 网页搜索工具                              |
+| [server/tools/weather.ts](file:///d:/code/my-chat/server/tools/weather.ts)                       | Open-Meteo 天气查询核心函数                      |
+| [server/mcp/weather-server.ts](file:///d:/code/my-chat/server/mcp/weather-server.ts)             | MCP Weather Server（stdio）                      |
+| [server/utils/imgbb.ts](file:///d:/code/my-chat/server/utils/imgbb.ts)                           | ImgBB 图床上传                                   |
 | [server/utils/reasoning-provider.ts](file:///d:/code/my-chat/server/utils/reasoning-provider.ts) | 自定义 OpenAI Provider（reasoning_content 拦截） |
-| [docs/db-schema.md](file:///d:/code/my-chat/docs/db-schema.md) | 数据库表结构文档                              |
+| [docs/db-schema.md](file:///d:/code/my-chat/docs/db-schema.md)                                   | 数据库表结构文档                                 |

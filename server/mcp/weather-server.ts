@@ -34,9 +34,7 @@ server.registerTool(
     inputSchema: {
       city: z
         .string()
-        .describe(
-          '城市名称，支持中文（如"深圳"、"北京"）或英文（如"Tokyo"、"New York"）'
-        )
+        .describe('城市名称，支持中文（如"深圳"、"北京"）或英文（如"Tokyo"、"New York"）')
     }
   },
   async ({ city }) => {

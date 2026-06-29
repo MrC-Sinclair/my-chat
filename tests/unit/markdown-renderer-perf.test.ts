@@ -85,10 +85,7 @@ describe('问题1: RAF 节流减少全量重渲染次数', () => {
   afterEach(restoreRafMock)
 
   it('模拟流式输出 50 个 token：RAF 合并后 renderMarkdown 调用次数远少于 token 数', async () => {
-    const renderMarkdownSpy = vi.spyOn(
-      await import('~/utils/markdown'),
-      'renderMarkdown'
-    )
+    const renderMarkdownSpy = vi.spyOn(await import('~/utils/markdown'), 'renderMarkdown')
 
     const wrapper = mount(MarkdownRenderer, {
       props: { content: '' },
@@ -114,10 +111,7 @@ describe('问题1: RAF 节流减少全量重渲染次数', () => {
   })
 
   it('50 个 token 分 5 批 flush：renderMarkdown 最多调用 5+1 次（而非 50 次）', async () => {
-    const renderMarkdownSpy = vi.spyOn(
-      await import('~/utils/markdown'),
-      'renderMarkdown'
-    )
+    const renderMarkdownSpy = vi.spyOn(await import('~/utils/markdown'), 'renderMarkdown')
 
     const wrapper = mount(MarkdownRenderer, {
       props: { content: '' },
@@ -144,10 +138,7 @@ describe('问题1: RAF 节流减少全量重渲染次数', () => {
   })
 
   it('content 无变化时 setProps 不触发 renderMarkdown', async () => {
-    const renderMarkdownSpy = vi.spyOn(
-      await import('~/utils/markdown'),
-      'renderMarkdown'
-    )
+    const renderMarkdownSpy = vi.spyOn(await import('~/utils/markdown'), 'renderMarkdown')
 
     const wrapper = mount(MarkdownRenderer, {
       props: { content: '固定内容' },
@@ -285,10 +276,7 @@ describe('问题3: 大量内容下渲染开销可控', () => {
   })
 
   it('renderMarkdown 在 50 次 token 中只调用 1 次（RAF 合并）', async () => {
-    const renderMarkdownSpy = vi.spyOn(
-      await import('~/utils/markdown'),
-      'renderMarkdown'
-    )
+    const renderMarkdownSpy = vi.spyOn(await import('~/utils/markdown'), 'renderMarkdown')
 
     const baseContent = generateLongContent(3, '## 性能测试\n\n')
     const wrapper = mount(MarkdownRenderer, {
@@ -347,15 +335,9 @@ describe('问题3: 大量内容下渲染开销可控', () => {
   })
 
   it('大量公式 + 流式追加：renderMarkdown 调用次数不随公式数量增长', async () => {
-    const renderMarkdownSpy = vi.spyOn(
-      await import('~/utils/markdown'),
-      'renderMarkdown'
-    )
+    const renderMarkdownSpy = vi.spyOn(await import('~/utils/markdown'), 'renderMarkdown')
 
-    const manyFormulas = Array.from(
-      { length: 20 },
-      (_, i) => `公式${i}: $E=mc^${i}$`
-    ).join('\n')
+    const manyFormulas = Array.from({ length: 20 }, (_, i) => `公式${i}: $E=mc^${i}$`).join('\n')
 
     const wrapper = mount(MarkdownRenderer, {
       props: { content: manyFormulas },

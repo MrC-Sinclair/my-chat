@@ -167,10 +167,7 @@ describe('customFetch - 响应拦截（reasoning_content → REASONING_PREFIX）
   it('应将 reasoning_content 映射为带前缀的 content', async () => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = vi.fn(async () => {
-      return createSSEResponse([
-        sseDelta({ reasoning_content: '思考内容' }),
-        'data: [DONE]'
-      ])
+      return createSSEResponse([sseDelta({ reasoning_content: '思考内容' }), 'data: [DONE]'])
     })
 
     const response = await customFetch('https://api.example.com/v1/chat/completions')
@@ -178,7 +175,7 @@ describe('customFetch - 响应拦截（reasoning_content → REASONING_PREFIX）
     const lines = text.split('\n')
 
     // 找到 data: 行（非 [DONE]）
-    const dataLine = lines.find(l => l.startsWith('data: ') && l !== 'data: [DONE]')!
+    const dataLine = lines.find((l) => l.startsWith('data: ') && l !== 'data: [DONE]')!
     const json = JSON.parse(dataLine.slice(6))
     const delta = json.choices[0].delta
 
@@ -191,17 +188,14 @@ describe('customFetch - 响应拦截（reasoning_content → REASONING_PREFIX）
   it('应删除空字符串的 reasoning_content，不添加 content', async () => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = vi.fn(async () => {
-      return createSSEResponse([
-        sseDelta({ reasoning_content: '' }),
-        'data: [DONE]'
-      ])
+      return createSSEResponse([sseDelta({ reasoning_content: '' }), 'data: [DONE]'])
     })
 
     const response = await customFetch('https://api.example.com/v1/chat/completions')
     const text = await readResponseBody(response)
     const lines = text.split('\n')
 
-    const dataLine = lines.find(l => l.startsWith('data: ') && l !== 'data: [DONE]')!
+    const dataLine = lines.find((l) => l.startsWith('data: ') && l !== 'data: [DONE]')!
     const json = JSON.parse(dataLine.slice(6))
     const delta = json.choices[0].delta
 
@@ -224,7 +218,7 @@ describe('customFetch - 响应拦截（reasoning_content → REASONING_PREFIX）
 
     const response = await customFetch('https://api.example.com/v1/chat/completions')
     const text = await readResponseBody(response)
-    const lines = text.split('\n').filter(l => l.startsWith('data: ') && l !== 'data: [DONE]')
+    const lines = text.split('\n').filter((l) => l.startsWith('data: ') && l !== 'data: [DONE]')
 
     // 第一行：reasoning_content 映射
     const json1 = JSON.parse(lines[0].slice(6))
@@ -290,7 +284,7 @@ describe('customFetch - 响应拦截（reasoning_content → REASONING_PREFIX）
 
     const response = await customFetch('https://api.example.com/v1/chat/completions')
     const text = await readResponseBody(response)
-    const lines = text.split('\n').filter(l => l.startsWith('data: ') && l !== 'data: [DONE]')
+    const lines = text.split('\n').filter((l) => l.startsWith('data: ') && l !== 'data: [DONE]')
 
     expect(lines).toHaveLength(3)
 
@@ -310,18 +304,18 @@ describe('customFetch - 响应拦截（reasoning_content → REASONING_PREFIX）
     const originalFetch = globalThis.fetch
     globalThis.fetch = vi.fn(async () => {
       return createSSEResponse([
-        sseDelta({ reasoning_content: '' }),       // 首帧：空字符串
-        sseDelta({ reasoning_content: '思考' }),    // reasoning 内容
-        sseDelta({ reasoning_content: '过程' }),    // reasoning 内容续
-        sseDelta({ content: '你好' }),              // 切换到 content 阶段
-        sseDelta({ content: '世界' }),              // 后续 content
+        sseDelta({ reasoning_content: '' }), // 首帧：空字符串
+        sseDelta({ reasoning_content: '思考' }), // reasoning 内容
+        sseDelta({ reasoning_content: '过程' }), // reasoning 内容续
+        sseDelta({ content: '你好' }), // 切换到 content 阶段
+        sseDelta({ content: '世界' }), // 后续 content
         'data: [DONE]'
       ])
     })
 
     const response = await customFetch('https://api.example.com/v1/chat/completions')
     const text = await readResponseBody(response)
-    const lines = text.split('\n').filter(l => l.startsWith('data: ') && l !== 'data: [DONE]')
+    const lines = text.split('\n').filter((l) => l.startsWith('data: ') && l !== 'data: [DONE]')
 
     expect(lines).toHaveLength(5)
 
@@ -384,7 +378,7 @@ describe('customFetch - SSE 透传场景', () => {
 
     const response = await customFetch('https://api.example.com/v1/chat/completions')
     const text = await readResponseBody(response)
-    const lines = text.split('\n').filter(l => l.startsWith('data: ') && l !== 'data: [DONE]')
+    const lines = text.split('\n').filter((l) => l.startsWith('data: ') && l !== 'data: [DONE]')
 
     // 没有 delta 的行应原样透传
     expect(lines[0]).toBe(originalLine)
@@ -395,10 +389,7 @@ describe('customFetch - SSE 透传场景', () => {
   it('data: [DONE] 应直接透传', async () => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = vi.fn(async () => {
-      return createSSEResponse([
-        sseDelta({ content: 'hello' }),
-        'data: [DONE]'
-      ])
+      return createSSEResponse([sseDelta({ content: 'hello' }), 'data: [DONE]'])
     })
 
     const response = await customFetch('https://api.example.com/v1/chat/completions')

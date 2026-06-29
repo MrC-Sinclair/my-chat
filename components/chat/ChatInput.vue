@@ -116,7 +116,8 @@ const isRecording = ref(false)
 const recognitionRef = ref<any>(null)
 
 onMounted(() => {
-  const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  const SpeechRecognitionAPI =
+    (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   speechSupported.value = !!SpeechRecognitionAPI
 })
 
@@ -134,7 +135,8 @@ function toggleSpeechRecognition() {
     return
   }
 
-  const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  const SpeechRecognitionAPI =
+    (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   if (!SpeechRecognitionAPI) return
 
   const recognition = new SpeechRecognitionAPI()
@@ -217,12 +219,10 @@ function toggleSpeechRecognition() {
 
         <div class="flex-1 flex flex-col gap-2 min-w-0">
           <div v-if="images.length > 0" class="flex gap-2 flex-wrap">
-            <div
-              v-for="img in images"
-              :key="img.id"
-              class="relative shrink-0 group/img"
-            >
-              <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-gray-200">
+            <div v-for="img in images" :key="img.id" class="relative shrink-0 group/img">
+              <div
+                class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-gray-200"
+              >
                 <img :src="img.dataUrl" :alt="img.filename" class="w-full h-full object-cover" />
               </div>
               <button
@@ -268,11 +268,13 @@ function toggleSpeechRecognition() {
           :disabled="isLoading"
           v-tooltip="isLoading ? '' : isRecording ? '点击停止录音' : '语音输入'"
           class="shrink-0 relative min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-200 active:scale-95"
-          :class="isRecording
-            ? 'text-red-500 bg-red-50 hover:bg-red-100'
-            : isLoading
-              ? 'text-gray-300 cursor-not-allowed'
-              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'"
+          :class="
+            isRecording
+              ? 'text-red-500 bg-red-50 hover:bg-red-100'
+              : isLoading
+                ? 'text-gray-300 cursor-not-allowed'
+                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+          "
           @click="toggleSpeechRecognition"
         >
           <span
@@ -387,10 +389,21 @@ function toggleSpeechRecognition() {
           v-tooltip="enableWebSearch ? '联网搜索已开启' : '联网搜索已关闭'"
           @click="emit('update:enableWebSearch', !enableWebSearch)"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="w-3.5 h-3.5 shrink-0"
+          >
             <circle cx="12" cy="12" r="10" />
             <line x1="2" y1="12" x2="22" y2="12" />
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            <path
+              d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+            />
           </svg>
           联网
         </button>

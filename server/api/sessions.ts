@@ -61,10 +61,7 @@ export default defineEventHandler(async (event) => {
     const id = crypto.randomUUID()
     const title = (body?.title as string) || `新对话 ${new Date().toLocaleString('zh-CN')}`
 
-    const [session] = await db
-      .insert(sessions)
-      .values({ id, title })
-      .returning()
+    const [session] = await db.insert(sessions).values({ id, title }).returning()
 
     return session
   }

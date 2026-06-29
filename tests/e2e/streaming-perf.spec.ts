@@ -22,7 +22,8 @@ test.describe('流式渲染性能', () => {
 
   test('流式输出期间 .markdown-body 内容应逐步增长（验证打字机效果）', async ({ page }) => {
     // 使用长文本 + 小 chunk + 延迟确保采样充分
-    const longText = '这是一篇关于人工智能的短文。人工智能正在改变我们的生活方式，从智能助手到自动驾驶，AI 技术无处不在。未来，AI 将在医疗、教育、科研等领域发挥更大作用。机器学习的进步让计算机能够从数据中学习，深度学习则推动了图像识别和自然语言处理的突破。'
+    const longText =
+      '这是一篇关于人工智能的短文。人工智能正在改变我们的生活方式，从智能助手到自动驾驶，AI 技术无处不在。未来，AI 将在医疗、教育、科研等领域发挥更大作用。机器学习的进步让计算机能够从数据中学习，深度学习则推动了图像识别和自然语言处理的突破。'
     await mockChatAPI(page, buildTextStream(longText, 2), 60)
 
     await typeAndSubmit(page, '用Markdown写一篇100字短文，包含标题和列表，纯文字不要代码块')
@@ -108,10 +109,13 @@ test.describe('流式渲染性能', () => {
     expect(renderErrors).toEqual([])
   })
 
-  test('reasoning 流式输出期间思考内容应逐步增长（验证 v-memo 不屏蔽 reasoning 增量）', async ({ page }) => {
+  test('reasoning 流式输出期间思考内容应逐步增长（验证 v-memo 不屏蔽 reasoning 增量）', async ({
+    page
+  }) => {
     // 长 reasoning 文本 + 小 chunk + 延迟，确保采样到多个 reasoning 增量
     // 此用例覆盖 v-memo 依赖数组遗漏 reasoning 导致的"一次性显示"回归
-    const reasoningText = '让我分析一下这个问题。首先需要理解用户的核心诉求，即流式输出与渲染性能能否兼得。从技术角度看，Vue3 的 v-memo 指令在依赖未变化时会跳过子树 patch。关键在于依赖数组是否包含 reasoning 内容。若遗漏则 reasoning 增量到来时整个子树被跳过，直到 text 开始才一次性显示。'
+    const reasoningText =
+      '让我分析一下这个问题。首先需要理解用户的核心诉求，即流式输出与渲染性能能否兼得。从技术角度看，Vue3 的 v-memo 指令在依赖未变化时会跳过子树 patch。关键在于依赖数组是否包含 reasoning 内容。若遗漏则 reasoning 增量到来时整个子树被跳过，直到 text 开始才一次性显示。'
     const answerText = '可以兼得。'
     await mockChatAPI(page, buildReasoningStream(reasoningText, answerText, 2), 60)
 

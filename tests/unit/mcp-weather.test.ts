@@ -43,7 +43,10 @@ describe('weather.ts 核心函数', () => {
 
     it('应覆盖所有已知 WMO 代码', () => {
       // 验证映射表中所有代码都能正确返回非"未知天气"的描述
-      const knownCodes = [0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99]
+      const knownCodes = [
+        0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85,
+        86, 95, 96, 99
+      ]
       for (const code of knownCodes) {
         expect(describeWeatherCode(code)).not.toBe('未知天气')
       }
@@ -256,10 +259,7 @@ describe('MCP Weather Server 集成测试', () => {
       stderr: 'pipe'
     })
 
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} }
-    )
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} })
 
     await client.connect(transport)
     return client

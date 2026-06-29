@@ -43,7 +43,9 @@ describe('MarkdownRenderer mathCleanup 管理', () => {
     const cleanupCalls: number[] = []
     const originalRenderMath = vi.fn(async () => {
       const callIndex = originalRenderMath.mock.calls.length
-      const cleanup = () => { cleanupCalls.push(callIndex) }
+      const cleanup = () => {
+        cleanupCalls.push(callIndex)
+      }
       return cleanup
     })
 

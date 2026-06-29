@@ -1,0 +1,32 @@
+# 构建产物与依赖
+node_modules/
+.nuxt/
+.output/
+dist/
+coverage/
+test-results/
+playwright-report/
+drizzle/
+
+# 自动生成的文件
+auto-imports.d.ts
+
+# AI 工具规则文件（各 IDE/Agent 各自维护，不参与格式化）
+.codebuddy/
+.qoder/
+.trae/
+agents/
+AGENTS.md
+
+# 文档草稿（docs/ 下的正式文档仍参与格式化）
+.docs/
+
+# 配置与锁文件
+pnpm-lock.yaml
+cspell.json
+.env
+.env.example
+
+# 日志
+*.log
+debug.log

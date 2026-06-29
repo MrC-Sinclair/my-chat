@@ -36,12 +36,14 @@
 **选择**：`defineAsyncComponent()`
 
 **理由**：
+
 - `defineAsyncComponent` 是 Vue 官方的异步组件方案，与 Nuxt 的代码分割机制天然集成
 - 自动处理 loading 状态和错误边界，无需手动管理
 - 组件加载后自动缓存，不会重复请求
 - `v-if` + 动态 import 需要手动管理 `shallowRef`、loading/error 状态，代码更复杂
 
 **替代方案**：
+
 - `v-if` + `shallowRef` + 动态 import：更灵活但代码量大，且需要手动处理加载状态
 - Nuxt 的 `LazyXxx` 自动导入：Nuxt 会自动为 `components/` 下的组件生成 `Lazy` 前缀版本，但只适用于简单场景，无法精细控制加载时机
 
@@ -50,6 +52,7 @@
 **选择**：MarkdownRenderer 保持同步 import，但其内部重型依赖（CodeBlock、MermaidBlock、katex）改为懒加载
 
 **理由**：
+
 - MarkdownRenderer 是每条 AI 消息的核心渲染器，如果整体懒加载会导致流式输出时出现闪烁
 - `renderMarkdown()` 在 `doRender()` 中同步调用，如果 MarkdownRenderer 异步加载，首条消息渲染会延迟
 - 更好的策略是让 MarkdownRenderer 同步加载（体积小，只有 marked + DOMPurify），但让其内部的 CodeBlock、MermaidBlock 通过 `defineAsyncComponent` 懒加载
@@ -59,6 +62,7 @@
 **选择**：创建 `utils/highlight.ts` 统一管理语言注册
 
 **理由**：
+
 - 当前 CodeBlock.vue 和 MermaidBlock.vue 都 `import hljs from 'highlight.js'`，各自引入全量包
 - 统一到一个入口文件，只注册常用语言（js/ts/python/go/java/bash/sql/json/yaml/markdown/xml/css），体积从 ~300KB 降至 ~50KB
 - 未来需要新语言时只需在 `utils/highlight.ts` 中添加一行
@@ -68,6 +72,7 @@
 **选择**：`renderMath()` 内部使用 `const katex = await import('katex')` 动态加载
 
 **理由**：
+
 - `renderMath()` 已经在 `onMounted` / `nextTick` 中调用，改为 async 无需改变调用方式
 - KaTeX 的 CSS（`katex/dist/katex.min.css`）从 `@import` 改为在 `renderMath()` 中动态注入 `<link>` 标签
 - 这样首屏不会加载 KaTeX 的 JS 和 CSS（~300KB + ~30KB CSS）
@@ -77,6 +82,7 @@
 **选择**：使用 Nuxt 自动生成的 `LazySessionSidebar`
 
 **理由**：
+
 - SessionSidebar 在桌面端默认隐藏（`v-show="showSidebar"`），手机端覆盖式弹出
 - Nuxt 自动为 `components/` 下的组件生成 `Lazy` 前缀版本，无需手动 `defineAsyncComponent`
 - 简单场景直接用 Nuxt 内置能力

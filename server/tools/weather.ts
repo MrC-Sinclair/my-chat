@@ -21,8 +21,6 @@
  *   - 两个 API 均为免费开源服务，无需认证
  */
 
-
-
 /** Open-Meteo Geocoding API 端点，用于将城市名转为经纬度 */
 const GEOCODING_API_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 

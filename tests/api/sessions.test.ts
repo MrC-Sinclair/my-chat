@@ -17,7 +17,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // 使用 vi.hoisted 确保 mock 变量在 vi.mock 提升时已初始化
 const { mockDb, mockSessions, mockMessages } = vi.hoisted(() => {
-  const mockSessions = { id: 'id', title: 'title', createdAt: 'created_at', updatedAt: 'updated_at' }
+  const mockSessions = {
+    id: 'id',
+    title: 'title',
+    createdAt: 'created_at',
+    updatedAt: 'updated_at'
+  }
   const mockMessages = { id: 'id', sessionId: 'session_id', createdAt: 'created_at' }
   return {
     mockDb: {
@@ -83,7 +88,12 @@ describe('会话 API', () => {
 
   describe('POST /api/sessions - 创建新会话', () => {
     it('应创建新会话并返回记录', async () => {
-      const newSession = { id: 'new-id', title: '新对话', createdAt: new Date(), updatedAt: new Date() }
+      const newSession = {
+        id: 'new-id',
+        title: '新对话',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
       const query = createChainableQuery([newSession])
       mockDb.insert.mockReturnValue(query)
 
@@ -96,7 +106,12 @@ describe('会话 API', () => {
     })
 
     it('未传 title 时应自动生成默认标题', async () => {
-      const newSession = { id: 'auto-id', title: '新对话 2026/6/22', createdAt: new Date(), updatedAt: new Date() }
+      const newSession = {
+        id: 'auto-id',
+        title: '新对话 2026/6/22',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
       const query = createChainableQuery([newSession])
       mockDb.insert.mockReturnValue(query)
 
@@ -106,7 +121,10 @@ describe('会话 API', () => {
       expect(result).toEqual(newSession)
       // 验证 values 被调用时包含自动生成的标题
       expect(query.values).toHaveBeenCalledWith(
-        expect.objectContaining({ id: expect.any(String), title: expect.stringContaining('新对话') })
+        expect.objectContaining({
+          id: expect.any(String),
+          title: expect.stringContaining('新对话')
+        })
       )
     })
   })
@@ -136,8 +154,22 @@ describe('单个会话 API /api/sessions/:id', () => {
   describe('GET /api/sessions/:id - 获取会话消息', () => {
     it('应返回指定会话的所有消息（按 createdAt 升序）', async () => {
       const mockMsgs = [
-        { id: 'm1', sessionId: 's1', role: 'user', content: '你好', metadata: null, createdAt: new Date() },
-        { id: 'm2', sessionId: 's1', role: 'assistant', content: '你好！', metadata: { model: 'qwen' }, createdAt: new Date() }
+        {
+          id: 'm1',
+          sessionId: 's1',
+          role: 'user',
+          content: '你好',
+          metadata: null,
+          createdAt: new Date()
+        },
+        {
+          id: 'm2',
+          sessionId: 's1',
+          role: 'assistant',
+          content: '你好！',
+          metadata: { model: 'qwen' },
+          createdAt: new Date()
+        }
       ]
       const query = createChainableQuery(mockMsgs)
       mockDb.select.mockReturnValue(query)
@@ -175,9 +207,7 @@ describe('单个会话 API /api/sessions/:id', () => {
       const result = await sessionByIdHandler(event)
 
       expect(mockDb.update).toHaveBeenCalledWith(mockSessions)
-      expect(query.set).toHaveBeenCalledWith(
-        expect.objectContaining({ title: '新标题' })
-      )
+      expect(query.set).toHaveBeenCalledWith(expect.objectContaining({ title: '新标题' }))
       expect(result).toEqual({ success: true })
     })
 

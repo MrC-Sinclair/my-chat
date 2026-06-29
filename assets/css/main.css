@@ -19,10 +19,12 @@
  * 用于 AI 回复时的打字机效果
  */
 @keyframes cursor-blink {
-  0%, 50% {
+  0%,
+  50% {
     opacity: 1;
   }
-  51%, 100% {
+  51%,
+  100% {
     opacity: 0;
   }
 }

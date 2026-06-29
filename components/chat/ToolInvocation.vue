@@ -72,6 +72,21 @@ function getFavicon(url: string): string {
     return ''
   }
 }
+
+/**
+ * 从工具输入中安全读取城市字段
+ * 注：类型断言放在 script 而非模板，避免 prettier 把 Record<string, unknown> 的泛型尖括号误判为 HTML 标签
+ */
+function getInputCity(input: Record<string, unknown>): string {
+  return (input as { city?: string }).city ?? ''
+}
+
+/**
+ * 从工具输入中安全读取搜索 query 字段
+ */
+function getInputQuery(input: Record<string, unknown>): string {
+  return (input as { query?: string }).query ?? ''
+}
 </script>
 
 <template>
@@ -83,11 +98,13 @@ function getFavicon(url: string): string {
       class="flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-blue-50/60 border border-blue-200/50 rounded-xl text-sm text-blue-700"
     >
       <span class="relative flex h-4 w-4">
-        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-60" />
-        <span class="relative inline-flex rounded-full h-4 w-4 bg-blue-500" />
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-60"
+        ></span>
+        <span class="relative inline-flex rounded-full h-4 w-4 bg-blue-500"></span>
       </span>
       <span class="text-xs sm:text-sm">
-        正在查询 {{ (invocation.input as Record<string, unknown>).city }} 的天气...
+        正在查询 {{ getInputCity(invocation.input) }} 的天气...
       </span>
     </div>
 
@@ -98,7 +115,9 @@ function getFavicon(url: string): string {
     >
       <template v-if="!(invocation.output as WeatherResult).error">
         <!-- 头部：城市信息 -->
-        <div class="px-4 py-3 sm:px-5 sm:py-3.5 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-100">
+        <div
+          class="px-4 py-3 sm:px-5 sm:py-3.5 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-100"
+        >
           <div class="flex items-center gap-2">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -110,7 +129,9 @@ function getFavicon(url: string): string {
               stroke-linejoin="round"
               class="w-4 h-4 sm:w-5 sm:h-5 text-blue-500"
             >
-              <path d="M17.5 19c0-1.7-1.3-3-3-3c-1.1 0-2.1.6-2.6 1.5c-.5-.9-1.5-1.5-2.6-1.5c-1.7 0-3 1.3-3 3" />
+              <path
+                d="M17.5 19c0-1.7-1.3-3-3-3c-1.1 0-2.1.6-2.6 1.5c-.5-.9-1.5-1.5-2.6-1.5c-1.7 0-3 1.3-3 3"
+              />
               <path d="M12 2v2" />
               <path d="M12 8v2" />
               <path d="M5 5l1.5 1.5" />
@@ -130,37 +151,61 @@ function getFavicon(url: string): string {
         </div>
 
         <!-- 当前天气 -->
-        <div
-          v-if="(invocation.output as WeatherResult).current"
-          class="px-4 py-3 sm:px-5 sm:py-4"
-        >
+        <div v-if="(invocation.output as WeatherResult).current" class="px-4 py-3 sm:px-5 sm:py-4">
           <div class="flex items-center gap-4 sm:gap-6">
             <div class="text-3xl sm:text-4xl font-light text-gray-800 tracking-tight">
               {{ (invocation.output as WeatherResult).current!.temperature }}
             </div>
             <div class="flex-1 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:text-sm text-gray-600">
               <div class="flex items-center gap-1">
-                <svg class="w-3 h-3 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  class="w-3 h-3 text-gray-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
                 </svg>
                 <span>体感 {{ (invocation.output as WeatherResult).current!.feelsLike }}</span>
               </div>
               <div class="flex items-center gap-1">
-                <svg class="w-3 h-3 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  class="w-3 h-3 text-gray-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
                 </svg>
                 <span>湿度 {{ (invocation.output as WeatherResult).current!.humidity }}</span>
               </div>
               <div class="flex items-center gap-1">
-                <svg class="w-3 h-3 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  class="w-3 h-3 text-gray-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H5.5" />
                   <path d="M9.6 4.6A2 2 0 1 1 11 8H2" />
                   <path d="M12.6 19.4A2 2 0 1 0 14 16H4" />
                 </svg>
-                <span>{{ (invocation.output as WeatherResult).current!.windDirection }} {{ (invocation.output as WeatherResult).current!.windSpeed }}</span>
+                <span
+                  >{{ (invocation.output as WeatherResult).current!.windDirection }}
+                  {{ (invocation.output as WeatherResult).current!.windSpeed }}</span
+                >
               </div>
               <div class="flex items-center gap-1">
-                <svg class="w-3 h-3 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  class="w-3 h-3 text-gray-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <circle cx="12" cy="12" r="4" />
                   <path d="M12 2v2" />
                   <path d="M12 20v2" />
@@ -189,7 +234,9 @@ function getFavicon(url: string): string {
                 :key="day.day"
                 class="flex-shrink-0 text-center px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-gray-50 min-w-[72px] sm:min-w-[80px]"
               >
-                <div class="text-[10px] sm:text-xs font-medium text-gray-500 mb-1">{{ day.day }}</div>
+                <div class="text-[10px] sm:text-xs font-medium text-gray-500 mb-1">
+                  {{ day.day }}
+                </div>
                 <div class="text-xs sm:text-sm text-gray-700 mb-1">{{ day.condition }}</div>
                 <div class="text-[10px] sm:text-xs text-gray-500">{{ day.low }}~{{ day.high }}</div>
               </div>
@@ -213,12 +260,12 @@ function getFavicon(url: string): string {
       class="flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-indigo-50/60 border border-indigo-200/50 rounded-xl text-sm text-indigo-700"
     >
       <span class="relative flex h-4 w-4">
-        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-60" />
-        <span class="relative inline-flex rounded-full h-4 w-4 bg-indigo-500" />
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-60"
+        ></span>
+        <span class="relative inline-flex rounded-full h-4 w-4 bg-indigo-500"></span>
       </span>
-      <span class="text-xs sm:text-sm">
-        正在搜索: {{ (invocation.input as Record<string, unknown>).query }}...
-      </span>
+      <span class="text-xs sm:text-sm"> 正在搜索: {{ getInputQuery(invocation.input) }}... </span>
     </div>
 
     <!-- 结果展示 -->
@@ -228,7 +275,9 @@ function getFavicon(url: string): string {
     >
       <template v-if="!(invocation.output as SearchResult).error">
         <!-- 头部：搜索摘要 -->
-        <div class="px-4 py-2.5 sm:px-5 sm:py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-gray-100">
+        <div
+          class="px-4 py-2.5 sm:px-5 sm:py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-gray-100"
+        >
           <div class="flex items-center gap-2">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -243,9 +292,7 @@ function getFavicon(url: string): string {
               <circle cx="11" cy="11" r="8" />
               <path d="m21 21-4.3-4.3" />
             </svg>
-            <span class="font-medium text-sm sm:text-base text-gray-800">
-              搜索结果
-            </span>
+            <span class="font-medium text-sm sm:text-base text-gray-800"> 搜索结果 </span>
             <span class="text-xs text-gray-500">
               {{ (invocation.output as SearchResult).query }}
             </span>
@@ -266,8 +313,8 @@ function getFavicon(url: string): string {
               :alt="getDomain(item.url)"
               class="w-4 h-4 sm:w-5 sm:h-5 mt-0.5 rounded-sm flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity"
               loading="lazy"
-              @error="($event.target as HTMLImageElement).style.display='none'"
-            >
+              @error="($event.target as HTMLImageElement).style.display = 'none'"
+            />
 
             <div class="flex-1 min-w-0">
               <!-- 标题链接 -->

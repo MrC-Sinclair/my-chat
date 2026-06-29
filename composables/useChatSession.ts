@@ -18,9 +18,7 @@ export interface MessageRecord {
   createdAt: string
 }
 
-export function useChatSession(
-  setMessages: (msgs: UIMessage[]) => void
-) {
+export function useChatSession(setMessages: (msgs: UIMessage[]) => void) {
   const sessionsList = ref<SessionItem[]>([])
   const currentSessionId = ref<string>('')
   const toast = useToast()

@@ -4,17 +4,17 @@
 
 ## 技术栈
 
-| 层级 | 技术 | 说明 |
-|------|------|------|
-| **前端框架** | Nuxt 3 + Vue 3 | SSR/SSG 支持，组合式 API |
-| **AI SDK** | Vercel AI SDK (`@ai-sdk/vue` + `ai`) | `useChat()` 流式对话 |
-| **UI** | Tailwind CSS + shadcn-vue 风格 | 响应式布局，手机/平板双端适配 |
-| **后端 API** | Nuxt Server Routes (Nitro) | 无需额外服务器 |
-| **数据库** | PostgreSQL + Drizzle ORM | 类型安全的 SQL |
-| **Markdown** | marked + DOMPurify | 安全渲染 |
-| **数学公式** | KaTeX | LaTeX 公式支持 |
-| **流程图** | Mermaid | 流程图渲染 |
-| **测试** | Vitest + Playwright | 单元测试 + E2E 测试 |
+| 层级         | 技术                                 | 说明                          |
+| ------------ | ------------------------------------ | ----------------------------- |
+| **前端框架** | Nuxt 3 + Vue 3                       | SSR/SSG 支持，组合式 API      |
+| **AI SDK**   | Vercel AI SDK (`@ai-sdk/vue` + `ai`) | `useChat()` 流式对话          |
+| **UI**       | Tailwind CSS + shadcn-vue 风格       | 响应式布局，手机/平板双端适配 |
+| **后端 API** | Nuxt Server Routes (Nitro)           | 无需额外服务器                |
+| **数据库**   | PostgreSQL + Drizzle ORM             | 类型安全的 SQL                |
+| **Markdown** | marked + DOMPurify                   | 安全渲染                      |
+| **数学公式** | KaTeX                                | LaTeX 公式支持                |
+| **流程图**   | Mermaid                              | 流程图渲染                    |
+| **测试**     | Vitest + Playwright                  | 单元测试 + E2E 测试           |
 
 ## 项目结构
 
@@ -70,15 +70,15 @@ sessions (1:N) → messages (1:N) → feedbacks（均级联删除）
 
 ## 环境变量
 
-| 变量 | 必需 | 说明 |
-|------|------|------|
-| `OPENAI_API_KEY` | 是 | LLM API 密钥 |
-| `OPENAI_BASE_URL` | 否 | LLM API 地址 |
-| `DATABASE_URL` | 是 | PostgreSQL 连接串 |
-| `LLM_MODEL` | 否 | 模型名称 |
-| `ENABLE_THINKING` | 否 | 深度思考开关 |
-| `APP_TITLE` | 否 | 应用标题（前端可见） |
-| `IMGBB_API_KEY` | 否 | ImgBB 图床 API Key |
+| 变量              | 必需 | 说明                 |
+| ----------------- | ---- | -------------------- |
+| `OPENAI_API_KEY`  | 是   | LLM API 密钥         |
+| `OPENAI_BASE_URL` | 否   | LLM API 地址         |
+| `DATABASE_URL`    | 是   | PostgreSQL 连接串    |
+| `LLM_MODEL`       | 否   | 模型名称             |
+| `ENABLE_THINKING` | 否   | 深度思考开关         |
+| `APP_TITLE`       | 否   | 应用标题（前端可见） |
+| `IMGBB_API_KEY`   | 否   | ImgBB 图床 API Key   |
 
 ## 常用命令
 

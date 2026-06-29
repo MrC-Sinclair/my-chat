@@ -231,12 +231,7 @@ describe('MarkdownRenderer', () => {
     it('多个代码块内容都不变，全部复用', async () => {
       const wrapper = mount(MarkdownRenderer, {
         props: {
-          content: [
-            '```js\nconst a = 1\n```',
-            '',
-            '```python\nprint("py")\n```',
-            '段落'
-          ].join('\n')
+          content: ['```js\nconst a = 1\n```', '', '```python\nprint("py")\n```', '段落'].join('\n')
         },
         global: { stubs: globalStubs }
       })

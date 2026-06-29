@@ -14,18 +14,20 @@
 ## Capabilities
 
 ### New Capabilities
+
 - `mcp-weather-tool`: 基于 MCP 协议的天气查询工具，通过独立 MCP Server 进程提供天气查询能力，可被 AI SDK 和外部 MCP 客户端复用
 
 ### Modified Capabilities
+
 <!-- 无现有 spec 需要修改 -->
 
 ## Impact
 
-| 层级 | 影响 |
-|------|------|
-| 依赖 | 新增 `@ai-sdk/mcp`、`@modelcontextprotocol/sdk`；升级 `ai` 到 v4.2+ |
-| 服务端工具 | `weather.ts` 重构为导出核心函数 + MCP Server 入口；删除 `weatherTool` |
-| API 路由 | `chat.post.ts` 中工具注册方式从直接引用 `weatherTool` 改为通过 `createMCPClient` |
-| 数据流 | 天气查询从同进程调用变为跨进程（stdio）MCP 协议调用 |
-| 前端 | 无影响（工具调用逻辑对前端透明） |
-| 数据库 | 无影响 |
+| 层级       | 影响                                                                             |
+| ---------- | -------------------------------------------------------------------------------- |
+| 依赖       | 新增 `@ai-sdk/mcp`、`@modelcontextprotocol/sdk`；升级 `ai` 到 v4.2+              |
+| 服务端工具 | `weather.ts` 重构为导出核心函数 + MCP Server 入口；删除 `weatherTool`            |
+| API 路由   | `chat.post.ts` 中工具注册方式从直接引用 `weatherTool` 改为通过 `createMCPClient` |
+| 数据流     | 天气查询从同进程调用变为跨进程（stdio）MCP 协议调用                              |
+| 前端       | 无影响（工具调用逻辑对前端透明）                                                 |
+| 数据库     | 无影响                                                                           |

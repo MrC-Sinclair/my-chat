@@ -11,7 +11,8 @@ import { useToast } from '~/composables/useToast'
 
 const AsyncErrorFallback = {
   props: ['error', 'retry'],
-  template: '<div class="async-error rounded-lg border border-red-200 bg-red-50 my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-red-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-red-700 font-medium">组件加载失败</span></div><button @click="retry" class="text-xs text-red-600 hover:text-red-800 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
+  template:
+    '<div class="async-error rounded-lg border border-red-200 bg-red-50 my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-red-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-red-700 font-medium">组件加载失败</span></div><button @click="retry" class="text-xs text-red-600 hover:text-red-800 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
 }
 
 const LazySessionSidebar = defineAsyncComponent({
@@ -219,9 +220,7 @@ function getToolInvocations(msg: UIMessage): any[] {
   // 这里做归一化：为静态工具补上 toolName，避免下游组件因 toolName 缺失而不渲染
   if (!msg.parts || !Array.isArray(msg.parts)) return []
   return msg.parts
-    .filter(
-      (p: any) => p.type.startsWith('tool-') || p.type === 'dynamic-tool'
-    )
+    .filter((p: any) => p.type.startsWith('tool-') || p.type === 'dynamic-tool')
     .map((p: any) => {
       if (p.toolName) return p
       // 静态工具：从 type 中提取工具名（tool-webSearch → webSearch）
@@ -643,7 +642,9 @@ function onDocumentClick(e: Event) {
                     <button
                       class="p-1.5 sm:p-1 text-gray-400 hover:text-gray-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                       v-tooltip="'编辑消息'"
-                      @click="startEditing(virtualRow.index, getMessageText(messages[virtualRow.index]))"
+                      @click="
+                        startEditing(virtualRow.index, getMessageText(messages[virtualRow.index]))
+                      "
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -701,7 +702,10 @@ function onDocumentClick(e: Event) {
                     class="p-1.5 sm:p-1 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                     v-tooltip="'复制'"
                     @click="
-                      copyMessage(getMessageText(messages[virtualRow.index]), messages[virtualRow.index].id)
+                      copyMessage(
+                        getMessageText(messages[virtualRow.index]),
+                        messages[virtualRow.index].id
+                      )
                     "
                   >
                     <svg

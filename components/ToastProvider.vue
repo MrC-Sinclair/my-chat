@@ -16,9 +16,15 @@ function show(message: string, type: ToastItem['type'] = 'info', duration = 3000
   }, duration)
 }
 
-function success(message: string) { show(message, 'success') }
-function error(message: string) { show(message, 'error', 5000) }
-function info(message: string) { show(message, 'info') }
+function success(message: string) {
+  show(message, 'success')
+}
+function error(message: string) {
+  show(message, 'error', 5000)
+}
+function info(message: string) {
+  show(message, 'info')
+}
 
 provide('toast', { show, success, error, info })
 </script>
@@ -35,7 +41,7 @@ provide('toast', { show, success, error, info })
           :class="{
             'bg-green-50 text-green-800 border border-green-200': toast.type === 'success',
             'bg-red-50 text-red-800 border border-red-200': toast.type === 'error',
-            'bg-blue-50 text-blue-800 border border-blue-200': toast.type === 'info',
+            'bg-blue-50 text-blue-800 border border-blue-200': toast.type === 'info'
           }"
         >
           <span v-if="toast.type === 'success'">✓</span>

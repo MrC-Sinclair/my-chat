@@ -120,10 +120,7 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
    * 注意：$$ 后的所有内容都会被骨架屏占位。流式输出中 $$ 一旦出现，
    * 通常就是要开始块级公式，后续内容都是公式的一部分，这是合理的。
    */
-  processedText = processedText.replace(
-    /\$\$([\s\S]*)$/,
-    '\n%%MATHBLOCK_UNCLOSED%%\n'
-  )
+  processedText = processedText.replace(/\$\$([\s\S]*)$/, '\n%%MATHBLOCK_UNCLOSED%%\n')
 
   /**
    * 第三步：提取行内公式，用占位符替换
@@ -171,32 +168,131 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
    */
   let sanitizedHtml = DOMPurify.sanitize(html, {
     ALLOWED_TAGS: [
-      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-      'p', 'br', 'hr',
-      'ul', 'ol', 'li',
-      'blockquote', 'pre', 'code',
-      'a', 'strong', 'em', 'b', 'i', 'u', 's', 'del',
-      'table', 'thead', 'tbody', 'tr', 'th', 'td',
-      'img', 'span', 'div', 'sup', 'sub',
-      'annotation', 'semantics', 'math', 'mrow', 'mi', 'mo', 'mspace',
-      'mfrac', 'msqrt', 'mroot', 'msub', 'msup', 'msubsup',
-      'munder', 'mover', 'munderover', 'mpadded',
-      'mtext', 'mn', 'mstyle', 'merror', 'phantom',
-      'mtable', 'mtr', 'mtd', 'mlabeledtr',
-      'menclose', 'maction', 'mglyph',
-      'svg', 'path', 'line', 'defs', 'g', 'use', 'rect', 'circle', 'ellipse', 'polygon', 'polyline', 'text', 'tspan'
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'p',
+      'br',
+      'hr',
+      'ul',
+      'ol',
+      'li',
+      'blockquote',
+      'pre',
+      'code',
+      'a',
+      'strong',
+      'em',
+      'b',
+      'i',
+      'u',
+      's',
+      'del',
+      'table',
+      'thead',
+      'tbody',
+      'tr',
+      'th',
+      'td',
+      'img',
+      'span',
+      'div',
+      'sup',
+      'sub',
+      'annotation',
+      'semantics',
+      'math',
+      'mrow',
+      'mi',
+      'mo',
+      'mspace',
+      'mfrac',
+      'msqrt',
+      'mroot',
+      'msub',
+      'msup',
+      'msubsup',
+      'munder',
+      'mover',
+      'munderover',
+      'mpadded',
+      'mtext',
+      'mn',
+      'mstyle',
+      'merror',
+      'phantom',
+      'mtable',
+      'mtr',
+      'mtd',
+      'mlabeledtr',
+      'menclose',
+      'maction',
+      'mglyph',
+      'svg',
+      'path',
+      'line',
+      'defs',
+      'g',
+      'use',
+      'rect',
+      'circle',
+      'ellipse',
+      'polygon',
+      'polyline',
+      'text',
+      'tspan'
     ],
     ALLOWED_ATTR: [
-      'href', 'target', 'rel', 'class', 'id', 'lang', 'src', 'alt', 'title',
-      'referrerpolicy', 'loading',
-      'xmlns', 'viewBox', 'd', 'fill', 'stroke', 'stroke-width', 'width', 'height',
-      'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
-      'points', 'transform', 'color', 'display', 'style', 'font-size', 'font-family',
-      'encoding', 'definitionURL', 'href xlink:href'
+      'href',
+      'target',
+      'rel',
+      'class',
+      'id',
+      'lang',
+      'src',
+      'alt',
+      'title',
+      'referrerpolicy',
+      'loading',
+      'xmlns',
+      'viewBox',
+      'd',
+      'fill',
+      'stroke',
+      'stroke-width',
+      'width',
+      'height',
+      'x',
+      'y',
+      'x1',
+      'y1',
+      'x2',
+      'y2',
+      'cx',
+      'cy',
+      'r',
+      'rx',
+      'ry',
+      'points',
+      'transform',
+      'color',
+      'display',
+      'style',
+      'font-size',
+      'font-family',
+      'encoding',
+      'definitionURL',
+      'href xlink:href'
     ]
   })
 
-  sanitizedHtml = sanitizedHtml.replace(/<img /g, '<img referrerpolicy="no-referrer" loading="lazy" ')
+  sanitizedHtml = sanitizedHtml.replace(
+    /<img /g,
+    '<img referrerpolicy="no-referrer" loading="lazy" '
+  )
 
   /**
    * 第五步：将占位符替换回数学公式的 HTML 标签
@@ -247,14 +343,8 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
    * 等 $$ 闭合后占位符自动消失，正常渲染。
    */
   const unclosedPlaceholder = `<div class="math-block" data-pending="true"><span class="math-block-placeholder" aria-label="公式加载中"></span></div>`
-  sanitizedHtml = sanitizedHtml.replace(
-    `<p>%%MATHBLOCK_UNCLOSED%%</p>`,
-    unclosedPlaceholder
-  )
-  sanitizedHtml = sanitizedHtml.replace(
-    `%%MATHBLOCK_UNCLOSED%%`,
-    unclosedPlaceholder
-  )
+  sanitizedHtml = sanitizedHtml.replace(`<p>%%MATHBLOCK_UNCLOSED%%</p>`, unclosedPlaceholder)
+  sanitizedHtml = sanitizedHtml.replace(`%%MATHBLOCK_UNCLOSED%%`, unclosedPlaceholder)
 
   return sanitizedHtml
 }

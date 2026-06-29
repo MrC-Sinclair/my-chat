@@ -8,11 +8,7 @@
  * 使用 mock API 消除 LLM 不确定性。
  */
 import { test, expect } from '@playwright/test'
-import {
-  buildTextStream,
-  buildCodeBlockStream,
-  mockChatAPI
-} from './helpers/mock-chat'
+import { buildTextStream, buildCodeBlockStream, mockChatAPI } from './helpers/mock-chat'
 
 test.setTimeout(90000)
 
@@ -66,17 +62,17 @@ test.describe('跨浏览器兼容性', () => {
     await page.waitForTimeout(3000)
 
     // 使用 waitForFunction 等待 code-block-wrapper 出现
-    await page.waitForFunction(
-      () => document.querySelectorAll('.code-block-wrapper').length >= 1,
-      { timeout: 10000 }
-    )
+    await page.waitForFunction(() => document.querySelectorAll('.code-block-wrapper').length >= 1, {
+      timeout: 10000
+    })
 
     const codeBlock = page.locator('.markdown-body .code-block-wrapper').first()
     await expect(codeBlock).toBeVisible()
   })
 
   test('流式输出打字机效果在所有浏览器中正常', async ({ page }) => {
-    const longText = '这是一首关于春天的诗。春风拂面花满枝，细雨润物细无声。燕子归来寻旧垒，桃花依旧笑春风。'
+    const longText =
+      '这是一首关于春天的诗。春风拂面花满枝，细雨润物细无声。燕子归来寻旧垒，桃花依旧笑春风。'
     await mockChatAPI(page, buildTextStream(longText, 2), 60)
 
     const textarea = page.getByTestId('chat-input')

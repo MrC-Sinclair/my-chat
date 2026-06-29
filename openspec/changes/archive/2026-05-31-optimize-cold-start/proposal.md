@@ -21,9 +21,9 @@
 
 ## Impact
 
-| 影响层级 | 影响范围 |
-|---------|---------|
-| 前端组件 | ai-chat.vue、MarkdownRenderer.vue、CodeBlock.vue、MermaidBlock.vue、ThinkingProcess.vue、ToolInvocation.vue、SessionSidebar.vue |
-| 前端工具函数 | utils/katex.ts、utils/markdown.ts |
-| 构建产物 | 首屏 JS 体积预计减少 60-70%（~1.2MB → ~400KB） |
-| 用户体验 | 首屏加载时间显著缩短，非首屏内容按需加载 |
+| 影响层级     | 影响范围                                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| 前端组件     | ai-chat.vue、MarkdownRenderer.vue、CodeBlock.vue、MermaidBlock.vue、ThinkingProcess.vue、ToolInvocation.vue、SessionSidebar.vue |
+| 前端工具函数 | utils/katex.ts、utils/markdown.ts                                                                                               |
+| 构建产物     | 首屏 JS 体积预计减少 60-70%（~1.2MB → ~400KB）                                                                                  |
+| 用户体验     | 首屏加载时间显著缩短，非首屏内容按需加载                                                                                        |

@@ -111,20 +111,20 @@ onUnmounted(() => {
 
 ## 响应式适配
 
-| 属性 | 手机（默认） | 平板（sm:） |
-|------|-------------|------------|
+| 属性         | 手机（默认）                | 平板（sm:）                 |
+| ------------ | --------------------------- | --------------------------- |
 | 按钮最小尺寸 | `min-w-[44px] min-h-[44px]` | `min-w-[40px] min-h-[40px]` |
-| 图标大小 | `w-5 h-5` | `w-4 h-4` |
+| 图标大小     | `w-5 h-5`                   | `w-4 h-4`                   |
 
 ## 错误处理
 
-| 场景 | 处理 |
-|------|------|
-| 浏览器不支持 SpeechRecognition | `speechSupported = false`，按钮隐藏 |
-| 识别错误（`onerror`） | 停止录音，通过 `useToast().error()` 提示 |
-| 用户未授权麦克风 | `onerror` 中 `error === 'not-allowed'`，toast 提示"麦克风权限被拒绝" |
-| 快速连续点击 | `isRecording` 守卫防止重复创建实例 |
-| `useToast` 不可用 | ChatInput 作为子组件无法直接使用 composable，通过 emit 事件通知父组件 |
+| 场景                           | 处理                                                                  |
+| ------------------------------ | --------------------------------------------------------------------- |
+| 浏览器不支持 SpeechRecognition | `speechSupported = false`，按钮隐藏                                   |
+| 识别错误（`onerror`）          | 停止录音，通过 `useToast().error()` 提示                              |
+| 用户未授权麦克风               | `onerror` 中 `error === 'not-allowed'`，toast 提示"麦克风权限被拒绝"  |
+| 快速连续点击                   | `isRecording` 守卫防止重复创建实例                                    |
+| `useToast` 不可用              | ChatInput 作为子组件无法直接使用 composable，通过 emit 事件通知父组件 |
 
 ### useToast 集成问题
 

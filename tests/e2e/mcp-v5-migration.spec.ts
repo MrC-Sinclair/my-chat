@@ -110,7 +110,8 @@ test.describe('流式输出（UIMessage 流格式）', () => {
     await page.goto('/ai-chat', { waitUntil: 'networkidle' })
 
     // 使用长文本 + 小 chunk + 延迟确保采样充分
-    const longText = '这是一篇关于人工智能的短文。人工智能正在改变我们的生活方式，从智能助手到自动驾驶，AI 技术无处不在。未来，AI 将在医疗、教育、科研等领域发挥更大作用。'
+    const longText =
+      '这是一篇关于人工智能的短文。人工智能正在改变我们的生活方式，从智能助手到自动驾驶，AI 技术无处不在。未来，AI 将在医疗、教育、科研等领域发挥更大作用。'
     await mockChatAPI(page, buildTextStream(longText, 2), 60)
 
     await typeAndSubmit(page, '用Markdown写一篇100字短文，纯文字不要代码块')
@@ -179,10 +180,14 @@ test.describe('流式输出（UIMessage 流格式）', () => {
 test.describe('推理过程显示', () => {
   test('推理模型应显示思考过程或正常回复', async ({ page }) => {
     await page.goto('/ai-chat', { waitUntil: 'networkidle' })
-    await mockChatAPI(page, buildReasoningStream(
-      '天空是蓝色的原因是瑞利散射...',
-      '天空之所以是蓝色的，是因为大气中的分子对阳光产生瑞利散射，蓝色光波长较短，散射更强烈。'
-    ), 80)
+    await mockChatAPI(
+      page,
+      buildReasoningStream(
+        '天空是蓝色的原因是瑞利散射...',
+        '天空之所以是蓝色的，是因为大气中的分子对阳光产生瑞利散射，蓝色光波长较短，散射更强烈。'
+      ),
+      80
+    )
 
     await typeAndSubmit(page, '解释为什么天空是蓝色的')
     await waitForResponse(page, 60000)

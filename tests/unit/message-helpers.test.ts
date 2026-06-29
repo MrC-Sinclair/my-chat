@@ -57,9 +57,7 @@ function getMessageText(msg: UIMessage): string {
 function getToolInvocations(msg: UIMessage): ToolInvocationPart[] {
   if (!msg.parts || !Array.isArray(msg.parts)) return []
   return msg.parts
-    .filter(
-      (p): p is ToolInvocationPart => p.type.startsWith('tool-') || p.type === 'dynamic-tool'
-    )
+    .filter((p): p is ToolInvocationPart => p.type.startsWith('tool-') || p.type === 'dynamic-tool')
     .map((p) => {
       if (p.toolName) return p
       // 静态工具：从 type 中提取工具名（tool-webSearch → webSearch）
@@ -78,10 +76,7 @@ function getReasoningContent(msg: UIMessage): string {
 }
 
 /** 过滤出需要显示的工具调用（排除不需要显示的） */
-function getVisibleToolInvocations(
-  msg: UIMessage,
-  enableWebSearch: boolean
-): ToolInvocationPart[] {
+function getVisibleToolInvocations(msg: UIMessage, enableWebSearch: boolean): ToolInvocationPart[] {
   const all = getToolInvocations(msg)
   if (enableWebSearch) return all
   // 归一化后 toolName 一定存在
@@ -302,9 +297,7 @@ describe('getReasoningContent', () => {
     const msg: UIMessage = {
       id: '3',
       role: 'assistant',
-      parts: [
-        { type: 'reasoning', reasoning: '旧版推理内容' } as ReasoningPart
-      ]
+      parts: [{ type: 'reasoning', reasoning: '旧版推理内容' } as ReasoningPart]
     }
     expect(getReasoningContent(msg)).toBe('旧版推理内容')
   })

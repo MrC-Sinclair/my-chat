@@ -7,11 +7,13 @@
 ## Goals / Non-Goals
 
 **Goals:**
+
 - 替换第 4 条快捷提示语为一条能触发 AI 生成复杂图文混排内容的 prompt
 - 新 prompt 让 AI 输出包含图片、Mermaid 流程图、KaTeX 公式、代码块等多种渲染元素
 - 用户点击后一键发送，无需手动输入
 
 **Non-Goals:**
+
 - 不修改欢迎页 UI 布局
 - 不新增或修改渲染管线
 - 不涉及服务端变更
@@ -21,6 +23,7 @@
 **Prompt 内容设计：**
 
 新 prompt 指示 AI 生成一个"技术博客预览"风格的回复，包含：
+
 1. 一张 Markdown 图片（测试图片渲染）
 2. 一段说明文字（测试文本渲染）
 3. 一个 Mermaid 流程图（测试 Mermaid 渲染）
@@ -28,6 +31,7 @@
 5. 一个代码块（测试代码高亮）
 
 prompt 内容：
+
 ```
 请用以下格式生成一个技术博客预览：1. 先输出一张图片：![技术插图](https://automation.vuejs.org/images/buy_instagram_followers_from_socialwick.png)；2. 写一段关于前端Markdown渲染的介绍；3. 用mermaid画一个简单的渲染流程图；4. 展示一个KaTeX行内公式 $E = mc^2$ 和块级公式 $$\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$$；5. 最后给一个JavaScript代码示例。
 ```

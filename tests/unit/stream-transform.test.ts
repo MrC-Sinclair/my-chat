@@ -258,11 +258,7 @@ function processChunks(chunks: Array<Record<string, unknown>>): Array<Record<str
     }
 
     // 其他事件类型直接写入
-    if (
-      chunk.type === 'start' ||
-      chunk.type === 'start-step' ||
-      chunk.type === 'finish-step'
-    ) {
+    if (chunk.type === 'start' || chunk.type === 'start-step' || chunk.type === 'finish-step') {
       writer.write(chunk)
     }
   }
@@ -311,11 +307,11 @@ describe('流处理逻辑 - text-delta 映射', () => {
     ])
 
     // 只应有一个 text-start
-    const textStarts = events.filter(e => e.type === 'text-start')
+    const textStarts = events.filter((e) => e.type === 'text-start')
     expect(textStarts).toHaveLength(1)
 
     // 两个 text-delta 使用同一个 id
-    const textDeltas = events.filter(e => e.type === 'text-delta')
+    const textDeltas = events.filter((e) => e.type === 'text-delta')
     expect(textDeltas).toHaveLength(2)
     expect(textDeltas[0].delta).toBe('你好')
     expect(textDeltas[1].delta).toBe('世界')
@@ -347,15 +343,15 @@ describe('流处理逻辑 - REASONING_PREFIX 映射', () => {
     ])
 
     // 只应有一个 reasoning-start
-    const reasoningStarts = events.filter(e => e.type === 'reasoning-start')
+    const reasoningStarts = events.filter((e) => e.type === 'reasoning-start')
     expect(reasoningStarts).toHaveLength(1)
 
     // 三个 reasoning-delta 使用同一个 id
-    const reasoningDeltas = events.filter(e => e.type === 'reasoning-delta')
+    const reasoningDeltas = events.filter((e) => e.type === 'reasoning-delta')
     expect(reasoningDeltas).toHaveLength(3)
-    expect(reasoningDeltas.map(e => e.delta)).toEqual(['第一步', '第二步', '第三步'])
+    expect(reasoningDeltas.map((e) => e.delta)).toEqual(['第一步', '第二步', '第三步'])
     // 所有 reasoning-delta 的 id 相同
-    const ids = new Set(reasoningDeltas.map(e => e.id))
+    const ids = new Set(reasoningDeltas.map((e) => e.id))
     expect(ids.size).toBe(1)
   })
 })
@@ -407,10 +403,10 @@ describe('流处理逻辑 - REASONING_END 映射', () => {
     ])
 
     // 不应有 text-start 或 text-delta
-    expect(events.filter(e => e.type === 'text-start')).toHaveLength(0)
-    expect(events.filter(e => e.type === 'text-delta')).toHaveLength(0)
+    expect(events.filter((e) => e.type === 'text-start')).toHaveLength(0)
+    expect(events.filter((e) => e.type === 'text-delta')).toHaveLength(0)
     // 应有 reasoning-end
-    expect(events.filter(e => e.type === 'reasoning-end')).toHaveLength(1)
+    expect(events.filter((e) => e.type === 'reasoning-end')).toHaveLength(1)
   })
 })
 
@@ -426,11 +422,11 @@ describe('流处理逻辑 - 混合 REASONING_PREFIX 场景', () => {
 
     // "前文" 应作为 reasoning-delta（因为 split 后第一个非空 part 不含 REASONING_END）
     // "思考内容" 也应作为 reasoning-delta
-    const reasoningDeltas = events.filter(e => e.type === 'reasoning-delta')
+    const reasoningDeltas = events.filter((e) => e.type === 'reasoning-delta')
     expect(reasoningDeltas.length).toBeGreaterThanOrEqual(1)
 
     // 应有 reasoning-start
-    expect(events.some(e => e.type === 'reasoning-start')).toBe(true)
+    expect(events.some((e) => e.type === 'reasoning-start')).toBe(true)
   })
 })
 
@@ -446,7 +442,7 @@ describe('流处理逻辑 - tool 事件映射', () => {
       { type: 'finish', finishReason: 'tool-calls' }
     ])
 
-    const toolEvent = events.find(e => e.type === 'tool-input-available')
+    const toolEvent = events.find((e) => e.type === 'tool-input-available')
     expect(toolEvent).toEqual({
       type: 'tool-input-available',
       toolCallId: 'call-123',
@@ -468,7 +464,7 @@ describe('流处理逻辑 - tool 事件映射', () => {
       { type: 'finish', finishReason: 'stop' }
     ])
 
-    const toolEvent = events.find(e => e.type === 'tool-output-available')
+    const toolEvent = events.find((e) => e.type === 'tool-output-available')
     expect(toolEvent).toEqual({
       type: 'tool-output-available',
       toolCallId: 'call-123',
@@ -489,7 +485,7 @@ describe('流处理逻辑 - tool 事件映射', () => {
       { type: 'finish', finishReason: 'error' }
     ])
 
-    const toolEvent = events.find(e => e.type === 'tool-output-error')
+    const toolEvent = events.find((e) => e.type === 'tool-output-error')
     expect(toolEvent).toEqual({
       type: 'tool-output-error',
       toolCallId: 'call-456',
@@ -507,7 +503,7 @@ describe('流处理逻辑 - tool 事件映射', () => {
       { type: 'finish', finishReason: 'error' }
     ])
 
-    const toolEvent = events.find(e => e.type === 'tool-output-error')
+    const toolEvent = events.find((e) => e.type === 'tool-output-error')
     expect(toolEvent?.errorText).toBe('字符串错误')
   })
 
@@ -521,7 +517,7 @@ describe('流处理逻辑 - tool 事件映射', () => {
       { type: 'finish', finishReason: 'tool-calls' }
     ])
 
-    const toolEvent = events.find(e => e.type === 'tool-input-start')
+    const toolEvent = events.find((e) => e.type === 'tool-input-start')
     expect(toolEvent).toEqual({
       type: 'tool-input-start',
       toolCallId: 'call-001',
@@ -539,7 +535,7 @@ describe('流处理逻辑 - tool 事件映射', () => {
       { type: 'finish', finishReason: 'tool-calls' }
     ])
 
-    const toolEvent = events.find(e => e.type === 'tool-input-delta')
+    const toolEvent = events.find((e) => e.type === 'tool-input-delta')
     expect(toolEvent).toEqual({
       type: 'tool-input-delta',
       toolCallId: 'call-001',
@@ -554,7 +550,7 @@ describe('流处理逻辑 - tool 事件映射', () => {
     ])
 
     // 不应有任何 tool-input-end 事件
-    expect(events.filter(e => e.type === 'tool-input-end')).toHaveLength(0)
+    expect(events.filter((e) => e.type === 'tool-input-end')).toHaveLength(0)
   })
 })
 
@@ -581,13 +577,13 @@ describe('流处理逻辑 - 原生 reasoning-delta', () => {
     ])
 
     // 只应有一个 reasoning-start
-    const reasoningStarts = events.filter(e => e.type === 'reasoning-start')
+    const reasoningStarts = events.filter((e) => e.type === 'reasoning-start')
     expect(reasoningStarts).toHaveLength(1)
 
     // 两个 reasoning-delta
-    const reasoningDeltas = events.filter(e => e.type === 'reasoning-delta')
+    const reasoningDeltas = events.filter((e) => e.type === 'reasoning-delta')
     expect(reasoningDeltas).toHaveLength(2)
-    expect(reasoningDeltas.map(e => e.delta)).toEqual(['推理一', '推理二'])
+    expect(reasoningDeltas.map((e) => e.delta)).toEqual(['推理一', '推理二'])
   })
 
   it('原生 reasoning-delta 无 id 时应使用默认 id', () => {
@@ -597,8 +593,8 @@ describe('流处理逻辑 - 原生 reasoning-delta', () => {
     ])
 
     // 应有 reasoning-start，使用默认 id
-    expect(events.some(e => e.type === 'reasoning-start')).toBe(true)
-    expect(events.filter(e => e.type === 'reasoning-delta')).toHaveLength(1)
+    expect(events.some((e) => e.type === 'reasoning-start')).toBe(true)
+    expect(events.filter((e) => e.type === 'reasoning-delta')).toHaveLength(1)
   })
 })
 
@@ -610,12 +606,12 @@ describe('流处理逻辑 - finish 事件', () => {
     ])
 
     // 应自动追加 reasoning-end
-    const reasoningEnds = events.filter(e => e.type === 'reasoning-end')
+    const reasoningEnds = events.filter((e) => e.type === 'reasoning-end')
     expect(reasoningEnds).toHaveLength(1)
 
     // reasoning-end 应在 finish 之前
-    const finishIdx = events.findIndex(e => e.type === 'finish')
-    const reasoningEndIdx = events.findIndex(e => e.type === 'reasoning-end')
+    const finishIdx = events.findIndex((e) => e.type === 'finish')
+    const reasoningEndIdx = events.findIndex((e) => e.type === 'reasoning-end')
     expect(reasoningEndIdx).toBeLessThan(finishIdx)
   })
 
@@ -626,12 +622,12 @@ describe('流处理逻辑 - finish 事件', () => {
     ])
 
     // 应自动追加 text-end
-    const textEnds = events.filter(e => e.type === 'text-end')
+    const textEnds = events.filter((e) => e.type === 'text-end')
     expect(textEnds).toHaveLength(1)
 
     // text-end 应在 finish 之前
-    const finishIdx = events.findIndex(e => e.type === 'finish')
-    const textEndIdx = events.findIndex(e => e.type === 'text-end')
+    const finishIdx = events.findIndex((e) => e.type === 'finish')
+    const textEndIdx = events.findIndex((e) => e.type === 'text-end')
     expect(textEndIdx).toBeLessThan(finishIdx)
   })
 
@@ -645,8 +641,8 @@ describe('流处理逻辑 - finish 事件', () => {
 
     // reasoning-end 由 REASONING_END 触发
     // text-end 由 finish 触发
-    const reasoningEnds = events.filter(e => e.type === 'reasoning-end')
-    const textEnds = events.filter(e => e.type === 'text-end')
+    const reasoningEnds = events.filter((e) => e.type === 'reasoning-end')
+    const textEnds = events.filter((e) => e.type === 'text-end')
     expect(reasoningEnds).toHaveLength(1)
     expect(textEnds).toHaveLength(1)
   })
@@ -656,14 +652,14 @@ describe('流处理逻辑 - finish 事件', () => {
       { type: 'text-delta', text: REASONING_PREFIX + '思考' },
       { type: 'text-delta', text: REASONING_END + '回答' },
       { type: 'reasoning-end', id: 'rs-test' }, // 显式关闭
-      { type: 'text-end', id: 'ts-test' },       // 显式关闭
+      { type: 'text-end', id: 'ts-test' }, // 显式关闭
       { type: 'finish', finishReason: 'stop' }
     ])
 
     // 注意：显式 reasoning-end 会将 isReasoning 置为 false，
     // 但 textId 仍然有值，所以 finish 时不会再写 text-end
     // 不过因为显式 text-end 已经写入，这里检查不会重复
-    const reasoningEnds = events.filter(e => e.type === 'reasoning-end')
+    const reasoningEnds = events.filter((e) => e.type === 'reasoning-end')
     // 一个来自 REASONING_END 处理，一个来自显式关闭
     expect(reasoningEnds.length).toBeLessThanOrEqual(2)
   })
@@ -708,7 +704,7 @@ describe('流处理逻辑 - error 事件', () => {
       { type: 'finish', finishReason: 'error' }
     ])
 
-    const errorEvent = events.find(e => e.type === 'error')
+    const errorEvent = events.find((e) => e.type === 'error')
     expect(errorEvent).toEqual({
       type: 'error',
       errorText: '流式输出错误'
@@ -721,28 +717,22 @@ describe('流处理逻辑 - error 事件', () => {
       { type: 'finish', finishReason: 'error' }
     ])
 
-    const errorEvent = events.find(e => e.type === 'error')
+    const errorEvent = events.find((e) => e.type === 'error')
     expect(errorEvent?.errorText).toBe('超时')
   })
 })
 
 describe('流处理逻辑 - 其他事件透传', () => {
   it('start 事件应直接透传', () => {
-    const events = processChunks([
-      { type: 'start' },
-      { type: 'finish', finishReason: 'stop' }
-    ])
+    const events = processChunks([{ type: 'start' }, { type: 'finish', finishReason: 'stop' }])
 
-    expect(events.some(e => e.type === 'start')).toBe(true)
+    expect(events.some((e) => e.type === 'start')).toBe(true)
   })
 
   it('start-step 事件应直接透传', () => {
-    const events = processChunks([
-      { type: 'start-step' },
-      { type: 'finish', finishReason: 'stop' }
-    ])
+    const events = processChunks([{ type: 'start-step' }, { type: 'finish', finishReason: 'stop' }])
 
-    expect(events.some(e => e.type === 'start-step')).toBe(true)
+    expect(events.some((e) => e.type === 'start-step')).toBe(true)
   })
 
   it('finish-step 事件应直接透传', () => {
@@ -751,7 +741,7 @@ describe('流处理逻辑 - 其他事件透传', () => {
       { type: 'finish', finishReason: 'stop' }
     ])
 
-    expect(events.some(e => e.type === 'finish-step')).toBe(true)
+    expect(events.some((e) => e.type === 'finish-step')).toBe(true)
   })
 })
 
@@ -800,20 +790,20 @@ describe('流处理逻辑 - 完整对话场景', () => {
     ])
 
     // 验证关键事件
-    expect(events.find(e => e.type === 'text-start')).toBeDefined()
-    expect(events.find(e => e.type === 'tool-input-available')).toEqual({
+    expect(events.find((e) => e.type === 'text-start')).toBeDefined()
+    expect(events.find((e) => e.type === 'tool-input-available')).toEqual({
       type: 'tool-input-available',
       toolCallId: 'call-001',
       toolName: 'webSearch',
       input: { query: '最新新闻' }
     })
-    expect(events.find(e => e.type === 'tool-output-available')).toEqual({
+    expect(events.find((e) => e.type === 'tool-output-available')).toEqual({
       type: 'tool-output-available',
       toolCallId: 'call-001',
       output: '搜索结果'
     })
     // 文本应使用同一个 textId
-    const textDeltas = events.filter(e => e.type === 'text-delta')
+    const textDeltas = events.filter((e) => e.type === 'text-delta')
     expect(textDeltas).toHaveLength(2)
     expect(textDeltas[0].id).toBe(textDeltas[1].id)
   })

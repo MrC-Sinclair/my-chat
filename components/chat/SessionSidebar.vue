@@ -72,8 +72,18 @@ function formatRelativeTime(dateStr: string): string {
         @click="$emit('close')"
         v-tooltip="'关闭侧边栏'"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
-          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="w-5 h-5"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
         </svg>
       </button>
     </div>
@@ -106,10 +116,7 @@ function formatRelativeTime(dateStr: string): string {
             />
           </template>
           <template v-else>
-            <div
-              class="text-sm font-medium truncate"
-              @dblclick.stop="startRename(session)"
-            >
+            <div class="text-sm font-medium truncate" @dblclick.stop="startRename(session)">
               {{ session.title }}
             </div>
             <div class="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
@@ -119,13 +126,24 @@ function formatRelativeTime(dateStr: string): string {
             </div>
           </template>
         </div>
-        <div class="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 sm:transition-opacity ml-1">
+        <div
+          class="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 sm:transition-opacity ml-1"
+        >
           <button
             class="p-1.5 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
             v-tooltip="'重命名'"
             @click.stop="startRename(session)"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-4 h-4"
+            >
               <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
               <path d="m15 5 4 4" />
             </svg>
@@ -135,7 +153,16 @@ function formatRelativeTime(dateStr: string): string {
             v-tooltip="'删除会话'"
             @click="handleDelete(session.id, $event)"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-4 h-4"
+            >
               <path d="M3 6h18" />
               <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
               <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />

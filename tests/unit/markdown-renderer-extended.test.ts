@@ -224,10 +224,7 @@ describe('测试12: 压力测试（长文本+多代码块）', () => {
   })
 
   it('100 次 token 追加只触发 1 次 renderMarkdown', async () => {
-    const renderMarkdownSpy = vi.spyOn(
-      await import('~/utils/markdown'),
-      'renderMarkdown'
-    )
+    const renderMarkdownSpy = vi.spyOn(await import('~/utils/markdown'), 'renderMarkdown')
 
     const baseContent = generateLongContent(5, '## 性能测试\n\n')
     const wrapper = mount(MarkdownRenderer, {
@@ -267,10 +264,7 @@ describe('测试12: 压力测试（长文本+多代码块）', () => {
   })
 
   it('大量公式 + 大量代码块混合内容渲染不崩溃', async () => {
-    const formulas = Array.from(
-      { length: 20 },
-      (_, i) => `公式${i}: $E=mc^${i}$`
-    ).join('\n')
+    const formulas = Array.from({ length: 20 }, (_, i) => `公式${i}: $E=mc^${i}$`).join('\n')
 
     const codeBlocks = Array.from(
       { length: 10 },

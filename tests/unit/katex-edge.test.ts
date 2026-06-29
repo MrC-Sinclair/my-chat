@@ -67,13 +67,15 @@ describe('KaTeX 动态加载 - 边界测试', () => {
   })
 
   it('包含特殊字符的公式应正确渲染', async () => {
-    container.innerHTML = '<span class="math-inline" data-formula="\\frac{1}{2} + \\sqrt{x}">公式</span>'
+    container.innerHTML =
+      '<span class="math-inline" data-formula="\\frac{1}{2} + \\sqrt{x}">公式</span>'
     await renderMath(container)
     expect(container.querySelector('.math-inline')?.innerHTML).toContain('katex')
   })
 
   it('无效 LaTeX 语法不应导致崩溃（throwOnError: false）', async () => {
-    container.innerHTML = '<div class="math-block" data-formula="\\begin{aligned} \\end{">无效</div>'
+    container.innerHTML =
+      '<div class="math-block" data-formula="\\begin{aligned} \\end{">无效</div>'
     await expect(renderMath(container)).resolves.not.toThrow()
     const el = container.querySelector('.math-block')
     expect(el?.innerHTML).toContain('katex')
