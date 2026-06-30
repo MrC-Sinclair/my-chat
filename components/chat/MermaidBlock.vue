@@ -184,34 +184,34 @@ async function handleCopy() {
 
 .mermaid-block-wrapper {
   margin: 1em 0;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
   overflow: hidden;
   background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
 }
 
 .mermaid-header {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   padding: 4px 8px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
   font-size: 0.75rem;
   color: #6b7280;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .mermaid-header-left {
   display: flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
   margin-right: auto;
 }
 
 .mermaid-icon {
+  flex-shrink: 0;
   width: 14px;
   height: 14px;
-  flex-shrink: 0;
 }
 
 .mermaid-label {
@@ -220,45 +220,45 @@ async function handleCopy() {
 
 .mermaid-tabs {
   display: flex;
-  align-items: center;
   gap: 2px;
+  align-items: center;
+  padding: 2px;
   background: #e5e7eb;
   border-radius: 6px;
-  padding: 2px;
 }
 
 .mermaid-tab {
   display: flex;
-  align-items: center;
   gap: 4px;
+  align-items: center;
   padding: 3px 10px;
-  border-radius: 4px;
+  font-family: inherit;
   font-size: 0.7rem;
+  line-height: 1.4;
   color: #6b7280;
+  white-space: nowrap;
+  cursor: pointer;
   background: transparent;
   border: none;
-  cursor: pointer;
+  border-radius: 4px;
   transition: all 0.15s ease;
-  white-space: nowrap;
-  font-family: inherit;
-  line-height: 1.4;
 }
 
 .mermaid-tab:hover {
   color: #374151;
-  background: rgba(255, 255, 255, 0.5);
+  background: rgb(255, 255, 255, 0.5);
 }
 
 .mermaid-tab.active {
   color: #111827;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgb(0, 0, 0, 0.06);
 }
 
 .tab-icon {
+  flex-shrink: 0;
   width: 12px;
   height: 12px;
-  flex-shrink: 0;
 }
 
 .mermaid-copy-btn {
@@ -267,17 +267,17 @@ async function handleCopy() {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 4px;
-  border: none;
-  background: transparent;
   color: #6b7280;
   cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
   transition: all 0.15s ease;
 }
 
 .mermaid-copy-btn:hover {
   color: #374151;
-  background: rgba(0, 0, 0, 0.05);
+  background: rgb(0, 0, 0, 0.05);
 }
 
 .mermaid-copy-btn:active {
@@ -289,9 +289,9 @@ async function handleCopy() {
 }
 
 .mermaid-content {
-  padding: 16px;
   display: flex;
   justify-content: center;
+  padding: 16px;
   overflow-x: auto;
 }
 
@@ -303,11 +303,11 @@ async function handleCopy() {
 .mermaid-loading-overlay {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   padding: 24px;
-  color: #9ca3af;
   font-size: 0.8rem;
+  color: #9ca3af;
 }
 
 .mermaid-spinner {
@@ -320,6 +320,7 @@ async function handleCopy() {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -330,28 +331,28 @@ async function handleCopy() {
 }
 
 .mermaid-code-pre {
-  margin: 0;
   padding: 16px;
+  margin: 0;
   overflow-x: auto;
 }
 
 .mermaid-error {
   padding: 12px 16px;
-  color: #b91c1c;
   font-size: 0.85em;
+  color: #b91c1c;
 }
 
 .mermaid-error p {
-  margin: 0 0 8px 0;
+  margin: 0 0 8px;
   font-weight: 500;
 }
 
 .mermaid-fallback {
-  background: #f3f4f6;
   padding: 12px;
-  border-radius: 6px;
+  margin: 0;
   overflow-x: auto;
   font-size: 0.85em;
-  margin: 0;
+  background: #f3f4f6;
+  border-radius: 6px;
 }
 </style>

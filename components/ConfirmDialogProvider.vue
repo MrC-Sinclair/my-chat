@@ -67,9 +67,11 @@ provide('confirmDialog', { open })
 .confirm-overlay-enter-active {
   transition: opacity 0.2s ease;
 }
+
 .confirm-overlay-leave-active {
   transition: opacity 0.15s ease;
 }
+
 .confirm-overlay-enter-from,
 .confirm-overlay-leave-to {
   opacity: 0;
@@ -78,13 +80,16 @@ provide('confirmDialog', { open })
 .confirm-dialog-enter-active {
   transition: all 0.2s ease-out;
 }
+
 .confirm-dialog-leave-active {
   transition: all 0.15s ease-in;
 }
+
 .confirm-dialog-enter-from {
   opacity: 0;
   transform: scale(0.95) translateY(8px);
 }
+
 .confirm-dialog-leave-to {
   opacity: 0;
   transform: scale(0.95) translateY(8px);

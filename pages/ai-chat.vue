@@ -405,7 +405,7 @@ function onDocumentClick(e: Event) {
         v-if="showSidebar"
         data-mobile-sidebar
         class="fixed inset-0 z-50 sm:hidden"
-        style="background: rgba(0, 0, 0, 0.5)"
+        style="background: rgb(0, 0, 0, 0.5)"
         @click.self="closeSidebar"
       >
         <div class="absolute inset-y-0 left-0 w-[85vw] bg-gray-50">
@@ -423,7 +423,7 @@ function onDocumentClick(e: Event) {
     </Transition>
 
     <!-- Desktop sidebar (inline in flex flow) -->
-    <div class="hidden sm:flex">
+    <div data-testid="desktop-sidebar" class="hidden sm:flex">
       <Transition name="sidebar">
         <LazySessionSidebar
           v-show="showSidebar"
@@ -443,6 +443,7 @@ function onDocumentClick(e: Event) {
         class="flex items-center gap-2 sm:gap-3 px-3 sm:px-6 py-2 sm:py-3 border-b border-gray-200 bg-white shrink-0"
       >
         <button
+          data-testid="toggle-sidebar"
           class="p-2 sm:p-1.5 text-gray-500 hover:text-gray-800 rounded-lg hover:bg-gray-100 active:scale-95 transition-all"
           v-tooltip:bottom="showSidebar ? '收起侧边栏' : '展开侧边栏'"
           @click="toggleSidebar"
@@ -788,10 +789,11 @@ function onDocumentClick(e: Event) {
     transform 0.25s ease,
     opacity 0.25s ease;
 }
+
 .slide-left-enter-from,
 .slide-left-leave-to {
-  transform: translateX(-100%);
   opacity: 0;
+  transform: translateX(-100%);
 }
 
 .sidebar-enter-active,
@@ -800,6 +802,7 @@ function onDocumentClick(e: Event) {
     margin-left 0.25s ease,
     opacity 0.25s ease;
 }
+
 .sidebar-enter-from,
 .sidebar-leave-to {
   margin-left: -256px;
@@ -810,6 +813,7 @@ function onDocumentClick(e: Event) {
 .dropdown-fade-leave-active {
   transition: all 0.15s ease;
 }
+
 .dropdown-fade-enter-from,
 .dropdown-fade-leave-to {
   opacity: 0;

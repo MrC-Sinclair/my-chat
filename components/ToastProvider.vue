@@ -58,13 +58,16 @@ provide('toast', { show, success, error, info })
 .toast-enter-active {
   transition: all 0.25s ease-out;
 }
+
 .toast-leave-active {
   transition: all 0.2s ease-in;
 }
+
 .toast-enter-from {
   opacity: 0;
   transform: translateX(40px);
 }
+
 .toast-leave-to {
   opacity: 0;
   transform: translateX(40px);

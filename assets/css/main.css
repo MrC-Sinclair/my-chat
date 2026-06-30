@@ -8,7 +8,7 @@
  *   2. 提取其中使用的 Tailwind 类名（如 "flex", "bg-blue-600", "text-sm"）
  *   3. 只生成用到的 CSS 规则，避免样式冗余
  *
- * 本文件使用 @tailwind 指令，其他样式由各组件的 <style> 块自行管理。
+ * 本文件使用 @tailwind 指令，其他样式由各组件的 \3c style> 块自行管理。
  */
 @tailwind base;
 @tailwind components;
@@ -23,6 +23,7 @@
   50% {
     opacity: 1;
   }
+
   51%,
   100% {
     opacity: 0;

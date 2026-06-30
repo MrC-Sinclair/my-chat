@@ -96,6 +96,7 @@ function formatRelativeTime(dateStr: string): string {
       <div
         v-for="session in sessionsList"
         :key="session.id"
+        data-testid="session-item"
         class="group flex items-center justify-between px-2 sm:px-3 py-2.5 mb-1 rounded-lg cursor-pointer transition-colors"
         :class="
           session.id === currentSessionId

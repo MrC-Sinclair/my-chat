@@ -363,7 +363,9 @@ function renderImages() {
 /** Markdown 正文排版 */
 .markdown-body {
   line-height: 1.7;
+  /* 双写以保证旧 WebView 兼容：overflow-wrap 为标准属性，word-wrap 为旧别名 fallback */
   word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 /** 标题样式 */
@@ -395,38 +397,38 @@ function renderImages() {
 
 /** 引用块样式：左侧竖线 + 灰色背景 */
 .markdown-body blockquote {
-  border-left: 4px solid #ddd;
+  padding: 0.5em 1em;
   padding-left: 1em;
   margin: 0.8em 0;
   color: #666;
   background: #f9f9f9;
+  border-left: 4px solid #ddd;
   border-radius: 0 4px 4px 0;
-  padding: 0.5em 1em;
 }
 
 /** 表格样式 */
 .markdown-body .table-wrapper {
+  margin: 1em 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  margin: 1em 0;
 }
 
 .markdown-body table {
   width: 100%;
-  border-collapse: collapse;
   margin: 0;
+  border-collapse: collapse;
 }
 
 .markdown-body th,
 .markdown-body td {
-  border: 1px solid #ddd;
   padding: 8px 12px;
   text-align: left;
+  border: 1px solid #ddd;
 }
 
 .markdown-body th {
-  background: #f5f5f5;
   font-weight: 600;
+  background: #f5f5f5;
 }
 
 /** 图片响应式样式 + 加载占位骨架屏 */
@@ -434,20 +436,20 @@ function renderImages() {
   max-width: 100%;
   height: auto;
   min-height: 180px;
-  border-radius: 8px;
   margin: 0.6em 0;
   cursor: zoom-in;
-  opacity: 0;
-  transition: opacity 0.3s ease;
   background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
   background-size: 200% 100%;
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
   animation: img-shimmer 1.5s ease-in-out infinite;
 }
 
 .markdown-body img.img-loaded {
-  opacity: 1;
   min-height: 0;
   background: none;
+  opacity: 1;
   animation: none;
 }
 
@@ -459,6 +461,7 @@ function renderImages() {
   0% {
     background-position: 200% 0;
   }
+
   100% {
     background-position: -200% 0;
   }
@@ -476,20 +479,20 @@ function renderImages() {
 
 /** 行内代码样式（非代码块中的 `code`） */
 .markdown-body code:not(pre code) {
-  background: #f3f4f6;
   padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.875em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875em;
   color: #7c3aed;
+  background: #f3f4f6;
+  border-radius: 4px;
 }
 
 /** 块级公式（$$...$$）样式：允许横向滚动 */
 .markdown-body .katex-display {
-  overflow-x: auto;
-  overflow-y: hidden;
   padding: 0.5em 0;
   margin: 0.8em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /**
@@ -505,14 +508,15 @@ function renderImages() {
   vertical-align: middle;
   background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
   background-size: 200% 100%;
-  animation: math-block-shimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
+  animation: math-block-shimmer 1.5s ease-in-out infinite;
 }
 
 @keyframes math-block-shimmer {
   0% {
     background-position: 200% 0;
   }
+
   100% {
     background-position: -200% 0;
   }
@@ -521,15 +525,15 @@ function renderImages() {
 /** 图片加载失败容错样式 */
 .markdown-body .img-error {
   display: inline-flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
   padding: 8px 14px;
+  margin: 0.6em 0;
+  font-size: 0.85em;
+  color: #b91c1c;
   background: #fef2f2;
   border: 1px solid #fecaca;
   border-radius: 8px;
-  color: #b91c1c;
-  font-size: 0.85em;
-  margin: 0.6em 0;
 }
 
 /** 图片放大遮罩层 */
@@ -540,8 +544,8 @@ function renderImages() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.8);
   cursor: zoom-out;
+  background: rgb(0, 0, 0, 0.8);
   animation: lightbox-fade-in 0.2s ease;
 }
 
@@ -550,13 +554,14 @@ function renderImages() {
   max-height: 92vh;
   object-fit: contain;
   border-radius: 4px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px rgb(0, 0, 0, 0.4);
 }
 
 @keyframes lightbox-fade-in {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }

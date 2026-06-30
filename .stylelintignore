@@ -1,0 +1,12 @@
+# 构建产物与依赖
+node_modules/
+.nuxt/
+.output/
+dist/
+coverage/
+test-results/
+playwright-report/
+drizzle/
+
+# 第三方生成的 CSS
+playwright-report/trace/
