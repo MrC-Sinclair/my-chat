@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ChatInput from '~/components/chat/ChatInput.vue'
-import type { ModelCapabilities } from '~/composables/useChatConfig'
+import type { ModelCapabilities, ModelConfig } from '~/composables/useChatConfig'
 
 const defaultCapabilities: ModelCapabilities = {
   vision: false,
@@ -27,6 +27,19 @@ const visionCapabilities: ModelCapabilities = {
   toolCalling: false
 }
 
+const defaultModelOptions: ModelConfig[] = [
+  {
+    label: 'Qwen3-8B',
+    value: 'Qwen/Qwen3-8B',
+    capabilities: { vision: false, deepThinking: false, toolCalling: true }
+  },
+  {
+    label: 'DeepSeek-R1',
+    value: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
+    capabilities: { vision: false, deepThinking: true, toolCalling: false }
+  }
+]
+
 function mountChatInput(
   overrides: { props?: Partial<InstanceType<typeof ChatInput>['$props']> } = {}
 ) {
@@ -38,6 +51,8 @@ function mountChatInput(
     images: [],
     supportsVision: false,
     currentCapabilities: defaultCapabilities,
+    modelOptions: defaultModelOptions,
+    currentModel: 'Qwen/Qwen3-8B',
     ...overrides.props
   }
   return mount(ChatInput, {
@@ -214,6 +229,38 @@ describe('ChatInput 组件', () => {
       const buttons = wrapper.findAll('button')
       const webSearchBtn = buttons.find((btn) => btn.text().includes('联网'))
       expect(webSearchBtn).toBeUndefined()
+    })
+  })
+
+  describe('模型选择', () => {
+    it('应渲染所有模型 chip', () => {
+      const wrapper = mountChatInput()
+      const chips = wrapper.findAll('[data-testid="model-chip"]')
+      expect(chips).toHaveLength(2)
+      expect(chips[0].text()).toBe('Qwen3-8B')
+      expect(chips[1].text()).toBe('DeepSeek-R1')
+    })
+
+    it('当前选中模型 chip 应有高亮样式', () => {
+      const wrapper = mountChatInput()
+      const chips = wrapper.findAll('[data-testid="model-chip"]')
+      // 默认 currentModel 是第一个模型，应高亮
+      expect(chips[0].classes()).toContain('bg-blue-500')
+      expect(chips[1].classes()).not.toContain('bg-blue-500')
+    })
+
+    it('点击模型 chip 应触发 selectModel 事件', async () => {
+      const wrapper = mountChatInput()
+      const chips = wrapper.findAll('[data-testid="model-chip"]')
+      await chips[1].trigger('click')
+      const emitted = wrapper.emitted('selectModel')
+      expect(emitted).toBeTruthy()
+      expect(emitted![0][0]).toBe('deepseek-ai/DeepSeek-R1-0528-Qwen3-8B')
+    })
+
+    it('modelOptions 为空时不渲染 chip 组', () => {
+      const wrapper = mountChatInput({ props: { modelOptions: [] } })
+      expect(wrapper.find('[data-testid="model-chip"]').exists()).toBe(false)
     })
   })
 })

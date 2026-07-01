@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ModelCapabilities } from '~/composables/useChatConfig'
+import type { ModelCapabilities, ModelConfig } from '~/composables/useChatConfig'
 
 export interface UploadedImage {
   id: string
@@ -15,6 +15,8 @@ const props = defineProps<{
   images: UploadedImage[]
   supportsVision: boolean
   currentCapabilities: ModelCapabilities
+  modelOptions: ModelConfig[]
+  currentModel: string
 }>()
 
 const emit = defineEmits<{
@@ -25,6 +27,7 @@ const emit = defineEmits<{
   'update:enableWebSearch': [value: boolean]
   'update:images': [images: UploadedImage[]]
   speechError: [message: string]
+  selectModel: [value: string]
 }>()
 
 const inputValue = computed({
@@ -180,16 +183,37 @@ function toggleSpeechRecognition() {
 <template>
   <footer class="shrink-0 bg-white px-3 sm:px-4 pb-3 sm:pb-4 pt-1 sm:pt-2">
     <form class="max-w-full sm:max-w-3xl mx-auto" @submit.prevent="emit('submit')">
+      <!-- 模型选择 chip 组：横向滚动，模型多时可滑动查看 -->
       <div
-        class="flex items-end gap-2 bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md focus-within:shadow-md focus-within:border-blue-300/50 transition-all duration-200 px-3 sm:px-4 py-2.5 sm:py-3"
+        v-if="modelOptions.length > 0"
+        class="flex items-center gap-1.5 overflow-x-auto mb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <button
+          v-for="opt in modelOptions"
+          :key="opt.value"
+          type="button"
+          data-testid="model-chip"
+          class="shrink-0 inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-full transition-all duration-200 min-h-[32px] active:scale-95 whitespace-nowrap"
+          :class="
+            currentModel === opt.value
+              ? 'bg-semi-primary text-white shadow-sm hover:bg-semi-primary'
+              : 'bg-semi-fill-1 text-semi-text-2 hover:bg-semi-fill-2'
+          "
+          @click="emit('selectModel', opt.value)"
+        >
+          {{ opt.label }}
+        </button>
+      </div>
+      <div
+        class="flex items-end gap-2 bg-white rounded-2xl border border-semi-border shadow-sm hover:shadow-md focus-within:shadow-md focus-within:border-semi-primary/50 transition-all duration-200 px-3 sm:px-4 py-2.5 sm:py-3"
       >
         <label
           class="shrink-0 flex items-center justify-center rounded-lg active:scale-95 transition-all"
           :class="[
             supportsVision
-              ? 'text-gray-400 hover:text-gray-600 cursor-pointer'
-              : 'text-gray-300 cursor-not-allowed',
-            images.length > 0 && supportsVision ? 'text-blue-500' : ''
+              ? 'text-semi-text-3 hover:text-semi-text-2 cursor-pointer'
+              : 'text-semi-border cursor-not-allowed',
+            images.length > 0 && supportsVision ? 'text-semi-primary' : ''
           ]"
           v-tooltip="supportsVision ? '添加图片' : '当前模型不支持图片'"
         >
@@ -221,12 +245,12 @@ function toggleSpeechRecognition() {
           <div v-if="images.length > 0" class="flex gap-2 flex-wrap">
             <div v-for="img in images" :key="img.id" class="relative shrink-0 group/img">
               <div
-                class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-gray-200"
+                class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-semi-border"
               >
                 <img :src="img.dataUrl" :alt="img.filename" class="w-full h-full object-cover" />
               </div>
               <button
-                class="absolute -top-2 -right-2 w-5 h-5 bg-gray-500 text-white rounded-full flex items-center justify-center hover:bg-gray-700 active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover/img:opacity-100 shadow-sm"
+                class="absolute -top-2 -right-2 w-5 h-5 bg-semi-text-3 text-white rounded-full flex items-center justify-center hover:bg-semi-text-1 active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover/img:opacity-100 shadow-sm"
                 @click="removeImage(img.id)"
               >
                 <svg
@@ -250,7 +274,7 @@ function toggleSpeechRecognition() {
             ref="textareaRef"
             :value="inputValue"
             data-testid="chat-input"
-            class="w-full resize-none text-sm sm:text-base text-gray-800 placeholder-gray-400 bg-transparent focus:outline-none min-h-[24px] max-h-[120px] sm:max-h-[160px] leading-relaxed"
+            class="w-full resize-none text-sm sm:text-base text-semi-text-0 placeholder-semi-text-3 bg-transparent focus:outline-none min-h-[24px] max-h-[120px] sm:max-h-[160px] leading-relaxed"
             placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
             rows="1"
             :disabled="isLoading"
@@ -270,16 +294,16 @@ function toggleSpeechRecognition() {
           class="shrink-0 relative min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-200 active:scale-95"
           :class="
             isRecording
-              ? 'text-red-500 bg-red-50 hover:bg-red-100'
+              ? 'text-semi-danger bg-semi-danger-light hover:bg-semi-danger-light'
               : isLoading
-                ? 'text-gray-300 cursor-not-allowed'
-                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                ? 'text-semi-border cursor-not-allowed'
+                : 'text-semi-text-3 hover:text-semi-text-2 hover:bg-semi-fill-1'
           "
           @click="toggleSpeechRecognition"
         >
           <span
             v-if="isRecording"
-            class="absolute inset-1 rounded-full border-2 border-red-400 animate-ping opacity-30"
+            class="absolute inset-1 rounded-full border-2 border-semi-danger animate-ping opacity-30"
           />
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -305,8 +329,8 @@ function toggleSpeechRecognition() {
           class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-200"
           :class="
             input.trim() && !isOverLimit
-              ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95 shadow-sm hover:shadow'
-              : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+              ? 'bg-semi-primary hover:bg-semi-primary-active text-white active:scale-95 shadow-sm hover:shadow'
+              : 'bg-semi-fill-1 text-semi-border cursor-not-allowed'
           "
         >
           <svg
@@ -327,7 +351,7 @@ function toggleSpeechRecognition() {
           v-else
           type="button"
           data-testid="stop-btn"
-          class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-700 text-white active:scale-95 transition-all shadow-sm"
+          class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl bg-semi-primary hover:bg-semi-primary-active text-white active:scale-95 transition-all shadow-sm"
           @click="emit('stop')"
         >
           <svg
@@ -347,8 +371,8 @@ function toggleSpeechRecognition() {
           class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 min-h-[32px]"
           :class="
             enableThinking
-              ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
-              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+              ? 'bg-semi-primary-light text-semi-primary hover:bg-semi-primary-light'
+              : 'text-semi-text-3 hover:text-semi-text-2 hover:bg-semi-bg-1'
           "
           v-tooltip="
             currentCapabilities.deepThinking
@@ -383,8 +407,8 @@ function toggleSpeechRecognition() {
           class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 min-h-[32px]"
           :class="
             enableWebSearch
-              ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+              ? 'bg-semi-primary-light text-semi-primary hover:bg-semi-primary-light'
+              : 'text-semi-text-3 hover:text-semi-text-2 hover:bg-semi-bg-1'
           "
           v-tooltip="enableWebSearch ? '联网搜索已开启' : '联网搜索已关闭'"
           @click="emit('update:enableWebSearch', !enableWebSearch)"
@@ -410,13 +434,13 @@ function toggleSpeechRecognition() {
 
         <span
           v-if="inputLength > 0"
-          class="text-[11px] transition-colors duration-200 ml-auto"
+          class="text-semi-micro-md transition-colors duration-200 ml-auto"
           :class="
             isOverLimit
-              ? 'text-red-500 font-medium'
+              ? 'text-semi-danger font-medium'
               : isNearLimit
-                ? 'text-amber-500'
-                : 'text-gray-300'
+                ? 'text-semi-warning'
+                : 'text-semi-border'
           "
         >
           {{ inputLength }} / {{ MAX_INPUT_LENGTH }}

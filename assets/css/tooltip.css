@@ -1,23 +1,35 @@
+/**
+ * Tooltip 浮层样式
+ *
+ * 所有视觉值引用 tailwind.config.js 的 Semi Design Token：
+ *   颜色 → theme('colors.semi.tooltip.*')
+ *   圆角 → theme('borderRadius.semi-md')
+ *   字号 → theme('fontSize.semi-caption')
+ *   阴影 → theme('boxShadow.semi-tooltip')
+ *
+ * 注意：padding 用 px，因为没有对应 Semi spacing token（4px×10px 非标准档位）。
+ */
+
 [data-tooltip] {
   position: relative;
 }
 
 [data-tooltip]::after {
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + theme('spacing.semi-sm'));
   left: 50%;
   z-index: 9999;
   visibility: hidden;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: theme('fontSize.semi-caption.0');
   line-height: 1.5;
-  color: #f9fafb;
+  color: theme('colors.semi.tooltip.text');
   white-space: nowrap;
   pointer-events: none;
   content: attr(data-tooltip);
-  background: #1f2937;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgb(0, 0, 0, 0.15);
+  background: theme('colors.semi.tooltip.bg');
+  border-radius: theme('borderRadius.semi-md');
+  box-shadow: theme('boxShadow.semi-tooltip');
   opacity: 0;
   transform: translateX(-50%);
   transition:
@@ -34,7 +46,7 @@
   pointer-events: none;
   content: '';
   border: 5px solid transparent;
-  border-top-color: #1f2937;
+  border-top-color: theme('colors.semi.tooltip.bg');
   opacity: 0;
   transform: translateX(-50%);
   transition:
@@ -51,7 +63,7 @@
 }
 
 [data-tooltip-position='bottom']::after {
-  top: calc(100% + 8px);
+  top: calc(100% + theme('spacing.semi-sm'));
   bottom: auto;
 }
 
@@ -59,5 +71,5 @@
   top: calc(100% + 2px);
   bottom: auto;
   border-top-color: transparent;
-  border-bottom-color: #1f2937;
+  border-bottom-color: theme('colors.semi.tooltip.bg');
 }

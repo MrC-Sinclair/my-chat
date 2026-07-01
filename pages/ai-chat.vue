@@ -12,7 +12,7 @@ import { useToast } from '~/composables/useToast'
 const AsyncErrorFallback = {
   props: ['error', 'retry'],
   template:
-    '<div class="async-error rounded-lg border border-red-200 bg-red-50 my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-red-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-red-700 font-medium">组件加载失败</span></div><button @click="retry" class="text-xs text-red-600 hover:text-red-800 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
+    '<div class="async-error rounded-lg border border-semi-danger-light bg-semi-danger-light my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-semi-danger shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-semi-danger font-medium">组件加载失败</span></div><button @click="retry" class="text-xs text-semi-danger hover:text-semi-danger underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
 }
 
 const LazySessionSidebar = defineAsyncComponent({
@@ -146,8 +146,6 @@ const editingIndex = ref(-1)
 const editingText = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
 const copiedMessageId = ref<string>('')
-const modelDropdownOpen = ref(false)
-const modelDropdownRef = ref<HTMLElement | null>(null)
 
 /** 每条消息的思考过程展开状态，key 为消息 ID */
 const expandedThinkingMap = ref<Map<string, boolean>>(new Map())
@@ -158,29 +156,6 @@ function toggleThinkingExpand(msgId: string) {
   expandedThinkingMap.value.set(msgId, !current)
 }
 
-const currentModelLabel = computed(() => {
-  const found = modelOptions.value.find((opt) => opt.value === currentModel.value)
-  return found?.label || currentModel.value
-})
-
-function selectModel(value: string) {
-  currentModel.value = value
-  modelDropdownOpen.value = false
-}
-
-function handleModelDropdownClick(e: MouseEvent) {
-  if (modelDropdownRef.value && !modelDropdownRef.value.contains(e.target as Node)) {
-    modelDropdownOpen.value = false
-  }
-}
-
-onMounted(() => {
-  document.addEventListener('click', handleModelDropdownClick)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleModelDropdownClick)
-})
 const localIsLoading = ref(false)
 
 onMounted(() => {
@@ -408,7 +383,7 @@ function onDocumentClick(e: Event) {
         style="background: rgb(0, 0, 0, 0.5)"
         @click.self="closeSidebar"
       >
-        <div class="absolute inset-y-0 left-0 w-[85vw] bg-gray-50">
+        <div class="absolute inset-y-0 left-0 w-[85vw] bg-semi-bg-1">
           <LazySessionSidebar
             :sessions-list="sessionsList"
             :current-session-id="currentSessionId"
@@ -440,11 +415,11 @@ function onDocumentClick(e: Event) {
     <div class="flex-1 flex flex-col min-w-0">
       <header
         data-testid="chat-header"
-        class="flex items-center gap-2 sm:gap-3 px-3 sm:px-6 py-2 sm:py-3 border-b border-gray-200 bg-white shrink-0"
+        class="flex items-center gap-2 sm:gap-3 px-3 sm:px-6 py-2 sm:py-3 border-b border-semi-border bg-white shrink-0"
       >
         <button
           data-testid="toggle-sidebar"
-          class="p-2 sm:p-1.5 text-gray-500 hover:text-gray-800 rounded-lg hover:bg-gray-100 active:scale-95 transition-all"
+          class="p-2 sm:p-1.5 text-semi-text-3 hover:text-semi-text-0 rounded-lg hover:bg-semi-fill-1 active:scale-95 transition-all"
           v-tooltip:bottom="showSidebar ? '收起侧边栏' : '展开侧边栏'"
           @click="toggleSidebar"
         >
@@ -462,68 +437,9 @@ function onDocumentClick(e: Event) {
             <line x1="9" y1="3" x2="9" y2="21" />
           </svg>
         </button>
-        <h1 class="text-base sm:text-xl font-semibold text-gray-800 truncate">
+        <h1 class="text-base sm:text-xl font-semibold text-semi-text-0 truncate">
           {{ $config.public.appTitle || 'AI 对话' }}
         </h1>
-
-        <div class="relative" ref="modelDropdownRef">
-          <button
-            class="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 text-xs sm:text-sm font-medium rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300 active:scale-95 transition-all min-h-[36px] text-gray-700"
-            v-tooltip:bottom="'切换模型'"
-            @click="modelDropdownOpen = !modelDropdownOpen"
-          >
-            <span class="max-w-[80px] sm:max-w-[140px] truncate">{{ currentModelLabel }}</span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              class="w-3.5 h-3.5 transition-transform duration-200"
-              :class="modelDropdownOpen ? 'rotate-180' : ''"
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
-          <Transition name="dropdown-fade">
-            <div
-              v-if="modelDropdownOpen"
-              class="absolute top-full mt-1 right-0 sm:left-0 sm:right-auto w-52 sm:w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
-            >
-              <div class="py-1">
-                <button
-                  v-for="opt in modelOptions"
-                  :key="opt.value"
-                  class="w-full text-left px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm transition-colors duration-150 flex items-center gap-2 min-h-[36px]"
-                  :class="
-                    currentModel === opt.value
-                      ? 'bg-blue-50 text-blue-700 font-medium'
-                      : 'text-gray-600 hover:bg-gray-50'
-                  "
-                  @click="selectModel(opt.value)"
-                >
-                  <svg
-                    v-if="currentModel === opt.value"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    class="w-3.5 h-3.5 shrink-0"
-                  >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  <span v-else class="w-3.5 h-3.5 shrink-0" />
-                  <span class="truncate">{{ opt.label }}</span>
-                </button>
-              </div>
-            </div>
-          </Transition>
-        </div>
       </header>
 
       <main ref="messagesContainer" class="flex-1 overflow-y-auto scroll-smooth">
@@ -531,22 +447,22 @@ function onDocumentClick(e: Event) {
           v-if="messages.length === 0"
           class="flex flex-col items-center justify-center h-full px-4"
         >
-          <h2 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">有什么可以帮忙的？</h2>
-          <p class="text-sm sm:text-base text-gray-400 mb-8 sm:mb-10">
+          <h2 class="text-2xl sm:text-3xl font-bold text-semi-text-0 mb-2">有什么可以帮忙的？</h2>
+          <p class="text-sm sm:text-base text-semi-text-3 mb-8 sm:mb-10">
             选择一个话题，或直接输入问题开始对话
           </p>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 w-full max-w-lg sm:max-w-xl">
             <button
               v-for="prompt in quickPrompts"
               :key="prompt.title"
-              class="flex items-center gap-3 px-4 py-3 sm:px-5 sm:py-3.5 text-left rounded-xl border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm hover:bg-gray-50 active:scale-[0.98] transition-all duration-200 group min-h-[44px] sm:min-h-0"
+              class="flex items-center gap-3 px-4 py-3 sm:px-5 sm:py-3.5 text-left rounded-xl border border-semi-border bg-white hover:border-semi-border hover:shadow-sm hover:bg-semi-bg-1 active:scale-[0.98] transition-all duration-200 group min-h-[44px] sm:min-h-0"
               @click="useQuickPrompt(prompt.prompt)"
             >
               <span
                 class="text-lg sm:text-xl shrink-0 group-hover:scale-110 transition-transform duration-200"
                 >{{ prompt.icon }}</span
               >
-              <span class="text-sm text-gray-600 truncate">{{ prompt.title }}</span>
+              <span class="text-sm text-semi-text-2 truncate">{{ prompt.title }}</span>
             </button>
           </div>
         </div>
@@ -589,28 +505,28 @@ function onDocumentClick(e: Event) {
               :class="[
                 'rounded-xl sm:rounded-2xl px-2.5 sm:px-5 py-1.5 sm:py-3 overflow-hidden',
                 messages[virtualRow.index].role === 'user'
-                  ? 'ml-auto max-w-[92%] sm:max-w-[85%] bg-gray-100 text-gray-800 message-user'
-                  : 'mr-auto max-w-[96%] sm:max-w-[90%] bg-gray-50 text-gray-800 message-assistant'
+                  ? 'ml-auto max-w-[92%] sm:max-w-[85%] bg-semi-fill-1 text-semi-text-0 message-user'
+                  : 'mr-auto max-w-[96%] sm:max-w-[90%] bg-semi-bg-1 text-semi-text-0 message-assistant'
               ]"
             >
               <template v-if="messages[virtualRow.index].role === 'user'">
                 <div v-if="editingIndex === virtualRow.index" class="space-y-2">
                   <textarea
                     v-model="editingText"
-                    class="w-full resize-none rounded-xl border border-gray-200 bg-white text-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300/50 min-h-[48px] max-h-[160px]"
+                    class="w-full resize-none rounded-xl border border-semi-border bg-white text-semi-text-0 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-semi-primary/50 min-h-[48px] max-h-[160px]"
                     rows="2"
                     @keydown.enter.prevent="submitEditing(virtualRow.index)"
                     @keydown.escape.prevent="cancelEditing"
                   />
                   <div class="flex items-center gap-2 justify-end">
                     <button
-                      class="px-3 py-1.5 text-xs text-gray-800 hover:text-gray-900 rounded-lg transition-colors font-medium"
+                      class="px-3 py-1.5 text-xs text-semi-text-0 hover:text-semi-text-0 rounded-lg transition-colors font-medium"
                       @click="cancelEditing"
                     >
                       取消
                     </button>
                     <button
-                      class="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 active:scale-95 transition-all"
+                      class="px-3 py-1.5 text-xs font-medium text-white bg-semi-primary rounded-lg hover:bg-semi-primary-active active:scale-95 transition-all"
                       :disabled="!editingText.trim()"
                       @click="submitEditing(virtualRow.index)"
                     >
@@ -634,14 +550,14 @@ function onDocumentClick(e: Event) {
                       :key="img.id"
                       :src="img.dataUrl"
                       :alt="img.filename"
-                      class="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                      class="w-20 h-20 object-cover rounded-lg border border-semi-border"
                     />
                   </div>
                   <div
                     class="flex justify-end mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 sm:transition-opacity"
                   >
                     <button
-                      class="p-1.5 sm:p-1 text-gray-400 hover:text-gray-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+                      class="p-1.5 sm:p-1 text-semi-text-3 hover:text-semi-text-2 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                       v-tooltip="'编辑消息'"
                       @click="
                         startEditing(virtualRow.index, getMessageText(messages[virtualRow.index]))
@@ -691,16 +607,16 @@ function onDocumentClick(e: Event) {
                   />
                   <span
                     v-if="isLastMessageLoading && virtualRow.index === messages.length - 1"
-                    class="inline-block w-1.5 h-4 ml-0.5 bg-blue-500 cursor-blink align-text-bottom"
+                    class="inline-block w-1.5 h-4 ml-0.5 bg-semi-primary cursor-blink align-text-bottom"
                   />
                 </div>
 
                 <div
                   v-if="getMessageText(messages[virtualRow.index])"
-                  class="flex items-center gap-1 mt-1.5 sm:mt-2 pt-1.5 sm:pt-2 border-t border-gray-100 sm:border-gray-200"
+                  class="flex items-center gap-1 mt-1.5 sm:mt-2 pt-1.5 sm:pt-2 border-t border-semi-fill-1 sm:border-semi-border"
                 >
                   <button
-                    class="p-1.5 sm:p-1 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+                    class="p-1.5 sm:p-1 text-semi-text-3 hover:text-semi-primary rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                     v-tooltip="'复制'"
                     @click="
                       copyMessage(
@@ -732,13 +648,13 @@ function onDocumentClick(e: Event) {
                       stroke-width="2"
                       stroke-linecap="round"
                       stroke-linejoin="round"
-                      class="w-3.5 h-3.5 text-green-500"
+                      class="w-3.5 h-3.5 text-semi-success"
                     >
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   </button>
                   <button
-                    class="p-1.5 sm:p-1 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+                    class="p-1.5 sm:p-1 text-semi-text-3 hover:text-semi-primary rounded transition-colors min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                     v-tooltip="'重新生成'"
                     :disabled="isLoading"
                     @click="handleReload"
@@ -774,6 +690,9 @@ function onDocumentClick(e: Event) {
         v-model:images="uploadedImages"
         :supports-vision="supportsVision"
         :current-capabilities="currentCapabilities"
+        :model-options="modelOptions"
+        :current-model="currentModel"
+        @select-model="currentModel = $event"
         @submit="wrappedHandleSubmit"
         @stop="handleStop"
         @speech-error="(msg: string) => toast.error(msg)"
@@ -807,16 +726,5 @@ function onDocumentClick(e: Event) {
 .sidebar-leave-to {
   margin-left: -256px;
   opacity: 0;
-}
-
-.dropdown-fade-enter-active,
-.dropdown-fade-leave-active {
-  transition: all 0.15s ease;
-}
-
-.dropdown-fade-enter-from,
-.dropdown-fade-leave-to {
-  opacity: 0;
-  transform: scaleY(0.9) translateY(-4px);
 }
 </style>

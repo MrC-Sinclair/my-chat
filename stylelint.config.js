@@ -39,6 +39,12 @@ export default {
     'declaration-block-no-redundant-longhand-properties': null,
     // 不强制把 word-wrap 替换为 overflow-wrap（旧 WebView 兼容需要双写）
     'declaration-property-value-disallowed-list': null,
+    // 允许 Tailwind theme() 函数作为属性值（stylelint 默认不识别）
+    // 项目中 tooltip.css / MarkdownRenderer.vue / MermaidBlock.vue 大量使用
+    // theme('colors.semi.*') 引用 tailwind.config.js 的 Token
+    'declaration-property-value-no-unknown': null,
+    // 允许 rgba() 写法（不强制改为现代 rgb() 4 通道语法），兼容旧 WebView
+    'color-function-alias-notation': null,
     // 允许使用非标准属性别名 word-wrap（旧 WebView fallback）
     'property-no-unknown': [
       true,

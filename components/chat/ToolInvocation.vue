@@ -95,13 +95,13 @@ function getInputQuery(input: Record<string, unknown>): string {
     <!-- 加载中状态 -->
     <div
       v-if="isCalling(invocation.state)"
-      class="flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-blue-50/60 border border-blue-200/50 rounded-xl text-sm text-blue-700"
+      class="flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-semi-primary-light/60 border border-semi-primary/30 rounded-xl text-sm text-semi-primary-active"
     >
       <span class="relative flex h-4 w-4">
         <span
-          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-60"
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-semi-primary opacity-60"
         ></span>
-        <span class="relative inline-flex rounded-full h-4 w-4 bg-blue-500"></span>
+        <span class="relative inline-flex rounded-full h-4 w-4 bg-semi-primary"></span>
       </span>
       <span class="text-xs sm:text-sm">
         正在查询 {{ getInputCity(invocation.input) }} 的天气...
@@ -111,12 +111,12 @@ function getInputQuery(input: Record<string, unknown>): string {
     <!-- 结果展示 -->
     <div
       v-else-if="invocation.state === 'output-available' && invocation.output"
-      class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm"
+      class="bg-white border border-semi-border rounded-xl overflow-hidden shadow-sm"
     >
       <template v-if="!(invocation.output as WeatherResult).error">
         <!-- 头部：城市信息 -->
         <div
-          class="px-4 py-3 sm:px-5 sm:py-3.5 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-100"
+          class="px-4 py-3 sm:px-5 sm:py-3.5 bg-gradient-to-r from-semi-primary-light to-semi-primary-light border-b border-semi-divider"
         >
           <div class="flex items-center gap-2">
             <svg
@@ -127,7 +127,7 @@ function getInputQuery(input: Record<string, unknown>): string {
               stroke-width="2"
               stroke-linecap="round"
               stroke-linejoin="round"
-              class="w-4 h-4 sm:w-5 sm:h-5 text-blue-500"
+              class="w-4 h-4 sm:w-5 sm:h-5 text-semi-primary"
             >
               <path
                 d="M17.5 19c0-1.7-1.3-3-3-3c-1.1 0-2.1.6-2.6 1.5c-.5-.9-1.5-1.5-2.6-1.5c-1.7 0-3 1.3-3 3"
@@ -138,12 +138,12 @@ function getInputQuery(input: Record<string, unknown>): string {
               <path d="M17.5 6.5L19 5" />
               <circle cx="12" cy="13" r="3" />
             </svg>
-            <span class="font-semibold text-sm sm:text-base text-gray-800">
+            <span class="font-semibold text-sm sm:text-base text-semi-text-0">
               {{ (invocation.output as WeatherResult).city }}
             </span>
             <span
               v-if="(invocation.output as WeatherResult).region"
-              class="text-xs sm:text-sm text-gray-500"
+              class="text-xs sm:text-sm text-semi-text-3"
             >
               {{ (invocation.output as WeatherResult).region }}
             </span>
@@ -153,13 +153,13 @@ function getInputQuery(input: Record<string, unknown>): string {
         <!-- 当前天气 -->
         <div v-if="(invocation.output as WeatherResult).current" class="px-4 py-3 sm:px-5 sm:py-4">
           <div class="flex items-center gap-4 sm:gap-6">
-            <div class="text-3xl sm:text-4xl font-light text-gray-800 tracking-tight">
+            <div class="text-3xl sm:text-4xl font-light text-semi-text-0 tracking-tight">
               {{ (invocation.output as WeatherResult).current!.temperature }}
             </div>
-            <div class="flex-1 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:text-sm text-gray-600">
+            <div class="flex-1 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:text-sm text-semi-text-2">
               <div class="flex items-center gap-1">
                 <svg
-                  class="w-3 h-3 text-gray-400"
+                  class="w-3 h-3 text-semi-text-3"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -171,7 +171,7 @@ function getInputQuery(input: Record<string, unknown>): string {
               </div>
               <div class="flex items-center gap-1">
                 <svg
-                  class="w-3 h-3 text-gray-400"
+                  class="w-3 h-3 text-semi-text-3"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -183,7 +183,7 @@ function getInputQuery(input: Record<string, unknown>): string {
               </div>
               <div class="flex items-center gap-1">
                 <svg
-                  class="w-3 h-3 text-gray-400"
+                  class="w-3 h-3 text-semi-text-3"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -200,7 +200,7 @@ function getInputQuery(input: Record<string, unknown>): string {
               </div>
               <div class="flex items-center gap-1">
                 <svg
-                  class="w-3 h-3 text-gray-400"
+                  class="w-3 h-3 text-semi-text-3"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -227,18 +227,18 @@ function getInputQuery(input: Record<string, unknown>): string {
           v-if="(invocation.output as WeatherResult).forecast?.length"
           class="px-4 pb-3 sm:px-5 sm:pb-4"
         >
-          <div class="border-t border-gray-100 pt-2.5">
+          <div class="border-t border-semi-divider pt-2.5">
             <div class="flex gap-2 sm:gap-3 overflow-x-auto pb-1">
               <div
                 v-for="day in (invocation.output as WeatherResult).forecast"
                 :key="day.day"
-                class="flex-shrink-0 text-center px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-gray-50 min-w-[72px] sm:min-w-[80px]"
+                class="flex-shrink-0 text-center px-2.5 py-2 sm:px-3 sm:py-2.5 rounded-lg bg-semi-bg-1 min-w-[72px] sm:min-w-[80px]"
               >
-                <div class="text-[10px] sm:text-xs font-medium text-gray-500 mb-1">
+                <div class="text-semi-micro sm:text-xs font-medium text-semi-text-3 mb-1">
                   {{ day.day }}
                 </div>
-                <div class="text-xs sm:text-sm text-gray-700 mb-1">{{ day.condition }}</div>
-                <div class="text-[10px] sm:text-xs text-gray-500">{{ day.low }}~{{ day.high }}</div>
+                <div class="text-xs sm:text-sm text-semi-text-1 mb-1">{{ day.condition }}</div>
+                <div class="text-semi-micro sm:text-xs text-semi-text-3">{{ day.low }}~{{ day.high }}</div>
               </div>
             </div>
           </div>
@@ -246,7 +246,7 @@ function getInputQuery(input: Record<string, unknown>): string {
       </template>
 
       <!-- 错误状态 -->
-      <div v-else class="px-4 py-3 text-xs sm:text-sm text-red-500 bg-red-50">
+      <div v-else class="px-4 py-3 text-xs sm:text-sm text-semi-danger bg-semi-danger-light">
         {{ (invocation.output as WeatherResult).error }}
       </div>
     </div>
@@ -257,13 +257,13 @@ function getInputQuery(input: Record<string, unknown>): string {
     <!-- 加载中状态 -->
     <div
       v-if="isCalling(invocation.state)"
-      class="flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-indigo-50/60 border border-indigo-200/50 rounded-xl text-sm text-indigo-700"
+      class="flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-semi-primary-light/60 border border-semi-primary/30 rounded-xl text-sm text-semi-primary-active"
     >
       <span class="relative flex h-4 w-4">
         <span
-          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-60"
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-semi-primary opacity-60"
         ></span>
-        <span class="relative inline-flex rounded-full h-4 w-4 bg-indigo-500"></span>
+        <span class="relative inline-flex rounded-full h-4 w-4 bg-semi-primary"></span>
       </span>
       <span class="text-xs sm:text-sm"> 正在搜索: {{ getInputQuery(invocation.input) }}... </span>
     </div>
@@ -271,12 +271,12 @@ function getInputQuery(input: Record<string, unknown>): string {
     <!-- 结果展示 -->
     <div
       v-else-if="invocation.state === 'output-available' && invocation.output"
-      class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm"
+      class="bg-white border border-semi-border rounded-xl overflow-hidden shadow-sm"
     >
       <template v-if="!(invocation.output as SearchResult).error">
         <!-- 头部：搜索摘要 -->
         <div
-          class="px-4 py-2.5 sm:px-5 sm:py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-gray-100"
+          class="px-4 py-2.5 sm:px-5 sm:py-3 bg-gradient-to-r from-semi-primary-light to-semi-primary-light border-b border-semi-divider"
         >
           <div class="flex items-center gap-2">
             <svg
@@ -287,13 +287,13 @@ function getInputQuery(input: Record<string, unknown>): string {
               stroke-width="2"
               stroke-linecap="round"
               stroke-linejoin="round"
-              class="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500"
+              class="w-4 h-4 sm:w-5 sm:h-5 text-semi-primary"
             >
               <circle cx="11" cy="11" r="8" />
               <path d="m21 21-4.3-4.3" />
             </svg>
-            <span class="font-medium text-sm sm:text-base text-gray-800"> 搜索结果 </span>
-            <span class="text-xs text-gray-500">
+            <span class="font-medium text-sm sm:text-base text-semi-text-0"> 搜索结果 </span>
+            <span class="text-xs text-semi-text-3">
               {{ (invocation.output as SearchResult).query }}
             </span>
           </div>
@@ -304,7 +304,7 @@ function getInputQuery(input: Record<string, unknown>): string {
           <div
             v-for="item in (invocation.output as SearchResult).results?.slice(0, 4)"
             :key="item.index"
-            class="group flex items-start gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-lg hover:bg-gray-50 transition-colors duration-150"
+            class="group flex items-start gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-lg hover:bg-semi-bg-1 transition-colors duration-150"
           >
             <!-- 网站图标 -->
             <img
@@ -322,16 +322,16 @@ function getInputQuery(input: Record<string, unknown>): string {
                 :href="item.url"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors line-clamp-1"
+                class="text-xs sm:text-sm font-medium text-semi-primary hover:text-semi-primary-active transition-colors line-clamp-1"
               >
                 {{ item.title }}
               </a>
               <!-- 来源域名 -->
-              <div class="text-[10px] sm:text-xs text-gray-400 mt-0.5">
+              <div class="text-semi-micro sm:text-xs text-semi-text-3 mt-0.5">
                 {{ getDomain(item.url) }}
               </div>
               <!-- 摘要 -->
-              <p class="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">
+              <p class="text-xs text-semi-text-3 mt-1 line-clamp-2 leading-relaxed">
                 {{ item.snippet }}
               </p>
             </div>
@@ -340,7 +340,7 @@ function getInputQuery(input: Record<string, unknown>): string {
       </template>
 
       <!-- 错误状态 -->
-      <div v-else class="px-4 py-3 text-xs sm:text-sm text-red-500 bg-red-50">
+      <div v-else class="px-4 py-3 text-xs sm:text-sm text-semi-danger bg-semi-danger-light">
         {{ (invocation.output as SearchResult).error }}
       </div>
     </div>

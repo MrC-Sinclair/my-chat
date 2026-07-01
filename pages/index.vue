@@ -6,6 +6,6 @@ onMounted(() => {
 
 <template>
   <div class="flex items-center justify-center min-h-screen">
-    <p class="text-gray-400">正在跳转...</p>
+    <p class="text-semi-text-3">正在跳转...</p>
   </div>
 </template>

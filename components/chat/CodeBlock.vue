@@ -77,14 +77,14 @@ async function handleCopy() {
 <template>
   <div
     ref="wrapperRef"
-    class="code-block-wrapper group relative rounded-lg border border-gray-200 bg-gray-900 my-3"
+    class="code-block-wrapper group relative rounded-lg border border-semi-border bg-semi-code-dark-bg my-3"
   >
     <div
-      class="flex items-center justify-between px-4 py-2 bg-gray-800 rounded-t-lg border-b border-gray-700"
+      class="flex items-center justify-between px-4 py-2 bg-semi-code-dark-surface rounded-t-lg border-b border-semi-code-dark-border"
     >
-      <span class="text-xs text-gray-400 font-mono">{{ language || 'text' }}</span>
+      <span class="text-xs text-semi-code-dark-text font-mono">{{ language || 'text' }}</span>
       <button
-        class="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white rounded transition-colors"
+        class="flex items-center gap-1 px-2 py-1 text-xs text-semi-code-dark-text hover:text-semi-code-dark-text-strong rounded transition-colors"
         v-tooltip="copied ? '已复制' : '复制代码'"
         @click="handleCopy"
       >
@@ -98,7 +98,7 @@ async function handleCopy() {
         </svg>
         <svg
           v-else
-          class="w-4 h-4 text-green-400"
+          class="w-4 h-4 text-semi-code-dark-success"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -120,9 +120,9 @@ async function handleCopy() {
     /></pre>
     <div v-else class="p-4">
       <div class="space-y-2">
-        <div class="h-3 bg-gray-700 rounded animate-pulse w-3/4" />
-        <div class="h-3 bg-gray-700 rounded animate-pulse w-1/2" />
-        <div class="h-3 bg-gray-700 rounded animate-pulse w-2/3" />
+        <div class="h-3 bg-semi-code-dark-border rounded animate-pulse w-3/4" />
+        <div class="h-3 bg-semi-code-dark-border rounded animate-pulse w-1/2" />
+        <div class="h-3 bg-semi-code-dark-border rounded animate-pulse w-2/3" />
       </div>
     </div>
   </div>

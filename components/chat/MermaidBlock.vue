@@ -131,7 +131,7 @@ async function handleCopy() {
         </svg>
         <svg
           v-else
-          class="tab-icon text-green-500"
+          class="tab-icon text-semi-success"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -185,9 +185,9 @@ async function handleCopy() {
 .mermaid-block-wrapper {
   margin: 1em 0;
   overflow: hidden;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  background: theme('colors.semi.bg.0');
+  border: 1px solid theme('colors.semi.fill.2');
+  border-radius: theme('borderRadius.semi-lg');
 }
 
 .mermaid-header {
@@ -196,9 +196,9 @@ async function handleCopy() {
   align-items: center;
   padding: 4px 8px;
   font-size: 0.75rem;
-  color: #6b7280;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
+  color: theme('colors.semi.text.3');
+  background: theme('colors.semi.bg.0');
+  border-bottom: 1px solid theme('colors.semi.fill.2');
 }
 
 .mermaid-header-left {
@@ -223,8 +223,8 @@ async function handleCopy() {
   gap: 2px;
   align-items: center;
   padding: 2px;
-  background: #e5e7eb;
-  border-radius: 6px;
+  background: theme('colors.semi.fill.2');
+  border-radius: theme('borderRadius.semi-md');
 }
 
 .mermaid-tab {
@@ -235,24 +235,25 @@ async function handleCopy() {
   font-family: inherit;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: #6b7280;
+  color: theme('colors.semi.text.3');
   white-space: nowrap;
   cursor: pointer;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: theme('borderRadius.semi-md');
   transition: all 0.15s ease;
 }
 
 .mermaid-tab:hover {
-  color: #374151;
-  background: rgb(255, 255, 255, 0.5);
+  color: theme('colors.semi.text.1');
+  /* 白色半透明 hover 高亮，与 bg-0 同色 50% 透明 */
+  background: rgb(255 255 255 / 50%);
 }
 
 .mermaid-tab.active {
-  color: #111827;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(0, 0, 0, 0.06);
+  color: theme('colors.semi.text.0');
+  background: theme('colors.semi.bg.0');
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
 }
 
 .tab-icon {
@@ -267,17 +268,18 @@ async function handleCopy() {
   justify-content: center;
   width: 28px;
   height: 28px;
-  color: #6b7280;
+  color: theme('colors.semi.text.3');
   cursor: pointer;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: theme('borderRadius.semi-md');
   transition: all 0.15s ease;
 }
 
 .mermaid-copy-btn:hover {
-  color: #374151;
-  background: rgb(0, 0, 0, 0.05);
+  color: theme('colors.semi.text.1');
+  /* 黑色半透明 hover，通用中性 hover 效果 */
+  background: rgb(0 0 0 / 5%);
 }
 
 .mermaid-copy-btn:active {
@@ -307,7 +309,7 @@ async function handleCopy() {
   align-items: center;
   padding: 24px;
   font-size: 0.8rem;
-  color: #9ca3af;
+  color: theme('colors.semi.text.3');
 }
 
 .mermaid-spinner {
@@ -327,7 +329,7 @@ async function handleCopy() {
 }
 
 .mermaid-code-panel {
-  background: #1e1e1e;
+  background: theme('colors.semi.code.dark.bg');
 }
 
 .mermaid-code-pre {
@@ -339,7 +341,7 @@ async function handleCopy() {
 .mermaid-error {
   padding: 12px 16px;
   font-size: 0.85em;
-  color: #b91c1c;
+  color: theme('colors.semi.danger.DEFAULT');
 }
 
 .mermaid-error p {
@@ -352,7 +354,7 @@ async function handleCopy() {
   margin: 0;
   overflow-x: auto;
   font-size: 0.85em;
-  background: #f3f4f6;
-  border-radius: 6px;
+  background: theme('colors.semi.fill.0');
+  border-radius: theme('borderRadius.semi-md');
 }
 </style>

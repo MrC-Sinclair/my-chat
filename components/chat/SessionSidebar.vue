@@ -58,17 +58,17 @@ function formatRelativeTime(dateStr: string): string {
 </script>
 
 <template>
-  <aside class="w-[85vw] sm:w-64 shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col h-full">
-    <div class="flex items-center gap-2 p-3 sm:p-4 border-b border-gray-200">
+  <aside class="w-[85vw] sm:w-64 shrink-0 border-r border-semi-border bg-semi-bg-1 flex flex-col h-full">
+    <div class="flex items-center gap-2 p-3 sm:p-4 border-b border-semi-border">
       <button
-        class="flex-1 px-3 sm:px-4 py-2.5 sm:py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 min-h-[44px]"
+        class="flex-1 px-3 sm:px-4 py-2.5 sm:py-2.5 text-sm font-medium text-white bg-semi-primary rounded-lg hover:bg-semi-primary-active active:scale-[0.98] transition-all flex items-center justify-center gap-2 min-h-[44px]"
         @click="emit('create')"
       >
         <span class="text-lg leading-none">+</span>
         新建会话
       </button>
       <button
-        class="sm:hidden p-2 text-gray-500 hover:text-gray-800 rounded-lg hover:bg-gray-200 active:scale-95 transition-all min-w-[36px] min-h-[36px] flex items-center justify-center"
+        class="sm:hidden p-2 text-semi-text-3 hover:text-semi-text-0 rounded-lg hover:bg-semi-fill-2 active:scale-95 transition-all min-w-[36px] min-h-[36px] flex items-center justify-center"
         @click="$emit('close')"
         v-tooltip="'关闭侧边栏'"
       >
@@ -89,7 +89,7 @@ function formatRelativeTime(dateStr: string): string {
     </div>
 
     <div class="flex-1 overflow-y-auto p-2">
-      <div v-if="sessionsList.length === 0" class="text-sm text-gray-400 text-center py-8">
+      <div v-if="sessionsList.length === 0" class="text-sm text-semi-text-3 text-center py-8">
         暂无会话
       </div>
 
@@ -100,8 +100,8 @@ function formatRelativeTime(dateStr: string): string {
         class="group flex items-center justify-between px-2 sm:px-3 py-2.5 mb-1 rounded-lg cursor-pointer transition-colors"
         :class="
           session.id === currentSessionId
-            ? 'bg-blue-100 text-blue-800'
-            : 'hover:bg-gray-200 text-gray-700'
+            ? 'bg-semi-primary-light text-semi-primary-active'
+            : 'hover:bg-semi-fill-2 text-semi-text-1'
         "
         @click="emit('switch', session.id)"
       >
@@ -109,7 +109,7 @@ function formatRelativeTime(dateStr: string): string {
           <template v-if="renamingId === session.id">
             <input
               v-model="renamingText"
-              class="w-full text-sm bg-white border border-blue-400 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[36px]"
+              class="w-full text-sm bg-white border border-semi-primary rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-semi-primary min-h-[36px]"
               @keydown.enter="confirmRename"
               @keydown.escape="cancelRename"
               @blur="confirmRename"
@@ -120,7 +120,7 @@ function formatRelativeTime(dateStr: string): string {
             <div class="text-sm font-medium truncate" @dblclick.stop="startRename(session)">
               {{ session.title }}
             </div>
-            <div class="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+            <div class="text-xs text-semi-text-3 mt-0.5 flex items-center gap-2">
               <span>{{ session.messageCount || 0 }} 条消息</span>
               <span>·</span>
               <span>{{ formatRelativeTime(session.updatedAt) }}</span>
@@ -131,7 +131,7 @@ function formatRelativeTime(dateStr: string): string {
           class="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 sm:transition-opacity ml-1"
         >
           <button
-            class="p-1.5 text-gray-400 hover:text-blue-600 rounded transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+            class="p-1.5 text-semi-text-3 hover:text-semi-primary rounded transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
             v-tooltip="'重命名'"
             @click.stop="startRename(session)"
           >
@@ -150,7 +150,7 @@ function formatRelativeTime(dateStr: string): string {
             </svg>
           </button>
           <button
-            class="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+            class="p-1.5 text-semi-text-3 hover:text-semi-danger rounded transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
             v-tooltip="'删除会话'"
             @click="handleDelete(session.id, $event)"
           >

@@ -26,12 +26,12 @@ const AsyncCodeBlock = defineAsyncComponent({
   loader: () => import('./CodeBlock.vue'),
   loadingComponent: {
     template:
-      '<div class="code-block-skeleton rounded-lg border border-gray-200 bg-gray-900 my-3 p-4"><div class="flex items-center gap-2 mb-3"><div class="h-3 w-16 bg-gray-700 rounded animate-pulse" /><div class="h-3 w-10 bg-gray-700 rounded animate-pulse ml-auto" /></div><div class="space-y-2"><div class="h-3 bg-gray-700 rounded animate-pulse w-3/4" /><div class="h-3 bg-gray-700 rounded animate-pulse w-1/2" /><div class="h-3 bg-gray-700 rounded animate-pulse w-2/3" /></div></div>'
+      '<div class="code-block-skeleton rounded-lg border border-semi-border bg-semi-code-dark-bg my-3 p-4"><div class="flex items-center gap-2 mb-3"><div class="h-3 w-16 bg-semi-code-dark-border rounded animate-pulse" /><div class="h-3 w-10 bg-semi-code-dark-border rounded animate-pulse ml-auto" /></div><div class="space-y-2"><div class="h-3 bg-semi-code-dark-border rounded animate-pulse w-3/4" /><div class="h-3 bg-semi-code-dark-border rounded animate-pulse w-1/2" /><div class="h-3 bg-semi-code-dark-border rounded animate-pulse w-2/3" /></div></div>'
   },
   errorComponent: {
     props: ['error', 'retry'],
     template:
-      '<div class="async-error rounded-lg border border-red-200 bg-red-50 my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-red-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-red-700 font-medium">代码块加载失败</span></div><button @click="retry" class="text-xs text-red-600 hover:text-red-800 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
+      '<div class="async-error rounded-lg border border-semi-danger-light bg-semi-danger-light my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-semi-danger shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-semi-danger font-medium">代码块加载失败</span></div><button @click="retry" class="text-xs text-semi-danger hover:text-semi-danger active:opacity-80 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
   }
 })
 
@@ -39,12 +39,12 @@ const AsyncMermaidBlock = defineAsyncComponent({
   loader: () => import('./MermaidBlock.vue'),
   loadingComponent: {
     template:
-      '<div class="mermaid-skeleton rounded-lg border border-gray-200 bg-white my-3 p-4"><div class="flex items-center gap-2 mb-3"><div class="h-3 w-16 bg-gray-200 rounded animate-pulse" /><div class="h-3 w-10 bg-gray-200 rounded animate-pulse ml-auto" /></div><div class="h-20 bg-gray-100 rounded animate-pulse flex items-center justify-center"><span class="text-xs text-gray-400">图表加载中…</span></div></div>'
+      '<div class="mermaid-skeleton rounded-lg border border-semi-border bg-semi-bg-0 my-3 p-4"><div class="flex items-center gap-2 mb-3"><div class="h-3 w-16 bg-semi-fill-2 rounded animate-pulse" /><div class="h-3 w-10 bg-semi-fill-2 rounded animate-pulse ml-auto" /></div><div class="h-20 bg-semi-fill-1 rounded animate-pulse flex items-center justify-center"><span class="text-xs text-semi-text-3">图表加载中…</span></div></div>'
   },
   errorComponent: {
     props: ['error', 'retry'],
     template:
-      '<div class="async-error rounded-lg border border-red-200 bg-red-50 my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-red-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-red-700 font-medium">图表加载失败</span></div><button @click="retry" class="text-xs text-red-600 hover:text-red-800 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
+      '<div class="async-error rounded-lg border border-semi-danger-light bg-semi-danger-light my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-semi-danger shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-semi-danger font-medium">图表加载失败</span></div><button @click="retry" class="text-xs text-semi-danger hover:text-semi-danger active:opacity-80 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
   }
 })
 
@@ -400,10 +400,10 @@ function renderImages() {
   padding: 0.5em 1em;
   padding-left: 1em;
   margin: 0.8em 0;
-  color: #666;
-  background: #f9f9f9;
-  border-left: 4px solid #ddd;
-  border-radius: 0 4px 4px 0;
+  color: theme('colors.semi.text.2');
+  background: theme('colors.semi.fill.0');
+  border-left: 4px solid theme('colors.semi.border');
+  border-radius: 0 theme('borderRadius.semi-md') theme('borderRadius.semi-md') 0;
 }
 
 /** 表格样式 */
@@ -423,12 +423,12 @@ function renderImages() {
 .markdown-body td {
   padding: 8px 12px;
   text-align: left;
-  border: 1px solid #ddd;
+  border: 1px solid theme('colors.semi.border');
 }
 
 .markdown-body th {
   font-weight: 600;
-  background: #f5f5f5;
+  background: theme('colors.semi.fill.1');
 }
 
 /** 图片响应式样式 + 加载占位骨架屏 */
@@ -438,9 +438,14 @@ function renderImages() {
   min-height: 180px;
   margin: 0.6em 0;
   cursor: zoom-in;
-  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background: linear-gradient(
+    90deg,
+    theme('colors.semi.fill.0') 25%,
+    theme('colors.semi.fill.2') 50%,
+    theme('colors.semi.fill.0') 75%
+  );
   background-size: 200% 100%;
-  border-radius: 8px;
+  border-radius: theme('borderRadius.semi-lg');
   opacity: 0;
   transition: opacity 0.3s ease;
   animation: img-shimmer 1.5s ease-in-out infinite;
@@ -469,12 +474,12 @@ function renderImages() {
 
 /** 链接样式 */
 .markdown-body a {
-  color: #2563eb;
+  color: theme('colors.semi.primary.DEFAULT');
   text-decoration: underline;
 }
 
 .markdown-body a:hover {
-  color: #1d4ed8;
+  color: theme('colors.semi.primary.active');
 }
 
 /** 行内代码样式（非代码块中的 `code`） */
@@ -482,9 +487,9 @@ function renderImages() {
   padding: 2px 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.875em;
-  color: #7c3aed;
-  background: #f3f4f6;
-  border-radius: 4px;
+  color: theme('colors.semi.code.inline');
+  background: theme('colors.semi.code.inline-bg');
+  border-radius: theme('borderRadius.semi-md');
 }
 
 /** 块级公式（$$...$$）样式：允许横向滚动 */
@@ -506,9 +511,14 @@ function renderImages() {
   min-width: 140px;
   height: 1.5em;
   vertical-align: middle;
-  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background: linear-gradient(
+    90deg,
+    theme('colors.semi.fill.0') 25%,
+    theme('colors.semi.fill.2') 50%,
+    theme('colors.semi.fill.0') 75%
+  );
   background-size: 200% 100%;
-  border-radius: 4px;
+  border-radius: theme('borderRadius.semi-md');
   animation: math-block-shimmer 1.5s ease-in-out infinite;
 }
 
@@ -530,10 +540,10 @@ function renderImages() {
   padding: 8px 14px;
   margin: 0.6em 0;
   font-size: 0.85em;
-  color: #b91c1c;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
+  color: theme('colors.semi.danger.DEFAULT');
+  background: theme('colors.semi.danger.light');
+  border: 1px solid theme('colors.semi.danger.light');
+  border-radius: theme('borderRadius.semi-lg');
 }
 
 /** 图片放大遮罩层 */

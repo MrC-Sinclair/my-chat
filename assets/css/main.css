@@ -5,7 +5,7 @@
  *
  * Tailwind CSS 工作原理：
  *   1. 扫描项目中的所有 .vue 和 .ts 文件
- *   2. 提取其中使用的 Tailwind 类名（如 "flex", "bg-blue-600", "text-sm"）
+ *   2. 提取其中使用的 Tailwind 类名（如 "flex", "bg-semi-primary", "text-sm"）
  *   3. 只生成用到的 CSS 规则，避免样式冗余
  *
  * 本文件使用 @tailwind 指令，其他样式由各组件的 \3c style> 块自行管理。

@@ -38,19 +38,19 @@ provide('confirmDialog', { open })
         <Transition name="confirm-dialog" appear>
           <div
             v-if="visible"
-            class="bg-white rounded-xl shadow-2xl p-6 min-w-[320px] max-w-[420px] mx-4"
+            class="bg-semi-bg-0 rounded-xl shadow-semi-popover p-6 min-w-[320px] max-w-[420px] mx-4"
           >
-            <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ title }}</h3>
-            <p class="text-sm text-gray-600 mb-6 leading-relaxed">{{ message }}</p>
+            <h3 class="text-lg font-semibold text-semi-text-0 mb-2">{{ title }}</h3>
+            <p class="text-sm text-semi-text-2 mb-6 leading-relaxed">{{ message }}</p>
             <div class="flex justify-end gap-3">
               <button
-                class="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 active:scale-95 transition-all"
+                class="px-4 py-2 text-sm font-medium text-semi-text-2 bg-semi-fill-1 rounded-lg hover:bg-semi-fill-2 active:scale-95 transition-all"
                 @click="cancel"
               >
                 取消
               </button>
               <button
-                class="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600 active:scale-95 transition-all"
+                class="px-4 py-2 text-sm font-medium text-white bg-semi-danger rounded-lg hover:bg-semi-danger active:scale-95 transition-all"
                 @click="confirm"
               >
                 确认删除
