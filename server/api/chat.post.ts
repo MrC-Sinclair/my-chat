@@ -121,7 +121,10 @@ export default defineEventHandler(async (event) => {
     contextMessages = messages.slice(-MAX_CONTEXT_MESSAGES)
   }
 
+  // 仅校验用户消息长度：AI 消息由服务端生成，长度天然可控
+  // 若校验 AI 消息，长回复（含代码块/公式）会导致后续多轮对话被 400 阻断
   for (const msg of messages) {
+    if (msg.role !== 'user') continue
     const text = extractTextFromMessage(msg)
     if (text.length > MAX_MESSAGE_LENGTH) {
       throw createError({

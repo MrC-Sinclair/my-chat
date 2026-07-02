@@ -111,7 +111,7 @@ function getInputQuery(input: Record<string, unknown>): string {
     <!-- 结果展示 -->
     <div
       v-else-if="invocation.state === 'output-available' && invocation.output"
-      class="bg-white border border-semi-border rounded-xl overflow-hidden shadow-sm"
+      class="bg-semi-bg-0 border border-semi-border rounded-xl overflow-hidden shadow-semi-card"
     >
       <template v-if="!(invocation.output as WeatherResult).error">
         <!-- 头部：城市信息 -->
@@ -271,7 +271,7 @@ function getInputQuery(input: Record<string, unknown>): string {
     <!-- 结果展示 -->
     <div
       v-else-if="invocation.state === 'output-available' && invocation.output"
-      class="bg-white border border-semi-border rounded-xl overflow-hidden shadow-sm"
+      class="bg-semi-bg-0 border border-semi-border rounded-xl overflow-hidden shadow-semi-card"
     >
       <template v-if="!(invocation.output as SearchResult).error">
         <!-- 头部：搜索摘要 -->
@@ -304,7 +304,7 @@ function getInputQuery(input: Record<string, unknown>): string {
           <div
             v-for="item in (invocation.output as SearchResult).results?.slice(0, 4)"
             :key="item.index"
-            class="group flex items-start gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-lg hover:bg-semi-bg-1 transition-colors duration-150"
+            class="group flex items-start gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-lg hover:bg-semi-bg-1 transition-colors duration-semi-fast"
           >
             <!-- 网站图标 -->
             <img

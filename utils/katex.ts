@@ -106,7 +106,7 @@ function renderSingleFormula(katex: typeof KatexType, el: HTMLElement): void {
     el.innerHTML = katex.renderToString(formula, {
       displayMode: isBlock,
       throwOnError: false,
-      errorColor: '#cc0000'
+      errorColor: '#F93920' // 使用 semi-danger DEFAULT，保持错误色与项目设计体系一致
     })
     if (isBlock) el.classList.add('katex-display')
     el.setAttribute('data-katex-rendered', 'true')

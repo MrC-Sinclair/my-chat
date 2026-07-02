@@ -82,6 +82,13 @@ export default {
           divider: '#E9E9E9',
           // 焦点描边
           focus: '#0064FA',
+          // 遮罩层（侧边栏、Lightbox、对话框背景）
+          overlay: 'rgba(0, 0, 0, 0.5)',
+          'overlay-subtle': 'rgba(0, 0, 0, 0.4)',
+          'overlay-dark': 'rgba(0, 0, 0, 0.8)',
+          // 通用 hover 高亮遮罩
+          'hover-light': 'rgba(255, 255, 255, 0.5)',
+          'hover-dark': 'rgba(0, 0, 0, 0.05)',
           // Tooltip 浮层（深色背景 + 浅色文字）
           tooltip: {
             bg: '#1F2937',
@@ -111,12 +118,14 @@ export default {
       spacing: {
         'semi-xs': '4px', //   xx-small
         'semi-sm': '8px', //   x-small
+        'semi-sm-md': '10px', // x-small ~ small 之间（Tooltip 水平 padding 等）
         'semi-md': '12px', //  small
         'semi-base': '16px', // medium
         'semi-lg': '20px', //  large
         'semi-xl': '24px', //  x-large
         'semi-2xl': '32px', // xx-large
-        'semi-3xl': '40px' //  xxx-large
+        'semi-3xl': '40px', //  xxx-large
+        'semi-sidebar': '256px' // 桌面端侧边栏宽度
       },
       /**
        * 圆角 - Semi 各组件圆角约定
@@ -156,7 +165,9 @@ export default {
         'semi-elevated': '0 0 0 1px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.08)',
         'semi-card': '0 0 0 1px rgba(0,0,0,0.04)',
         'semi-tooltip': '0 2px 8px rgba(0,0,0,0.12)',
-        'semi-popover': '0 2px 12px rgba(0,0,0,0.12)'
+        'semi-popover': '0 2px 12px rgba(0,0,0,0.12)',
+        'semi-tab': '0 1px 2px rgba(0,0,0,0.06)',
+        'semi-lightbox': '0 8px 32px rgba(0,0,0,0.4)'
       },
       /**
        * 字体族 - Semi 默认中英文混排字体栈
@@ -174,6 +185,43 @@ export default {
           'Arial',
           'sans-serif'
         ]
+      },
+      /**
+       * z-index - Semi Design 层级体系
+       * 参考 Semi 官方规范：https://semi.design/zh-CN/basic/tokens#z-index
+       *   - modal: 1000（对话框、遮罩层）
+       *   - notification: 1010（Toast 通知）
+       *   - popover: 1030（弹出层浮层）
+       *   - dropdown: 1050（下拉菜单）
+       *   - tooltip: 1060（Tooltip 提示）
+       */
+      zIndex: {
+        'semi-modal': '1000',
+        'semi-notification': '1010',
+        'semi-popover': '1030',
+        'semi-dropdown': '1050',
+        'semi-tooltip': '1060'
+      },
+      /**
+       * 过渡时长 - Semi Design 动画速度体系
+       *   - instant: 100ms（微交互：hover、focus）
+       *   - fast: 150ms（按钮点击、颜色切换）
+       *   - normal: 200ms（面板展开、弹出）
+       *   - slow: 300ms（页面过渡、复杂动画）
+       */
+      transitionDuration: {
+        'semi-instant': '100ms',
+        'semi-fast': '150ms',
+        'semi-normal': '200ms',
+        'semi-slow': '300ms'
+      },
+      /**
+       * 过渡缓动 - Semi Design 缓动曲线
+       */
+      transitionTimingFunction: {
+        'semi-ease-in': 'cubic-bezier(0.4, 0, 1, 1)',
+        'semi-ease-out': 'cubic-bezier(0, 0, 0.2, 1)',
+        'semi-ease-in-out': 'cubic-bezier(0.4, 0, 0.2, 1)'
       }
     }
   },

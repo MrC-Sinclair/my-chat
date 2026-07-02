@@ -9,3 +9,9 @@ playwright-report/
 drizzle/
 auto-imports.d.ts
 .env
+
+# 测试过程中产生的临时截图目录（Chrome DevTools MCP / Playwright 手动测试产物）
+# 项目 e2e 测试代码在 tests/e2e/，不在 tests-e2e/
+screenshots/
+test-screenshots/
+tests-e2e/

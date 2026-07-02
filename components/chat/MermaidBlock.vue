@@ -192,10 +192,10 @@ async function handleCopy() {
 
 .mermaid-header {
   display: flex;
-  gap: 8px;
+  gap: theme('spacing.semi-sm');
   align-items: center;
-  padding: 4px 8px;
-  font-size: 0.75rem;
+  padding: theme('spacing.semi-xs') theme('spacing.semi-sm');
+  font-size: theme('fontSize.semi-caption.0');
   color: theme('colors.semi.text.3');
   background: theme('colors.semi.bg.0');
   border-bottom: 1px solid theme('colors.semi.fill.2');
@@ -203,15 +203,15 @@ async function handleCopy() {
 
 .mermaid-header-left {
   display: flex;
-  gap: 6px;
+  gap: theme('spacing[1.5]');
   align-items: center;
   margin-right: auto;
 }
 
 .mermaid-icon {
   flex-shrink: 0;
-  width: 14px;
-  height: 14px;
+  width: theme('spacing[3.5]');
+  height: theme('spacing[3.5]');
 }
 
 .mermaid-label {
@@ -220,20 +220,20 @@ async function handleCopy() {
 
 .mermaid-tabs {
   display: flex;
-  gap: 2px;
+  gap: theme('spacing[0.5]');
   align-items: center;
-  padding: 2px;
+  padding: theme('spacing[0.5]');
   background: theme('colors.semi.fill.2');
   border-radius: theme('borderRadius.semi-md');
 }
 
 .mermaid-tab {
   display: flex;
-  gap: 4px;
+  gap: theme('spacing.1');
   align-items: center;
-  padding: 3px 10px;
+  padding: theme('spacing[0.5]') theme('spacing.semi-sm-md');
   font-family: inherit;
-  font-size: 0.7rem;
+  font-size: theme('fontSize.semi-micro-md.0');
   line-height: 1.4;
   color: theme('colors.semi.text.3');
   white-space: nowrap;
@@ -241,45 +241,43 @@ async function handleCopy() {
   background: transparent;
   border: none;
   border-radius: theme('borderRadius.semi-md');
-  transition: all 0.15s ease;
+  transition: all theme('transitionDuration.semi-fast') ease;
 }
 
 .mermaid-tab:hover {
   color: theme('colors.semi.text.1');
-  /* 白色半透明 hover 高亮，与 bg-0 同色 50% 透明 */
-  background: rgb(255 255 255 / 50%);
+  background: theme('colors.semi.hover-light');
 }
 
 .mermaid-tab.active {
   color: theme('colors.semi.text.0');
   background: theme('colors.semi.bg.0');
-  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+  box-shadow: theme('boxShadow.semi-tab');
 }
 
 .tab-icon {
   flex-shrink: 0;
-  width: 12px;
-  height: 12px;
+  width: theme('spacing.3');
+  height: theme('spacing.3');
 }
 
 .mermaid-copy-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: theme('spacing.7');
+  height: theme('spacing.7');
   color: theme('colors.semi.text.3');
   cursor: pointer;
   background: transparent;
   border: none;
   border-radius: theme('borderRadius.semi-md');
-  transition: all 0.15s ease;
+  transition: all theme('transitionDuration.semi-fast') ease;
 }
 
 .mermaid-copy-btn:hover {
   color: theme('colors.semi.text.1');
-  /* 黑色半透明 hover，通用中性 hover 效果 */
-  background: rgb(0 0 0 / 5%);
+  background: theme('colors.semi.hover-dark');
 }
 
 .mermaid-copy-btn:active {
@@ -293,7 +291,7 @@ async function handleCopy() {
 .mermaid-content {
   display: flex;
   justify-content: center;
-  padding: 16px;
+  padding: theme('spacing.semi-base');
   overflow-x: auto;
 }
 
@@ -305,16 +303,16 @@ async function handleCopy() {
 .mermaid-loading-overlay {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: theme('spacing.semi-sm');
   align-items: center;
-  padding: 24px;
-  font-size: 0.8rem;
+  padding: theme('spacing.semi-xl');
+  font-size: theme('fontSize.semi-caption.0');
   color: theme('colors.semi.text.3');
 }
 
 .mermaid-spinner {
-  width: 24px;
-  height: 24px;
+  width: theme('spacing.6');
+  height: theme('spacing.6');
   animation: spin 1s linear infinite;
 }
 
@@ -333,27 +331,27 @@ async function handleCopy() {
 }
 
 .mermaid-code-pre {
-  padding: 16px;
+  padding: theme('spacing.semi-base');
   margin: 0;
   overflow-x: auto;
 }
 
 .mermaid-error {
-  padding: 12px 16px;
-  font-size: 0.85em;
+  padding: theme('spacing.semi-md') theme('spacing.semi-base');
+  font-size: theme('fontSize.semi-caption.0');
   color: theme('colors.semi.danger.DEFAULT');
 }
 
 .mermaid-error p {
-  margin: 0 0 8px;
+  margin: 0 0 theme('spacing.semi-sm');
   font-weight: 500;
 }
 
 .mermaid-fallback {
-  padding: 12px;
+  padding: theme('spacing.semi-md');
   margin: 0;
   overflow-x: auto;
-  font-size: 0.85em;
+  font-size: theme('fontSize.semi-caption.0');
   background: theme('colors.semi.fill.0');
   border-radius: theme('borderRadius.semi-md');
 }

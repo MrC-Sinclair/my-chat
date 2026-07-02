@@ -31,7 +31,7 @@ const AsyncCodeBlock = defineAsyncComponent({
   errorComponent: {
     props: ['error', 'retry'],
     template:
-      '<div class="async-error rounded-lg border border-semi-danger-light bg-semi-danger-light my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-semi-danger shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-semi-danger font-medium">代码块加载失败</span></div><button @click="retry" class="text-xs text-semi-danger hover:text-semi-danger active:opacity-80 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
+      '<div class="async-error rounded-lg border border-semi-danger-light bg-semi-danger-light my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-semi-danger shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-semi-danger font-medium">代码块加载失败</span></div><button @click="retry" class="text-xs text-semi-danger hover:text-semi-danger active:opacity-80 underline underline-offset-2 transition-colors duration-semi-fast">点击重试</button></div>'
   }
 })
 
@@ -44,7 +44,7 @@ const AsyncMermaidBlock = defineAsyncComponent({
   errorComponent: {
     props: ['error', 'retry'],
     template:
-      '<div class="async-error rounded-lg border border-semi-danger-light bg-semi-danger-light my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-semi-danger shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-semi-danger font-medium">图表加载失败</span></div><button @click="retry" class="text-xs text-semi-danger hover:text-semi-danger active:opacity-80 underline underline-offset-2 transition-colors duration-150">点击重试</button></div>'
+      '<div class="async-error rounded-lg border border-semi-danger-light bg-semi-danger-light my-3 p-4"><div class="flex items-center gap-2 mb-2"><svg class="w-4 h-4 text-semi-danger shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="text-sm text-semi-danger font-medium">图表加载失败</span></div><button @click="retry" class="text-xs text-semi-danger hover:text-semi-danger active:opacity-80 underline underline-offset-2 transition-colors duration-semi-fast">点击重试</button></div>'
   }
 })
 
@@ -241,7 +241,10 @@ watch(
     } catch (e) {
       console.error('MarkdownRenderer watch 回调失败:', e)
     }
-  }
+  },
+  // immediate: 加载历史消息时也触发 watch，启动 contentStableTimer
+  // 否则历史消息的 isStreaming 永远为 true，Mermaid 占位符永久显示
+  { immediate: true }
 )
 
 // 在 setup 阶段预初始化 segments，确保初次渲染即包含内容
@@ -402,7 +405,7 @@ function renderImages() {
   margin: 0.8em 0;
   color: theme('colors.semi.text.2');
   background: theme('colors.semi.fill.0');
-  border-left: 4px solid theme('colors.semi.border');
+  border-left: theme('spacing.semi-xs') solid theme('colors.semi.border');
   border-radius: 0 theme('borderRadius.semi-md') theme('borderRadius.semi-md') 0;
 }
 
@@ -421,7 +424,7 @@ function renderImages() {
 
 .markdown-body th,
 .markdown-body td {
-  padding: 8px 12px;
+  padding: theme('spacing.semi-sm') theme('spacing.semi-md');
   text-align: left;
   border: 1px solid theme('colors.semi.border');
 }
@@ -447,7 +450,7 @@ function renderImages() {
   background-size: 200% 100%;
   border-radius: theme('borderRadius.semi-lg');
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity theme('transitionDuration.semi-slow') ease;
   animation: img-shimmer 1.5s ease-in-out infinite;
 }
 
@@ -484,9 +487,9 @@ function renderImages() {
 
 /** 行内代码样式（非代码块中的 `code`） */
 .markdown-body code:not(pre code) {
-  padding: 2px 6px;
+  padding: theme('spacing.semi-xs') theme('spacing[1.5]');
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.875em;
+  font-size: theme('fontSize.semi-body.0');
   color: theme('colors.semi.code.inline');
   background: theme('colors.semi.code.inline-bg');
   border-radius: theme('borderRadius.semi-md');
@@ -535,11 +538,11 @@ function renderImages() {
 /** 图片加载失败容错样式 */
 .markdown-body .img-error {
   display: inline-flex;
-  gap: 6px;
+  gap: theme('spacing[1.5]');
   align-items: center;
-  padding: 8px 14px;
+  padding: theme('spacing.semi-sm') theme('spacing[3.5]');
   margin: 0.6em 0;
-  font-size: 0.85em;
+  font-size: theme('fontSize.semi-caption.0');
   color: theme('colors.semi.danger.DEFAULT');
   background: theme('colors.semi.danger.light');
   border: 1px solid theme('colors.semi.danger.light');
@@ -550,21 +553,21 @@ function renderImages() {
 .img-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: theme('zIndex.semi-modal');
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: zoom-out;
-  background: rgb(0, 0, 0, 0.8);
-  animation: lightbox-fade-in 0.2s ease;
+  background: theme('colors.semi.overlay-dark');
+  animation: lightbox-fade-in theme('transitionDuration.semi-normal') ease;
 }
 
 .img-lightbox img {
   max-width: 92vw;
   max-height: 92vh;
   object-fit: contain;
-  border-radius: 4px;
-  box-shadow: 0 8px 32px rgb(0, 0, 0, 0.4);
+  border-radius: theme('borderRadius.semi-md');
+  box-shadow: theme('boxShadow.semi-lightbox');
 }
 
 @keyframes lightbox-fade-in {
@@ -579,7 +582,7 @@ function renderImages() {
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity theme('transitionDuration.semi-normal') ease;
 }
 
 .fade-enter-from,

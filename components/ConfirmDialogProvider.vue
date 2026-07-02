@@ -32,7 +32,7 @@ provide('confirmDialog', { open })
     <Transition name="confirm-overlay">
       <div
         v-if="visible"
-        class="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40"
+        class="fixed inset-0 z-semi-modal flex items-center justify-center bg-semi-overlay-subtle"
         @click.self="cancel"
       >
         <Transition name="confirm-dialog" appear>
@@ -65,11 +65,11 @@ provide('confirmDialog', { open })
 
 <style>
 .confirm-overlay-enter-active {
-  transition: opacity 0.2s ease;
+  transition: opacity theme('transitionDuration.semi-normal') ease;
 }
 
 .confirm-overlay-leave-active {
-  transition: opacity 0.15s ease;
+  transition: opacity theme('transitionDuration.semi-fast') ease;
 }
 
 .confirm-overlay-enter-from,
@@ -78,20 +78,20 @@ provide('confirmDialog', { open })
 }
 
 .confirm-dialog-enter-active {
-  transition: all 0.2s ease-out;
+  transition: all theme('transitionDuration.semi-normal') ease-out;
 }
 
 .confirm-dialog-leave-active {
-  transition: all 0.15s ease-in;
+  transition: all theme('transitionDuration.semi-fast') ease-in;
 }
 
 .confirm-dialog-enter-from {
   opacity: 0;
-  transform: scale(0.95) translateY(8px);
+  transform: scale(0.95) translateY(theme('spacing.semi-sm'));
 }
 
 .confirm-dialog-leave-to {
   opacity: 0;
-  transform: scale(0.95) translateY(8px);
+  transform: scale(0.95) translateY(theme('spacing.semi-sm'));
 }
 </style>

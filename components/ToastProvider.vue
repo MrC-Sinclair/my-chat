@@ -32,12 +32,12 @@ provide('toast', { show, success, error, info })
 <template>
   <slot />
   <Teleport to="body">
-    <div class="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+    <div class="fixed top-4 right-4 z-semi-notification flex flex-col gap-2 pointer-events-none">
       <TransitionGroup name="toast">
         <div
           v-for="toast in toasts"
           :key="toast.id"
-          class="pointer-events-auto px-4 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 min-w-[200px] max-w-[360px]"
+          class="pointer-events-auto px-4 py-3 rounded-lg shadow-semi-popover text-sm font-medium flex items-center gap-2 min-w-[200px] max-w-[360px]"
           :class="{
             'bg-semi-success-light text-semi-success border border-semi-success/30':
               toast.type === 'success',
@@ -58,20 +58,20 @@ provide('toast', { show, success, error, info })
 
 <style>
 .toast-enter-active {
-  transition: all 0.25s ease-out;
+  transition: all theme('transitionDuration.semi-slow') ease-out;
 }
 
 .toast-leave-active {
-  transition: all 0.2s ease-in;
+  transition: all theme('transitionDuration.semi-normal') ease-in;
 }
 
 .toast-enter-from {
   opacity: 0;
-  transform: translateX(40px);
+  transform: translateX(calc(theme('spacing.semi-3xl') * -1));
 }
 
 .toast-leave-to {
   opacity: 0;
-  transform: translateX(40px);
+  transform: translateX(calc(theme('spacing.semi-3xl') * -1));
 }
 </style>

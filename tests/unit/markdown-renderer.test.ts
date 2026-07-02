@@ -100,7 +100,9 @@ describe('MarkdownRenderer', () => {
       })
       const wrappers = getCodeBlockWrappers(wrapper)
       expect(wrappers.length).toBe(1)
-      expect(wrappers[0].querySelector('.text-xs.text-gray-400.font-mono')?.textContent).toBe('js')
+      // CodeBlock.vue 中 language 标签类名为 text-xs text-semi-code-dark-text font-mono
+      // （Semi Design 迁移后由 text-gray-400 改为 text-semi-code-dark-text）
+      expect(wrappers[0].querySelector('.text-xs.text-semi-code-dark-text.font-mono')?.textContent).toBe('js')
     })
 
     it('应正确渲染数学公式占位符', () => {
@@ -316,7 +318,7 @@ describe('MarkdownRenderer', () => {
 
       const wrappers = getCodeBlockWrappers(wrapper)
       expect(wrappers.length).toBe(1)
-      expect(wrappers[0].querySelector('.text-xs.text-gray-400.font-mono')?.textContent).toBe('js')
+      expect(wrappers[0].querySelector('.text-xs.text-semi-code-dark-text.font-mono')?.textContent).toBe('js')
     })
   })
 

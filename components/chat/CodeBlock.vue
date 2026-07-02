@@ -77,7 +77,7 @@ async function handleCopy() {
 <template>
   <div
     ref="wrapperRef"
-    class="code-block-wrapper group relative rounded-lg border border-semi-border bg-semi-code-dark-bg my-3"
+    class="code-block-wrapper group relative rounded-lg border border-semi-border bg-semi-code-dark-bg text-semi-code-dark-text-strong my-3"
   >
     <div
       class="flex items-center justify-between px-4 py-2 bg-semi-code-dark-surface rounded-t-lg border-b border-semi-code-dark-border"

@@ -7,7 +7,6 @@
  *   字号 → theme('fontSize.semi-caption')
  *   阴影 → theme('boxShadow.semi-tooltip')
  *
- * 注意：padding 用 px，因为没有对应 Semi spacing token（4px×10px 非标准档位）。
  */
 
 [data-tooltip] {
@@ -18,9 +17,9 @@
   position: absolute;
   bottom: calc(100% + theme('spacing.semi-sm'));
   left: 50%;
-  z-index: 9999;
+  z-index: theme('zIndex.semi-tooltip');
   visibility: hidden;
-  padding: 4px 10px;
+  padding: theme('spacing.semi-xs') theme('spacing.semi-sm-md');
   font-size: theme('fontSize.semi-caption.0');
   line-height: 1.5;
   color: theme('colors.semi.tooltip.text');
@@ -33,15 +32,15 @@
   opacity: 0;
   transform: translateX(-50%);
   transition:
-    opacity 0.15s ease,
-    visibility 0.15s ease;
+    opacity theme('transitionDuration.semi-fast') ease,
+    visibility theme('transitionDuration.semi-fast') ease;
 }
 
 [data-tooltip]::before {
   position: absolute;
   bottom: calc(100% + 2px);
   left: 50%;
-  z-index: 9999;
+  z-index: theme('zIndex.semi-tooltip');
   visibility: hidden;
   pointer-events: none;
   content: '';
@@ -50,8 +49,8 @@
   opacity: 0;
   transform: translateX(-50%);
   transition:
-    opacity 0.15s ease,
-    visibility 0.15s ease;
+    opacity theme('transitionDuration.semi-fast') ease,
+    visibility theme('transitionDuration.semi-fast') ease;
 }
 
 @media (width >= 640px) {
