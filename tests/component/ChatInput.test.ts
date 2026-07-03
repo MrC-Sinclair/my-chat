@@ -18,12 +18,14 @@ import type { ModelCapabilities, ModelConfig } from '~/composables/useChatConfig
 const defaultCapabilities: ModelCapabilities = {
   vision: false,
   deepThinking: false,
+  toggleableThinking: false,
   toolCalling: true
 }
 
 const visionCapabilities: ModelCapabilities = {
   vision: true,
   deepThinking: false,
+  toggleableThinking: false,
   toolCalling: false
 }
 
@@ -31,12 +33,12 @@ const defaultModelOptions: ModelConfig[] = [
   {
     label: 'Qwen3-8B',
     value: 'Qwen/Qwen3-8B',
-    capabilities: { vision: false, deepThinking: false, toolCalling: true }
+    capabilities: { vision: false, deepThinking: false, toggleableThinking: false, toolCalling: true }
   },
   {
     label: 'DeepSeek-R1',
     value: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
-    capabilities: { vision: false, deepThinking: true, toolCalling: false }
+    capabilities: { vision: false, deepThinking: true, toggleableThinking: false, toolCalling: false }
   }
 ]
 

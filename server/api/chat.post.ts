@@ -219,18 +219,14 @@ export default defineEventHandler(async (event) => {
     })
 
   const thinkingEnabled = enable_thinking ?? DEFAULT_ENABLE_THINKING
-  const modelSupportsThinking = !caps.vision && !caps.deepThinking
-  // AI SDK v5 中 enableThinking/thinkingBudget 通过 providerOptions 传递
-  const thinkingOptions =
-    thinkingEnabled && modelSupportsThinking
-      ? {
-          providerOptions: {
-            openai: {
-              reasoningEffort: 'high' as const
-            }
-          }
-        }
-      : {}
+  // 仅可切换思考模型（toggleableThinking）传 enable_thinking 参数给硅基流动
+  // 强制思考模型（R1/GLM-Z1）不传：GLM-Z1 传了会 400 报错，R1 传了被忽略
+  // 不支持思考的模型不传
+  // 注：@ai-sdk/openai v2 的 providerOptions 不支持透传 enable_thinking（zod schema 严格校验），
+  // 必须在 reasoning-provider.ts 的 customFetch 层注入请求体顶层字段
+  const thinkingOptions = caps.toggleableThinking
+    ? { enableThinking: thinkingEnabled }
+    : undefined
 
   const maxSteps = caps.vision || caps.deepThinking ? 1 : 5
   const stopWhen = stepCountIs(maxSteps)
@@ -282,21 +278,18 @@ export default defineEventHandler(async (event) => {
     }
 
     const result = streamText({
-      model: llmProvider(useModel),
+      model: llmProvider(useModel, thinkingOptions),
       system: finalSystemPrompt,
       messages: llmMessages as any,
       stopWhen,
-      temperature: caps.vision ? 0.7 : void 0,
       ...(caps.toolCalling &&
         Object.keys(toolsConfig).length > 0 && {
           tools: toolsConfig as Parameters<typeof streamText>[0]['tools']
         }),
-      ...thinkingOptions,
       // 硅基流动不支持 OpenAI 的 structuredOutputs（strict 模式），需要禁用
       providerOptions: {
         openai: {
-          structuredOutputs: false,
-          ...(thinkingOptions.providerOptions?.openai || {})
+          structuredOutputs: false
         }
       },
       onFinish: async ({ text }) => {

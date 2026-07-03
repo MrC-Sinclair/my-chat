@@ -61,6 +61,7 @@ export async function customFetch(
 
   const response = await globalThis.fetch(url, options)
 
+
   // 非 SSE 响应或错误响应直接透传
   if (!response.ok || !response.body) {
     return response
@@ -178,15 +179,45 @@ export async function customFetch(
   })
 }
 
-const baseProvider = createOpenAI({
+const baseConfig = {
   baseURL: process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1',
-  apiKey: process.env.OPENAI_API_KEY,
-  fetch: customFetch
-})
+  apiKey: process.env.OPENAI_API_KEY
+}
+
+/**
+ * 创建带 enable_thinking 注入的 fetch 包装器
+ *
+ * 硅基流动的 enable_thinking 是请求体顶层字段（boolean），但 @ai-sdk/openai v2 的
+ * providerOptions 使用严格 zod schema 校验，不支持透传自定义字段（会被静默剥离）。
+ * 因此必须在 fetch 层拦截请求体，手动注入 enable_thinking。
+ *
+ * @see https://docs.siliconflow.cn/cn/api-reference/chat-completions/chat-completions
+ */
+function createThinkingFetch(enableThinking: boolean) {
+  return async (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
+    if (options?.body && typeof options.body === 'string') {
+      try {
+        const body = JSON.parse(options.body)
+        body.enable_thinking = enableThinking
+        options = { ...options, body: JSON.stringify(body) }
+      } catch {
+        // JSON 解析失败，透传原始请求
+      }
+    }
+    return customFetch(url, options)
+  }
+}
 
 /** 创建支持 reasoning_content 的 provider 实例 */
 export function createReasoningProvider() {
   // @ai-sdk/openai v2 默认使用 Responses API，硅基流动不支持
   // 需要显式使用 .chat() 方法走 Chat Completions API
-  return (modelId: string): LanguageModel => baseProvider.chat(modelId) as unknown as LanguageModel
+  return (modelId: string, options?: { enableThinking?: boolean }): LanguageModel => {
+    // 仅当需要传 enable_thinking 时创建带注入的 fetch，否则用原生 customFetch
+    // createOpenAI 仅创建配置对象（无连接池），per-request 创建无性能问题
+    const fetchFn =
+      options?.enableThinking !== undefined ? createThinkingFetch(options.enableThinking) : customFetch
+    const provider = createOpenAI({ ...baseConfig, fetch: fetchFn })
+    return provider.chat(modelId) as unknown as LanguageModel
+  }
 }

@@ -45,6 +45,11 @@ const inputLength = computed(() => props.input.length)
 const isOverLimit = computed(() => inputLength.value > MAX_INPUT_LENGTH)
 const isNearLimit = computed(() => inputLength.value > MAX_INPUT_LENGTH * 0.8 && !isOverLimit.value)
 
+// 强制思考模型（deepThinking && !toggleableThinking）：按钮应禁用，模型永远思考无法关闭
+const isForcedThinking = computed(
+  () => props.currentCapabilities.deepThinking && !props.currentCapabilities.toggleableThinking
+)
+
 const isComposing = ref(false)
 
 function handleCompositionStart() {
@@ -368,22 +373,27 @@ function toggleSpeechRecognition() {
       <div class="flex flex-wrap items-center gap-2 mt-2.5">
         <button
           type="button"
+          :disabled="isForcedThinking"
           class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-semi-normal min-h-[32px]"
           :class="
-            enableThinking
-              ? 'bg-semi-primary-light text-semi-primary hover:bg-semi-primary-light/80'
-              : 'bg-semi-fill-0 text-semi-text-2 hover:text-semi-text-1 hover:bg-semi-fill-1'
+            isForcedThinking
+              ? 'bg-semi-primary-light text-semi-primary cursor-not-allowed'
+              : enableThinking
+                ? 'bg-semi-primary-light text-semi-primary hover:bg-semi-primary-light/80 active:scale-95'
+                : 'bg-semi-fill-0 text-semi-text-2 hover:text-semi-text-1 hover:bg-semi-fill-1 active:scale-95'
           "
           v-tooltip="
-            currentCapabilities.deepThinking
-              ? enableThinking
-                ? '思考过程已显示'
-                : '点击显示思考过程'
-              : enableThinking
-                ? '深度思考已开启（更准但较慢）'
-                : '快速模式（关闭深度思考）'
+            isForcedThinking
+              ? '该模型强制思考，无法关闭'
+              : currentCapabilities.deepThinking
+                ? enableThinking
+                  ? '思考已开启，点击关闭'
+                  : '思考已关闭，点击开启'
+                : enableThinking
+                  ? '深度思考已开启（更准但较慢）'
+                  : '快速模式（关闭深度思考）'
           "
-          @click="emit('update:enableThinking', !enableThinking)"
+          @click="!isForcedThinking && emit('update:enableThinking', !enableThinking)"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -398,7 +408,7 @@ function toggleSpeechRecognition() {
             <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
             <path d="M12 12V2a10 10 0 0 1 8.66 14.34" />
           </svg>
-          {{ currentCapabilities.deepThinking ? '思考' : '深度思考' }}
+          {{ isForcedThinking ? '强制思考' : currentCapabilities.deepThinking ? '思考' : '深度思考' }}
         </button>
 
         <button
