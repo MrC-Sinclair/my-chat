@@ -31,7 +31,7 @@ test.describe('AI对话全流程', () => {
   test('发送消息后应显示用户气泡', async ({ page }) => {
     await mockChatAPI(page, buildTextStream('你好！'), 80)
     await typeAndSubmit(page, '你好')
-    await expect(page.locator('.message-user')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('[data-testid="message-user"]')).toBeVisible({ timeout: 10000 })
   })
 
   test('加载中应显示停止按钮', async ({ page }) => {

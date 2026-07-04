@@ -122,14 +122,14 @@ test.describe('流式渲染性能', () => {
     await typeAndSubmit(page, '分析流式输出问题')
 
     // 等待思考过程区域出现
-    await page.waitForSelector('.thinking-process', { timeout: 30000 })
+    await page.waitForSelector('[data-testid="thinking-process"]', { timeout: 30000 })
 
     const reasoningLengths: number[] = []
     const startTime = Date.now()
 
     // 在 reasoning 阶段（text 开始前）采样思考内容长度
     while (Date.now() - startTime < 15000) {
-      const thinkingEl = page.locator('.thinking-process .whitespace-pre-wrap').first()
+      const thinkingEl = page.locator('[data-testid="thinking-process"] .whitespace-pre-wrap').first()
       if (await thinkingEl.isVisible()) {
         const text = (await thinkingEl.textContent()) || ''
         reasoningLengths.push(text.length)

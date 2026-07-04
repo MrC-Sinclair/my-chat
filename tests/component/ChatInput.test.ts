@@ -92,7 +92,7 @@ describe('ChatInput 组件', () => {
 
     it('字数计数器在输入时显示', () => {
       const wrapper = mountChatInput({ props: { input: '测试' } })
-      const counter = wrapper.find('.text-\\[11px\\]')
+      const counter = wrapper.find('.text-semi-micro-md')
       expect(counter.text()).toContain('2')
       expect(counter.text()).toContain('1000')
     })
@@ -101,16 +101,16 @@ describe('ChatInput 组件', () => {
       const wrapper = mountChatInput({
         props: { input: 'a'.repeat(850) }
       })
-      const counter = wrapper.find('.text-\\[11px\\]')
-      expect(counter.classes()).toContain('text-amber-500')
+      const counter = wrapper.find('.text-semi-micro-md')
+      expect(counter.classes()).toContain('text-semi-warning')
     })
 
     it('字数超限时显示红色', () => {
       const wrapper = mountChatInput({
         props: { input: 'a'.repeat(1001) }
       })
-      const counter = wrapper.find('.text-\\[11px\\]')
-      expect(counter.classes()).toContain('text-red-500')
+      const counter = wrapper.find('.text-semi-micro-md')
+      expect(counter.classes()).toContain('text-semi-danger')
     })
   })
 
@@ -247,8 +247,8 @@ describe('ChatInput 组件', () => {
       const wrapper = mountChatInput()
       const chips = wrapper.findAll('[data-testid="model-chip"]')
       // 默认 currentModel 是第一个模型，应高亮
-      expect(chips[0].classes()).toContain('bg-blue-500')
-      expect(chips[1].classes()).not.toContain('bg-blue-500')
+      expect(chips[0].classes()).toContain('bg-semi-primary/10')
+      expect(chips[1].classes()).not.toContain('bg-semi-primary/10')
     })
 
     it('点击模型 chip 应触发 selectModel 事件', async () => {

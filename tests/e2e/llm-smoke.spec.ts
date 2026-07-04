@@ -27,9 +27,9 @@ test.setTimeout(180000)
  */
 async function disableDeepThinking(page: Page): Promise<void> {
   const btn = page.getByRole('button', { name: '深度思考' })
-  // 按钮高亮态（bg-indigo-50）表示开启，点击关闭
+  // 按钮高亮态（bg-semi-primary-light）表示开启，点击关闭
   const classAttr = await btn.getAttribute('class').catch(() => null)
-  if (classAttr && classAttr.includes('bg-indigo-50')) {
+  if (classAttr && classAttr.includes('bg-semi-primary-light')) {
     await btn.click()
     await page.waitForTimeout(300)
   }
@@ -41,14 +41,18 @@ async function disableDeepThinking(page: Page): Promise<void> {
  */
 async function waitForAssistantReply(page: Page, timeout = 120000): Promise<void> {
   // 先等 AI 气泡出现（开始流式输出）
-  await expect(page.locator('.message-assistant').first()).toBeVisible({ timeout })
+  await expect(page.locator('[data-testid="message-assistant"]').first()).toBeVisible({ timeout })
   // 再等输入框恢复可用（标志回复结束）
   await expect(page.getByTestId('chat-input')).toBeEnabled({ timeout })
 }
 
 test.describe('真实 LLM 冒烟测试', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/ai-chat', { waitUntil: 'networkidle' })
+    // 用 domcontentloaded 而非 networkidle：Nuxt dev 模式下 Vite 会持续加载资源（225+ 个），
+    // networkidle 在冷启动时易超时；domcontentloaded 足够触发 Vue 挂载与 API 调用
+    await page.goto('/ai-chat', { waitUntil: 'domcontentloaded' })
+    // 等待输入框可见，确保 Vue 应用已挂载
+    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 30000 })
     // 关闭深度思考，避免思考过程耗时过长
     await disableDeepThinking(page)
   })
@@ -61,13 +65,13 @@ test.describe('真实 LLM 冒烟测试', () => {
     await page.getByTestId('send-btn').click()
 
     // 等待用户消息出现
-    await expect(page.locator('.message-user')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('[data-testid="message-user"]')).toBeVisible({ timeout: 10000 })
 
     // 等待 AI 回复完成
     await waitForAssistantReply(page)
 
     // 验证 AI 回复内容非空
-    const content = await page.locator('.message-assistant').first().textContent()
+    const content = await page.locator('[data-testid="message-assistant"]').first().textContent()
     expect(content).toBeTruthy()
     expect(content!.trim().length).toBeGreaterThan(5)
   })
@@ -101,7 +105,7 @@ test.describe('真实 LLM 冒烟测试', () => {
     // 此场景需要开启深度思考，重新打开
     const thinkingBtn = page.getByRole('button', { name: '深度思考' })
     const classAttr = await thinkingBtn.getAttribute('class').catch(() => '')
-    if (classAttr && !classAttr.includes('bg-indigo-50')) {
+    if (classAttr && !classAttr.includes('bg-semi-primary-light')) {
       await thinkingBtn.click()
       await page.waitForTimeout(300)
     }
@@ -115,7 +119,7 @@ test.describe('真实 LLM 冒烟测试', () => {
     await waitForAssistantReply(page, 150000)
 
     // 推理模型可能显示思考过程，也可能直接回复，两种都算通过
-    const content = await page.locator('.message-assistant').first().textContent()
+    const content = await page.locator('[data-testid="message-assistant"]').first().textContent()
     expect(content).toBeTruthy()
     expect(content!.trim().length).toBeGreaterThan(0)
   })
@@ -195,7 +199,7 @@ test.describe('真实 LLM 冒烟测试', () => {
     await page.waitForTimeout(1000)
 
     // 验证历史消息仍然存在
-    await expect(page.locator('.message-user')).toBeVisible({ timeout: 15000 })
-    await expect(page.locator('.message-assistant')).toBeVisible({ timeout: 15000 })
+    await expect(page.locator('[data-testid="message-user"]')).toBeVisible({ timeout: 15000 })
+    await expect(page.locator('[data-testid="message-assistant"]')).toBeVisible({ timeout: 15000 })
   })
 })

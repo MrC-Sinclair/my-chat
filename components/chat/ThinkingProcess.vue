@@ -10,7 +10,10 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="mb-3 rounded-xl bg-semi-fill-0/70 border border-semi-divider/60 overflow-hidden">
+  <div
+    data-testid="thinking-process"
+    class="mb-3 rounded-xl bg-semi-fill-0/70 border border-semi-divider/60 overflow-hidden"
+  >
     <button
       class="w-full flex items-center gap-2 px-3 py-2 text-xs text-semi-text-2 hover:bg-semi-fill-0 transition-colors select-none"
       @click="emit('toggle')"
@@ -51,10 +54,14 @@ const emit = defineEmits<{
       </svg>
     </button>
     <div
-      v-if="isExpanded"
-      class="px-3 pb-3 pt-0.5 text-sm text-semi-text-2 whitespace-pre-wrap leading-relaxed border-t border-semi-divider/40"
+      class="overflow-hidden transition-all duration-semi-normal ease-in-out"
+      :class="isExpanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'"
     >
-      {{ content }}
+      <div
+        class="px-3 pb-3 pt-0.5 text-sm text-semi-text-2 whitespace-pre-wrap leading-relaxed border-t border-semi-divider/40"
+      >
+        {{ content }}
+      </div>
     </div>
   </div>
 </template>

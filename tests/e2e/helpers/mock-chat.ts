@@ -247,7 +247,7 @@ export async function waitForResponse(page: Page, timeout = 60000) {
 export async function waitForAssistantMessage(page: Page, timeout = 30000) {
   await page.waitForFunction(
     () => {
-      const el = document.querySelector('.message-assistant')
+      const el = document.querySelector('[data-testid="message-assistant"]')
       return el && (el.textContent || '').trim().length > 0
     },
     { timeout }

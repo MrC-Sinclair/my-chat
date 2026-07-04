@@ -35,7 +35,7 @@ test.describe('Chat 类迁移（v5）', () => {
     await typeAndSubmit(page, '说"测试成功"，20字以内')
 
     // 用户气泡应出现
-    await expect(page.locator('.message-user')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('[data-testid="message-user"]')).toBeVisible({ timeout: 10000 })
 
     // 加载中：停止按钮应出现
     await expect(page.getByTestId('stop-btn')).toBeVisible({ timeout: 10000 })
@@ -50,7 +50,7 @@ test.describe('Chat 类迁移（v5）', () => {
     await expect(page.getByTestId('stop-btn')).not.toBeVisible({ timeout: 5000 })
 
     // 验证助手消息有内容
-    const assistantEl = page.locator('.message-assistant').first()
+    const assistantEl = page.locator('[data-testid="message-assistant"]').first()
     const text = await assistantEl.textContent()
     expect(text).toBeTruthy()
     expect(text!.trim().length).toBeGreaterThan(0)
@@ -125,7 +125,7 @@ test.describe('流式输出（UIMessage 流格式）', () => {
 
     // 采样内容长度变化
     while (Date.now() - startTime < 15000) {
-      const assistantEl = page.locator('.message-assistant').first()
+      const assistantEl = page.locator('[data-testid="message-assistant"]').first()
       if (await assistantEl.isVisible().catch(() => false)) {
         const text = (await assistantEl.textContent()) || ''
         contentLengths.push(text.length)
@@ -195,7 +195,7 @@ test.describe('推理过程显示', () => {
     // AI 回复应出现
     await waitForAssistantMessage(page, 10000)
 
-    const assistantEl = page.locator('.message-assistant').first()
+    const assistantEl = page.locator('[data-testid="message-assistant"]').first()
     const text = await assistantEl.textContent()
     expect(text).toBeTruthy()
     expect(text!.length).toBeGreaterThan(0)
@@ -213,11 +213,11 @@ test.describe('会话切换（parts 结构映射）', () => {
     await waitForResponse(page, 30000)
 
     // 验证有用户消息
-    const userMessages = page.locator('.message-user')
+    const userMessages = page.locator('[data-testid="message-user"]')
     expect(await userMessages.count()).toBeGreaterThanOrEqual(1)
 
     // 验证有助手消息
-    const assistantMessages = page.locator('.message-assistant')
+    const assistantMessages = page.locator('[data-testid="message-assistant"]')
     expect(await assistantMessages.count()).toBeGreaterThanOrEqual(1)
   })
 })
