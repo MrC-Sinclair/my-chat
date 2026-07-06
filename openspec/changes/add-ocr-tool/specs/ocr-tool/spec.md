@@ -149,7 +149,7 @@
 
 系统 SHALL 在 `useChat` 的 `body` 参数中透传 `enable_ocr` 字段到 `/api/chat`。
 
-- `body` SHALL 是 `computed()` 包裹（参考 AGENTS.md 中关于 `body` 必须用 `computed()` 的规则）
+- `body` SHALL 是函数式写法（`() => ({...})`），AI SDK v5 DefaultChatTransport 每次请求重新调用以获取最新值。**注意**：AGENTS.md 中"`body` 必须用 `computed()` 包裹"是 v4 时代的规则，当前代码已使用函数式 body（[ai-chat.vue#L54-L62](file:///d:/code/codeWork/my-chat/pages/ai-chat.vue#L54-L62)），不要错误地改为 `computed()`
 - `enable_ocr` 字段值 SHALL 来自 `enableOcr.value`
 - 当 `enableOcr.value === false` 时 SHALL 透传 `false`（不省略）
 
@@ -207,7 +207,7 @@
 - **AND** 用户上传了 1 张图片
 - **THEN** 最后一条用户消息的文本末尾 SHALL 追加 `\n\n[附图片1: https://...]`
 - **AND** 图片 SHALL NOT 作为 `{ type: 'image' }` part 传入 LLM
-- **AND** LLM SHALL 通过文本中的 URL 调用 `extractTextFromImage` 工具
+- **AND** LLM SHOULD 通过文本中的 URL 调用 `extractTextFromImage` 工具（prompt 引导，非代码保证）
 
 #### Scenario: 视觉模型图片处理保持不变
 
@@ -216,11 +216,30 @@
 - **THEN** 图片 SHALL 作为 `{ type: 'image' }` 多模态 parts 传入 LLM
 - **AND** SHALL NOT 注入文本引用（视觉模型可直接看到图片）
 
+#### Scenario: ImgBB 上传失败时非视觉模型的处理
+
+- **WHEN** 请求的 `model` 为 `Qwen/Qwen3-8B`（`vision=false, toolCalling=true`）
+- **AND** `enable_ocr=true`
+- **AND** 用户上传了图片，但 ImgBB 上传失败（API Key 失效 / 网络错误）
+- **AND** `imageUrls` 数组中包含 `data:image/png;base64,xxx` 降级值
+- **THEN** chat.post.ts SHALL 检测到 `data:` 开头的数据
+- **AND** SHALL NOT 注入 `[附图片N: data:image/png;base64,...]` 文本引用（OCR 工具无法 fetch data URL）
+- **AND** SHALL 注入降级提示：`\n\n[提示：{N} 张图片上传失败，OCR 不可用，请重新上传]`
+- **AND** SHALL 仅保留成功上传的公网 URL 对应的 `[附图片N: URL]` 引用
+
+#### Scenario: 视觉模型 ImgBB 失败时的降级处理
+
+- **WHEN** 请求的 `model` 为 `Qwen/Qwen3.5-4B`（`vision=true`）
+- **AND** ImgBB 上传失败，`imageUrls` 含 `data:` 开头的 base64
+- **THEN** chat.post.ts SHALL 复用 line 204-214 的 `parseBase64Meta` 逻辑，将 base64 转为 buffer 直接传给 LLM
+- **AND** SHALL NOT 注入文本引用
+- **AND** LLM SHALL 能看到图片内容（视觉理解正常）
+
 ### Requirement: FALLBACK_MODELS 补全
 
 系统 SHALL 在 `useChatConfig.ts` 的 `FALLBACK_MODELS` 数组中补充 Qwen3.5-4B 的配置，确保 SSR 时 capabilities 判断准确。
 
-- 补充项 SHALL 为：`{ label: 'Qwen3.5-4B', value: 'Qwen/Qwen3.5-4B', capabilities: { vision: true, deepThinking: false, toggleableThinking: false, toolCalling: true } }`
+- 补充项 SHALL 为（与 [server/config/models.ts#L43-L48](file:///d:/code/codeWork/my-chat/server/config/models.ts#L43-L48) **完全一致**）：`{ label: 'Qwen3.5-4B', value: 'Qwen/Qwen3.5-4B', capabilities: { vision: true, deepThinking: true, toggleableThinking: true, toolCalling: true } }`
 
 #### Scenario: SSR 时 Qwen3.5-4B capabilities 正确
 
@@ -228,4 +247,60 @@
 - **AND** `modelOptions` 为 `FALLBACK_MODELS`（未加载 API）
 - **THEN** `currentCapabilities.toolCalling` SHALL 为 `true`
 - **AND** `currentCapabilities.vision` SHALL 为 `true`
+- **AND** `currentCapabilities.deepThinking` SHALL 为 `true`
+- **AND** `currentCapabilities.toggleableThinking` SHALL 为 `true`
 - **AND** OCR 按钮 SHALL 在 SSR 中正确显示
+
+### Requirement: ToolInvocation 组件新增 OCR 工具分支
+
+**关键发现**：[ToolInvocation.vue](file:///d:/code/codeWork/my-chat/components/chat/ToolInvocation.vue) 当前**只有 `weather` 和 `webSearch` 两个 `v-if="invocation.toolName === '...'"` 分支**，没有 `extractTextFromImage` 分支。OCR 工具调用发生时，会出现"无匹配 v-if 分支"，UI 渲染空白。必须新增分支。
+
+系统 SHALL 在 `ToolInvocation.vue` 中新增 `extractTextFromImage` 工具的渲染分支，包含三种状态：
+
+- **加载中状态**（`isCalling(invocation.state)`）：显示"正在识别图片中的文字..."+ 脉冲点动画（与 weather 加载样式一致：紫色光晕 + 文字）
+- **成功状态**（`state === 'output-available' && output`）：显示"OCR 识别完成"标签 + Markdown 结果预览（折叠/展开）+ 图片缩略图（input.imageUrl 渲染）
+- **错误状态**（`state === 'output-error' || (output as { error?: string }).error`）：显示错误信息（红色边框 + 错误图标 + 错误详情）
+
+#### Scenario: OCR 工具调用中显示加载状态
+
+- **WHEN** 工具 `invocation.toolName === 'extractTextFromImage'`
+- **AND** `invocation.state` 为 `input-streaming` 或 `input-available`
+- **THEN** 组件 SHALL 渲染"正在识别图片中的文字..."提示（与 weather/webSearch 加载样式一致）
+- **AND** 显示脉冲点动画
+
+#### Scenario: OCR 工具调用成功显示结果
+
+- **WHEN** 工具 `invocation.toolName === 'extractTextFromImage'`
+- **AND** `invocation.state` 为 `output-available`
+- **AND** `invocation.output` 不包含 `error` 字段
+- **THEN** 组件 SHALL 显示"OCR 识别完成"标签
+- **AND** SHALL 显示 `invocation.input.imageUrl` 的图片缩略图（48x48，`object-fit: cover`，`rounded`）
+- **AND** SHALL 显示 `invocation.output.text` 的 Markdown 预览（前 200 字符 + "..."）
+
+#### Scenario: OCR 工具调用失败显示错误
+
+- **WHEN** 工具 `invocation.toolName === 'extractTextFromImage'`
+- **AND** `invocation.state` 为 `output-error`
+- **OR** `invocation.output.error` 存在
+- **THEN** 组件 SHALL 渲染错误提示卡片（红色边框 + 错误图标 + 错误详情）
+
+### Requirement: AiChatPage 处理 OCR 工具的事件归一化
+
+**关键发现**：[ai-chat.vue#L317-L348](file:///d:/code/codeWork/my-chat/pages/ai-chat.vue#L317-L348) 的 `getVisibleToolInvocations` 通过 `part.type` 过滤工具调用。AI SDK 5.x 中，静态工具（`tool()` 定义）的 part type 格式为 `tool-extractTextFromImage`（驼峰化），需要确认：
+- 静态工具的 part type 命名规则是什么？
+- `dynamic-tool` 分支如何处理 `toolName: 'extractTextFromImage'`？
+- 是否需要在 `getVisibleToolInvocations` 中新增 `toolName === 'extractTextFromImage'` 过滤？
+
+系统 SHALL 在 [ai-chat.vue](file:///d:/code/codeWork/my-chat/pages/ai-chat.vue) 中确保 `extractTextFromImage` 工具调用能被 `getVisibleToolInvocations` 正确返回并传递给 `ToolInvocation` 组件。
+
+- 系统 SHALL 在 `getVisibleToolInvocations` 函数中新增 OCR 工具过滤：当 `enableOcr.value === false` 时，过滤掉 `toolName === 'extractTextFromImage'` 的工具调用（与 webSearch 过滤逻辑一致）
+- 当 `enableOcr.value === true` 时 SHALL 不过滤 OCR 工具调用
+
+#### Scenario: OCR 工具调用被前端正确展示
+
+- **WHEN** LLM 决定调用 `extractTextFromImage` 工具
+- **AND** 后端发送 `tool-input-available` / `tool-output-available` 事件
+- **THEN** 前端 SHALL 渲染 `ToolInvocation` 组件
+- **AND** `invocation.toolName` SHALL 等于 `'extractTextFromImage'`
+- **AND** `invocation.input` SHALL 包含 `imageUrl` 字段
+- **AND** 用户 SHALL 看到加载状态→结果/错误的完整过程
