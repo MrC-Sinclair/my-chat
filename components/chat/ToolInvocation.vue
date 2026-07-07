@@ -32,6 +32,14 @@ interface SearchResult {
   query?: string
 }
 
+interface OcrResult {
+  text?: string
+  error?: string
+  detail?: string
+  imageUrl?: string
+  model?: string
+}
+
 interface ToolInvocation {
   toolCallId: string
   toolName: string
@@ -87,6 +95,66 @@ function getInputCity(input: Record<string, unknown>): string {
 function getInputQuery(input: Record<string, unknown>): string {
   return (input as { query?: string }).query ?? ''
 }
+
+/**
+ * OCR 工具输入图片 URL 白名单校验（客户端 UI 展示用）
+ * 与 server/tools/ocr-document.ts 中 ALLOWED_PROTOCOLS/ALLOWED_DOMAINS 保持同步
+ * 实际 SSRF 强制校验（含 DNS 内网 IP 检查）在服务端 validateImageUrl 中执行
+ * 此处仅用于决定 <img> 是否渲染：校验失败时显示占位图标，避免渲染不可信图片
+ */
+const OCR_ALLOWED_PROTOCOLS = ['https:']
+const OCR_ALLOWED_DOMAINS = [
+  'i.ibb.co',
+  'i.imgur.com',
+  'cdn.discordapp.com',
+  'pbs.twimg.com',
+  '*.alicdn.com',
+  '*.qpic.cn',
+  '*.weixin.qq.com'
+]
+
+function matchOcrDomain(hostname: string, entry: string): boolean {
+  if (entry.startsWith('*.')) {
+    const suffix = entry.slice(1)
+    return hostname.endsWith(suffix) && hostname.length > suffix.length
+  }
+  return hostname === entry
+}
+
+function getInputImageUrl(input: Record<string, unknown>): string | null {
+  const url = (input as { imageUrl?: string }).imageUrl
+  if (typeof url !== 'string' || !url) return null
+  try {
+    const parsed = new URL(url)
+    if (!OCR_ALLOWED_PROTOCOLS.includes(parsed.protocol)) return null
+    if (!OCR_ALLOWED_DOMAINS.some((d) => matchOcrDomain(parsed.hostname, d))) return null
+    return url
+  } catch {
+    return null
+  }
+}
+
+/** OCR 复制按钮状态：复制后切换文案 1.5s 后恢复 */
+const copiedOcr = ref(false)
+let copyOcrTimer: ReturnType<typeof setTimeout> | null = null
+
+async function copyOcrText(text: string) {
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    copiedOcr.value = true
+    if (copyOcrTimer) clearTimeout(copyOcrTimer)
+    copyOcrTimer = setTimeout(() => {
+      copiedOcr.value = false
+    }, 1500)
+  } catch {
+    // 剪贴板 API 不可用时静默失败（与项目其他复制按钮行为一致）
+  }
+}
+
+onUnmounted(() => {
+  if (copyOcrTimer) clearTimeout(copyOcrTimer)
+})
 </script>
 
 <template>
@@ -342,6 +410,149 @@ function getInputQuery(input: Record<string, unknown>): string {
       <!-- 错误状态 -->
       <div v-else class="px-4 py-3 text-xs sm:text-sm text-semi-danger bg-semi-danger-light">
         {{ (invocation.output as SearchResult).error }}
+      </div>
+    </div>
+  </div>
+
+  <!-- OCR 工具：提取图片文字 -->
+  <div v-else-if="invocation.toolName === 'extractTextFromImage'">
+    <!-- 加载中状态 -->
+    <div
+      v-if="isCalling(invocation.state)"
+      class="flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-semi-primary-light/60 border border-semi-primary/30 rounded-xl text-sm text-semi-primary-active"
+    >
+      <span class="relative flex h-4 w-4">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-semi-primary opacity-60"
+        ></span>
+        <span class="relative inline-flex rounded-full h-4 w-4 bg-semi-primary"></span>
+      </span>
+      <span class="text-xs sm:text-sm">正在识别图片中的文字...</span>
+    </div>
+
+    <!-- 结果展示 -->
+    <div
+      v-else-if="invocation.state === 'output-available' && invocation.output"
+      class="bg-semi-bg-0 border border-semi-border rounded-xl overflow-hidden shadow-semi-card"
+    >
+      <template v-if="!(invocation.output as OcrResult).error">
+        <!-- 头部：OCR 标签 + 复制按钮 -->
+        <div
+          class="px-4 py-2.5 sm:px-5 sm:py-3 bg-gradient-to-r from-semi-primary-light to-semi-primary-light border-b border-semi-divider"
+        >
+          <div class="flex items-center gap-2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-4 h-4 sm:w-5 sm:h-5 text-semi-primary"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="9" y1="13" x2="15" y2="13" />
+              <line x1="9" y1="17" x2="13" y2="17" />
+            </svg>
+            <span class="font-medium text-sm sm:text-base text-semi-text-0">OCR 识别完成</span>
+            <button
+              type="button"
+              class="ml-auto flex items-center gap-1 px-2 py-1 rounded-md hover:bg-semi-bg-1 active:scale-95 transition-all duration-semi-fast text-xs text-semi-text-3 hover:text-semi-text-1"
+              @click="
+                copyOcrText((invocation.output as OcrResult).text || (invocation.output as OcrResult).error || '')
+              "
+            >
+              <svg
+                class="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              <span>{{ copiedOcr ? '已复制' : '复制' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 内容区：图片缩略图 + 文字预览 -->
+        <div class="px-4 py-3 sm:px-5 sm:py-3.5 flex gap-3">
+          <!-- 图片缩略图（仅在 URL 通过白名单时渲染） -->
+          <img
+            v-if="getInputImageUrl(invocation.input)"
+            :src="getInputImageUrl(invocation.input)!"
+            alt="OCR 输入图片"
+            class="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-md border border-semi-border flex-shrink-0"
+            loading="lazy"
+            @error="($event.target as HTMLImageElement).style.display = 'none'"
+          />
+          <!-- 占位图标：URL 校验失败或图片加载失败时显示 -->
+          <div
+            v-else
+            class="w-12 h-12 sm:w-14 sm:h-14 rounded-md border border-semi-border bg-semi-bg-1 flex items-center justify-center flex-shrink-0 text-semi-text-3"
+          >
+            <svg
+              class="w-6 h-6"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="9" cy="9" r="2" />
+              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+            </svg>
+          </div>
+
+          <!-- 文字预览：前 200 字符 -->
+          <div class="flex-1 min-w-0">
+            <p
+              v-if="(invocation.output as OcrResult).text"
+              class="text-xs sm:text-sm text-semi-text-1 line-clamp-4 leading-relaxed whitespace-pre-wrap break-all"
+            >
+              {{ (invocation.output as OcrResult).text!.slice(0, 200) }}<span
+                v-if="(invocation.output as OcrResult).text!.length > 200"
+                class="text-semi-text-3"
+                >...</span
+              >
+            </p>
+            <p v-else class="text-xs sm:text-sm text-semi-text-3 italic">未识别到文字</p>
+          </div>
+        </div>
+      </template>
+
+      <!-- 错误状态 -->
+      <div v-else class="px-4 py-3 bg-semi-danger-light">
+        <div class="flex items-center gap-2 mb-1">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="w-4 h-4 text-semi-danger shrink-0"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span class="text-xs sm:text-sm text-semi-danger font-medium">
+            {{ (invocation.output as OcrResult).error }}
+          </span>
+        </div>
+        <p v-if="(invocation.output as OcrResult).detail" class="text-semi-micro text-semi-text-3 ml-6">
+          {{ (invocation.output as OcrResult).detail }}
+        </p>
       </div>
     </div>
   </div>

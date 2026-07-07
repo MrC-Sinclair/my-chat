@@ -74,7 +74,10 @@
 
 **选择**：工具的 `inputSchema` 只接受 `imageUrl: string`（公网 URL）。图片先上传 ImgBB 获取公网 URL，然后根据模型能力分流：
 
-- **视觉模型（caps.vision=true，如 `Qwen/Qwen3.5-4B`）**：URL 作为多模态 content parts（`{ type: 'image', image: new URL(url) }`）传给 LLM，LLM 既直接看到图片内容（视觉理解），又可把 URL 传给 OCR 工具进行精确文字提取。
+- **视觉模型（caps.vision=true，如 `Qwen/Qwen3.5-4B`）**：URL 作为多模态 content parts 传给 LLM。AI SDK v5 中图片 part 的 `image` 字段支持 URL 字符串或 base64 字符串（`{ type: 'image', image: url, mimeType }` 或 `{ type: 'image', image: new URL(url) }`），因此：
+  - 公网 URL：直接用 URL 字符串
+  - ImgBB 降级 dataURL：通过 `parseBase64Meta` 提取 base64 字符串和 mimeType 后传入 `image` 字段（`{ type: 'image', image: base64String, mimeType }`）
+  - LLM 既直接看到图片内容（视觉理解），又可把 URL 传给 OCR 工具进行精确文字提取
 - **非视觉模型（caps.vision=false，如 `Qwen/Qwen3-8B`）**：不能传多模态图片 parts（会报错），改为将图片 URL 以文本引用形式注入最后一条用户消息（如 `\n\n[附图片1: https://...]`），LLM 看到 URL 文本后可以在需要时调用 OCR 工具提取文字。
 
 **关键发现**：[chat.post.ts#L198-L216](file:///d:/code/codeWork/my-chat/server/api/chat.post.ts#L198-L216) **当前代码完全没区分视觉/非视觉模型**——line 204-214 给所有模型都 push `{type:'image'}` parts。需要新增 `if (caps.vision)` 守卫。
@@ -128,7 +131,7 @@ ChatInput.vue      chat.post.ts         LLM          ocrDocumentTool
      │                  │ 上传 ImgBB     │              │
      │                  │ → URL          │              │
      │                  │ 注入文本引用   │              │
-     │                  │ "[图片1:URL]"  │              │
+     │                  │ "[附图片1: URL]" │              │
      │                  │ ─────────────▶ │ 知道有图片   │
      │                  │                │ (但看不到内容)│
      │                  │                │ 调 OCR 工具  │
@@ -232,11 +235,17 @@ ChatInput.vue      chat.post.ts         LLM          ocrDocumentTool
 - "印章"、"签名"、"手写"
 - 图片是文档、扫描件、发票、合同、表单等
 
-重要提示：当用户消息中包含 [附图片N: URL] 格式的文本时，表示用户上传了图片（你无法直接看到图片内容），你应该使用 extractTextFromImage 工具提取图片中的文字。先调用工具获取文字，再基于文字内容回答用户的问题。
+重要提示：
+- 当用户上传图片时，会以两种形式之一出现在对话中：
+  1. 多模态消息 parts（视觉模型可见）
+  2. `[附图片N: URL]` 格式的文本引用（非视觉模型可见）
+- 无论哪种形式，只要用户上传了图片，都表示存在待识别的图片。
+- 对于非视觉模型：你只能通过 `[附图片N: URL]` 文本引用知道用户上传了图片。当消息中包含 `[附图片N: URL]` 时，你应使用 extractTextFromImage 工具提取图片中的文字，先调用工具获取文字，再基于文字内容回答用户的问题。
+- 对于视觉模型：你看到的是多模态消息 parts，同样可以调用 extractTextFromImage 工具获取更精确的文字内容（尤其是表格、公式、印章、手写等需要高精度文字提取的场景）。
 
 不要在以下场景调用此工具：
 - 通用图像理解（"图中是什么"、"描述图片"）
-- 用户未上传图片（消息中不含 [附图片N: URL] 文本引用）
+- 用户未上传图片（既无多模态 parts，也无 [附图片N: URL] 文本引用）
 - 图片是普通照片、人物、风景等
 - 你已经成功获取了图片文字，不要重复调用同一图片
 ```
@@ -268,7 +277,13 @@ const hasActiveTools = caps.toolCalling && Object.keys(toolsConfig).length > 0
 const stopWhen = stepCountIs(hasActiveTools ? 5 : 1)
 ```
 
-**同时调整**：server 端的 webSearch prompt 注入条件从 `!caps.vision` 改为 `caps.toolCalling`（视觉模型启用工具后也应允许 web 搜索提示词注入到 system prompt，**前端按钮 v-if 保持 `!caps.vision` 不变**——产品决策：视觉模型用户主要用视觉能力，联网按钮不显示）。这两个条件**作用位置不同**，不要混淆。
+**同时调整**：server 端的 webSearch prompt 注入条件从 `!caps.vision` 改为 `caps.toolCalling`（视觉模型启用工具后也应允许 web 搜索提示词注入到 system prompt，**前端按钮 v-if 保持 `!caps.vision` 不变**——这是刻意的产品决策：视觉模型用户主要用视觉能力，联网按钮不显示；但后端能力开放，视觉模型在后台仍可调用 webSearch 工具）。
+
+**产品决策说明（Qwen3.5-4B 视觉模型的按钮策略）**：
+- **OCR 按钮**：显示（`v-if="currentCapabilities.toolCalling"`），因为 Qwen3.5-4B 既支持工具调用又具备视觉能力，用户可能需要高精度 OCR（表格/印章/手写）。
+- **联网按钮**：隐藏（`v-if="!currentCapabilities.vision"`），视觉模型对话以图像理解为主，联网入口保持精简。
+- **后端能力**：两者都注册为工具并注入 prompt，只要用户打开对应开关（OCR 显式开启），视觉模型可以在后台调用 webSearch/OCR。
+- 这种「后端能力开放、前端入口精简」的不对称是**有意为之**，避免实现者误以为是 bug。
 
 **理由**：
 - 工具调用（无论 web 搜索还是 OCR）本质需要多步：LLM 调用→工具执行→LLM 总结结果
@@ -483,6 +498,10 @@ enable_ocr?: boolean  // 是否开启 OCR 工具，默认 false
 - PaddleOCR API 调用失败：返回 `{ error: 'OCR 服务调用失败', detail, imageUrl }`
 - PaddleOCR 返回 raw token（空 prompt 触发）：工具内部已固定 prompt，不应出现；若出现则返回 `{ error: 'OCR 输出异常', rawOutput }`
 
+### 已知限制
+
+- **单条消息长度限制**：[chat.post.ts#L49](file:///d:/code/codeWork/my-chat/server/api/chat.post.ts#L49) 中 `MAX_MESSAGE_LENGTH = 1000` 是现有校验。OCR 输出可能很长（整页文档、大表格），当用户要求"把这张图所有文字给我"时，LLM 总结后的回答可能超过 1000 字符。该限制会触发 `createError({ statusCode: 400, message: '消息过长' })`。本次 OCR 功能不修改该限制，但实现后需观察：若 OCR 场景频繁触发长度限制，应单独评估是否对 AI 回复放宽（用户消息仍保持 1000 限制）。
+
 ## Migration Plan
 
 1. 新建 `server/tools/ocr-document.ts`：定义 `ocrDocumentTool`
@@ -495,9 +514,10 @@ enable_ocr?: boolean  // 是否开启 OCR 工具，默认 false
 
 **回滚策略**：所有改动都是增量式（新增工具文件、新增 toggle 按钮、新增 prompt 追加分支），不修改现有行为。回滚只需 revert commit，无数据库迁移、无配置文件格式变更。
 
-## Open Questions
+## Future Considerations
 
 - `[待观察]` LLM 在实际使用中是否能准确判断何时调用 OCR 工具？需在真实对话中观察，必要时调整 prompt 规则。
 - `[待观察]` LLM 是否会对多图分别调用 OCR 工具？首期不限制，观察实际行为。
 - `[后续增强]` 是否需要为 OCR 工具调用结果显示特殊样式（如「OCR 结果」卡片）？首期直接作为 LLM 回复的一部分渲染。
 - `[后续增强]` 是否需要让用户在工具调用过程中看到「正在 OCR 提取...」状态？现有 ToolInvocation 组件已支持工具调用状态展示，可能无需额外改动。
+- `[后续增强]` 是否基于工具集合动态决定 `getVisibleToolInvocations` 过滤逻辑，而非为每个工具单独写 `if` 分支（当前 weather 工具始终显示，未来工具增多时建议重构为可见工具集合）。

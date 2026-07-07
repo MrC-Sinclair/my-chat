@@ -50,8 +50,10 @@ function mountChatInput(
     isLoading: false,
     enableThinking: false,
     enableWebSearch: false,
+    enableOcr: false,
     images: [],
     supportsVision: false,
+    supportsOcr: false,
     currentCapabilities: defaultCapabilities,
     modelOptions: defaultModelOptions,
     currentModel: 'Qwen/Qwen3-8B',
@@ -231,6 +233,103 @@ describe('ChatInput 组件', () => {
       const buttons = wrapper.findAll('button')
       const webSearchBtn = buttons.find((btn) => btn.text().includes('联网'))
       expect(webSearchBtn).toBeUndefined()
+    })
+  })
+
+  describe('OCR 开关', () => {
+    it('toolCalling=true 时 OCR 按钮应渲染', () => {
+      const wrapper = mountChatInput({
+        props: { supportsOcr: true, currentCapabilities: defaultCapabilities }
+      })
+      const buttons = wrapper.findAll('button')
+      const ocrBtn = buttons.find((btn) => btn.text().includes('OCR'))
+      expect(ocrBtn).toBeTruthy()
+    })
+
+    it('supportsOcr=false 时 OCR 按钮不渲染', () => {
+      const wrapper = mountChatInput({
+        props: { supportsOcr: false, currentCapabilities: visionCapabilities }
+      })
+      const buttons = wrapper.findAll('button')
+      const ocrBtn = buttons.find((btn) => btn.text().includes('OCR'))
+      expect(ocrBtn).toBeUndefined()
+    })
+
+    it('点击 OCR 按钮应触发 update:enableOcr 事件', async () => {
+      const wrapper = mountChatInput({
+        props: { supportsOcr: true, enableOcr: false }
+      })
+      const buttons = wrapper.findAll('button')
+      const ocrBtn = buttons.find((btn) => btn.text().includes('OCR'))
+      expect(ocrBtn).toBeTruthy()
+      await ocrBtn!.trigger('click')
+      const emitted = wrapper.emitted('update:enableOcr')
+      expect(emitted).toBeTruthy()
+      // 当前 enableOcr=false，点击后应 emit true
+      expect(emitted![0][0]).toBe(true)
+    })
+
+    it('OCR 开启时按钮应有高亮样式（bg-semi-primary-light）', () => {
+      const wrapper = mountChatInput({
+        props: { supportsOcr: true, enableOcr: true }
+      })
+      const buttons = wrapper.findAll('button')
+      const ocrBtn = buttons.find((btn) => btn.text().includes('OCR'))
+      expect(ocrBtn).toBeTruthy()
+      expect(ocrBtn!.classes()).toContain('bg-semi-primary-light')
+      expect(ocrBtn!.classes()).toContain('text-semi-primary')
+    })
+
+    it('OCR 关闭时按钮应为默认样式（bg-semi-fill-0）', () => {
+      const wrapper = mountChatInput({
+        props: { supportsOcr: true, enableOcr: false }
+      })
+      const buttons = wrapper.findAll('button')
+      const ocrBtn = buttons.find((btn) => btn.text().includes('OCR'))
+      expect(ocrBtn).toBeTruthy()
+      expect(ocrBtn!.classes()).toContain('bg-semi-fill-0')
+      expect(ocrBtn!.classes()).toContain('text-semi-text-2')
+    })
+  })
+
+  describe('图片上传与 OCR 联动', () => {
+    it('视觉模型图片上传按钮始终可用（不论 OCR 开关）', () => {
+      const wrapper = mountChatInput({
+        props: {
+          supportsVision: true,
+          supportsOcr: false,
+          enableOcr: false,
+          currentCapabilities: visionCapabilities
+        }
+      })
+      const fileInput = wrapper.find('input[type="file"]')
+      expect(fileInput.attributes('disabled')).toBeUndefined()
+    })
+
+    it('非视觉模型 + OCR 开启时图片上传按钮可用', () => {
+      const wrapper = mountChatInput({
+        props: {
+          supportsVision: false,
+          supportsOcr: true,
+          enableOcr: true,
+          currentCapabilities: defaultCapabilities
+        }
+      })
+      const fileInput = wrapper.find('input[type="file"]')
+      expect(fileInput.attributes('disabled')).toBeUndefined()
+    })
+
+    it('非视觉模型 + OCR 关闭时图片上传按钮禁用', () => {
+      const wrapper = mountChatInput({
+        props: {
+          supportsVision: false,
+          supportsOcr: true,
+          enableOcr: false,
+          currentCapabilities: defaultCapabilities
+        }
+      })
+      const fileInput = wrapper.find('input[type="file"]')
+      expect(fileInput.attributes('disabled')).toBeDefined()
     })
   })
 

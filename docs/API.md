@@ -66,6 +66,7 @@ AI 对话核心接口，使用 Vercel AI SDK 的 `streamText` 流式生成回复
 | `thinking_budget`   | `number`        | 否   | —                    | 思考预算（保留字段，当前未使用）                                                                      |
 | `images`            | `string[]`      | 否   | —                    | 图片数组，元素为 `data:image/...;base64,...` 或公网 URL                                               |
 | `enable_web_search` | `boolean`       | 否   | `true`               | 是否启用网页搜索工具                                                                                  |
+| `enable_ocr`        | `boolean`       | 否   | `false`              | 是否启用 OCR 工具（`extractTextFromImage`），仅 `toolCalling` 模型生效，默认关闭                      |
 
 **messages 元素结构**（AI SDK v5 UIMessage）
 
@@ -91,13 +92,15 @@ AI 对话核心接口，使用 Vercel AI SDK 的 `streamText` 流式生成回复
 
 不同模型的能力差异会影响工具调用行为：
 
-| 模型                             | vision | reasoning | toolCalling | maxSteps | 天气 | 网页搜索 | 深度思考 |
-| -------------------------------- | ------ | --------- | ----------- | -------- | ---- | -------- | -------- |
-| Qwen/Qwen3-8B                    | —      | —         | ✓           | 5        | ✓    | ✓        | ✓        |
-| deepseek-ai/DeepSeek-R1-0528-... | —      | ✓         | —           | 1        | ✗    | ✗        | —        |
-| THUDM/GLM-4.1V-9B-Thinking       | ✓      | ✓         | —           | 1        | ✗    | ✗        | —        |
+| 模型                             | vision | reasoning | toolCalling | maxSteps | 天气 | 网页搜索 | OCR | 深度思考 |
+| -------------------------------- | ------ | --------- | ----------- | -------- | ---- | -------- | --- | -------- |
+| Qwen/Qwen3-8B                    | —      | —         | ✓           | 5        | ✓    | ✓        | ✓   | ✓        |
+| Qwen/Qwen3.5-4B                  | ✓      | —         | ✓           | 5        | ✓    | ✓        | ✓   | ✓        |
+| deepseek-ai/DeepSeek-R1-0528-... | —      | ✓         | —           | 1        | ✗    | ✗        | ✗   | —        |
+| THUDM/GLM-Z1-9B-0414             | —      | ✓         | ✓           | 5        | ✓    | ✓        | ✓   | —        |
+| THUDM/GLM-4.1V-9B-Thinking       | ✓      | ✓         | —           | 1        | ✗    | ✗        | ✗   | —        |
 
-> `maxSteps` 为 1 时 LLM 只执行一轮生成，无法调用工具。天气和网页搜索依赖 `toolCalling`，因此仅 Qwen3-8B 可用。网页搜索额外要求 `!vision`，视觉模型无法使用。
+> `maxSteps` 由 `hasActiveTools = caps.toolCalling && Object.keys(toolsConfig).length > 0` 决定：有可用工具时为 5（允许多步工具调用），无工具时为 1（仅一轮生成）。天气、网页搜索、OCR 工具均依赖 `toolCalling`；网页搜索额外要求 `!vision`（产品决策，视觉模型不暴露前端按钮）。OCR 工具需通过 `enable_ocr: true` 显式开启。
 
 **图片处理流程**
 
@@ -434,6 +437,55 @@ interface ModelConfig {
 
 **数据源**：[Tavily API](https://tavily.com/)，需在 `.env` 中配置 `TAVILY_API_KEY`
 
+### extractTextFromImage（OCR 工具）
+
+文档识别工具，调用 `PaddlePaddle/PaddleOCR-VL-1.5` 模型提取图片中的文字并以 Markdown 格式返回。仅对支持 `toolCalling` 的模型注册，可通过 `enable_ocr: false` 关闭（默认关闭）。系统提示词会引导 LLM 在用户上传图片且明确要求「提取文字 / OCR / 识别表格 / 文档结构化 / 印章 / 手写 / 扫描件 / 发票 / 合同 / 表单」等场景时调用，通用图像理解（"图中是什么"、"描述图片"）场景不调用。
+
+**输入**
+
+```ts
+{
+  imageUrl: string  // 图片的公开 URL（仅支持 https + 白名单域名）
+}
+```
+
+**URL 白名单**（SSRF 防护）
+
+- 协议：仅 `https:`（拒绝 `http:` / `file:` 等）
+- 域名：`i.ibb.co`（项目主用）、`i.imgur.com`、`cdn.discordapp.com`、`pbs.twimg.com`、`*.alicdn.com`、`*.qpic.cn`、`*.weixin.qq.com`
+- 内网 IP 黑名单：DNS 解析后检查 RFC 1918（10/8、172.16/12、192.168/16）、link-local（169.254/16，含云元数据 169.254.169.254）、loopback（127/8）、IPv6 ULA
+- 重定向策略：`redirect: 'manual'`，拒绝任何 3xx 响应
+- 大小限制：10MB
+
+**输出**（成功）
+
+```ts
+{
+  text: string,       // Markdown 格式的识别结果
+  imageUrl: string,   // 原始图片 URL
+  model: 'PaddlePaddle/PaddleOCR-VL-1.5'
+}
+```
+
+**输出**（失败，不抛异常，返回错误对象由 LLM 决定后续动作）
+
+```ts
+{
+  error: string,      // 错误概要：'URL 安全检查失败' | '图片下载失败' | 'OCR 服务调用失败' | 'OCR 处理失败'
+  detail: string,     // 错误详情
+  imageUrl: string
+}
+```
+
+**调用约束**
+
+- PaddleOCR-VL-1.5 不支持 `enable_thinking` 参数，请求体中**不传**该字段
+- 单次仅处理 1 张图片，LLM 对多图场景需分别调用
+- Authorization 复用 `OPENAI_API_KEY`，baseURL 复用 `OPENAI_BASE_URL`
+- 请求超时 30 秒（`AbortController`）
+
+**实现**：[server/tools/ocr-document.ts](file:///d:/code/codeWork/my-chat/server/tools/ocr-document.ts)
+
 ---
 
 ## 环境变量
@@ -462,6 +514,7 @@ interface ModelConfig {
 | [server/middleware/security.ts](file:///d:/code/my-chat/server/middleware/security.ts)           | CSP/限流/CORS/UUID 校验                          |
 | [server/config/models.ts](file:///d:/code/my-chat/server/config/models.ts)                       | 模型白名单与能力定义                             |
 | [server/tools/web-search.ts](file:///d:/code/my-chat/server/tools/web-search.ts)                 | Tavily 网页搜索工具                              |
+| [server/tools/ocr-document.ts](file:///d:/code/my-chat/server/tools/ocr-document.ts)             | PaddleOCR-VL-1.5 OCR 文档识别工具                |
 | [server/tools/weather.ts](file:///d:/code/my-chat/server/tools/weather.ts)                       | Open-Meteo 天气查询核心函数                      |
 | [server/mcp/weather-server.ts](file:///d:/code/my-chat/server/mcp/weather-server.ts)             | MCP Weather Server（stdio）                      |
 | [server/utils/imgbb.ts](file:///d:/code/my-chat/server/utils/imgbb.ts)                           | ImgBB 图床上传                                   |

@@ -19,6 +19,13 @@ const FALLBACK_MODELS: ModelConfig[] = [
     label: 'GLM-Z1-9B-0414',
     value: 'THUDM/GLM-Z1-9B-0414',
     capabilities: { vision: false, deepThinking: true, toggleableThinking: false, toolCalling: false }
+  },
+  // Qwen3.5-4B：与 server/config/models.ts 完全一致，确保 SSR 时 capabilities 判断准确
+  // 缺失此项时 SSR 阶段会走默认 capabilities（碰巧正确），属脆弱的隐式行为
+  {
+    label: 'Qwen3.5-4B',
+    value: 'Qwen/Qwen3.5-4B',
+    capabilities: { vision: true, deepThinking: true, toggleableThinking: true, toolCalling: true }
   }
 ]
 
@@ -28,6 +35,8 @@ export function useChatConfig() {
   const enableThinking = ref(true)
 
   const enableWebSearch = ref(true)
+
+  const enableOcr = ref(false)
 
   const currentModel = ref(config.public.defaultModel)
 
@@ -44,9 +53,17 @@ export function useChatConfig() {
 
   const supportsVision = computed(() => currentCapabilities.value.vision)
 
-  // 切换模型时重置思考开关：有思考能力的模型默认开启（显示思考过程），无思考能力的模型关闭
+  // OCR 工具是否可用：仅 toolCalling=true 的模型支持（Qwen3-8B / Qwen3.5-4B 显示，GLM-Z1/R1 隐藏）
+  const currentSupportsOcr = computed(() => currentCapabilities.value.toolCalling)
+
+  // 切换模型时重置开关：
+  // - 思考开关：有思考能力的模型默认开启，无思考能力的模型关闭
+  // - OCR 开关：切换到 toolCalling=false 的模型时自动关闭（避免 toggle 开启但工具不可用的不一致状态）
   watch(currentModel, () => {
     enableThinking.value = currentCapabilities.value.deepThinking
+    if (!currentCapabilities.value.toolCalling) {
+      enableOcr.value = false
+    }
   })
 
   async function loadModels() {
@@ -67,11 +84,13 @@ export function useChatConfig() {
   return {
     enableThinking,
     enableWebSearch,
+    enableOcr,
     currentModel,
     showSidebar,
     modelOptions,
     thinkingBudget,
     supportsVision,
+    currentSupportsOcr,
     currentCapabilities,
     loadModels
   }

@@ -12,8 +12,10 @@ const props = defineProps<{
   isLoading: boolean
   enableThinking: boolean
   enableWebSearch: boolean
+  enableOcr: boolean
   images: UploadedImage[]
   supportsVision: boolean
+  supportsOcr: boolean
   currentCapabilities: ModelCapabilities
   modelOptions: ModelConfig[]
   currentModel: string
@@ -25,6 +27,7 @@ const emit = defineEmits<{
   stop: []
   'update:enableThinking': [value: boolean]
   'update:enableWebSearch': [value: boolean]
+  'update:enableOcr': [value: boolean]
   'update:images': [images: UploadedImage[]]
   speechError: [message: string]
   selectModel: [value: string]
@@ -49,6 +52,9 @@ const isNearLimit = computed(() => inputLength.value > MAX_INPUT_LENGTH * 0.8 &&
 const isForcedThinking = computed(
   () => props.currentCapabilities.deepThinking && !props.currentCapabilities.toggleableThinking
 )
+
+// 图片上传按钮联动：视觉模型始终允许上传，非视觉模型仅在 OCR 开启时允许
+const canUploadImage = computed(() => props.supportsVision || props.enableOcr)
 
 const isComposing = ref(false)
 
@@ -215,12 +221,12 @@ function toggleSpeechRecognition() {
         <label
           class="shrink-0 flex items-center justify-center rounded-lg active:scale-95 transition-all"
           :class="[
-            supportsVision
+            canUploadImage
               ? 'text-semi-text-3 hover:text-semi-text-2 cursor-pointer'
               : 'text-semi-border cursor-not-allowed',
-            images.length > 0 && supportsVision ? 'text-semi-primary' : ''
+            images.length > 0 && canUploadImage ? 'text-semi-primary' : ''
           ]"
-          v-tooltip="supportsVision ? '添加图片' : '当前模型不支持图片'"
+          v-tooltip="canUploadImage ? '添加图片' : '当前模型不支持图片，请先开启 OCR 工具'"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -241,7 +247,7 @@ function toggleSpeechRecognition() {
             accept="image/*"
             multiple
             class="hidden"
-            :disabled="!supportsVision || images.length >= MAX_IMAGES"
+            :disabled="!canUploadImage || images.length >= MAX_IMAGES"
             @change="handleImageUpload"
           />
         </label>
@@ -440,6 +446,36 @@ function toggleSpeechRecognition() {
             />
           </svg>
           联网
+        </button>
+
+        <button
+          v-if="supportsOcr"
+          type="button"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-semi-normal min-h-[32px]"
+          :class="
+            enableOcr
+              ? 'bg-semi-primary-light text-semi-primary hover:bg-semi-primary-light/80 active:scale-95'
+              : 'bg-semi-fill-0 text-semi-text-2 hover:text-semi-text-1 hover:bg-semi-fill-1 active:scale-95'
+          "
+          v-tooltip="enableOcr ? '智能 OCR 已开启' : '智能 OCR 已关闭'"
+          @click="emit('update:enableOcr', !enableOcr)"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="w-3.5 h-3.5 shrink-0"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <path d="m21 21-4.3-4.3" />
+            <circle cx="11" cy="14" r="3" />
+          </svg>
+          OCR
         </button>
 
         <span

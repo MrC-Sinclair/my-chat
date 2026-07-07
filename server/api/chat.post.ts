@@ -5,6 +5,7 @@ import { db } from '~/server/db'
 import { messages as messagesTable, sessions } from '~/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { webSearchTool } from '~/server/tools/web-search'
+import { ocrDocumentTool } from '~/server/tools/ocr-document'
 import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/models'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
@@ -51,6 +52,36 @@ const MAX_CONTEXT_MESSAGES = 50
 const MAX_IMAGE_SIZE = 4 * 1024 * 1024
 const MAX_IMAGES_PER_MESSAGE = 5
 const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads')
+
+/**
+ * OCR 工具使用规则：追加到 system prompt 强化 LLM 调用判断
+ * - 正向场景：提取文字/OCR/识别/表格/印章/手写/扫描件等
+ * - 负向场景：通用图像理解/图中是什么/描述图片/无图片/普通照片
+ * - 关键指令：非视觉模型看到 [附图片N: URL] 时必须使用工具提取文字
+ * - 防死循环：禁止重复调用同一图片
+ */
+const OCR_TOOL_RULES = `
+【OCR 工具使用规则】
+当用户上传图片且问题涉及以下场景时，调用 extractTextFromImage 工具提取文字：
+- "提取文字"、"OCR"、"识别"、"转文字"
+- "表格转 Markdown"、"文档结构化"
+- "印章"、"签名"、"手写"
+- 图片是文档、扫描件、发票、合同、表单等
+
+重要提示：
+- 用户上传图片会以两种形式之一出现在对话中：
+  1. 多模态消息 parts（视觉模型可见，可直接看到图片内容）
+  2. 「[附图片N: URL]」格式的文本引用（非视觉模型可见，看不到图片内容）
+- 无论哪种形式，只要用户上传了图片，都表示存在待识别的图片。
+- 对于非视觉模型：你只能通过「[附图片N: URL]」文本引用知道用户上传了图片。当消息中包含「[附图片N: URL]」时，你应使用 extractTextFromImage 工具提取图片中的文字，先调用工具获取文字，再基于文字内容回答用户的问题。
+- 对于视觉模型：你看到的是多模态消息 parts，同样可以调用 extractTextFromImage 工具获取更精确的文字内容（尤其是表格、公式、印章、手写等需要高精度文字提取的场景）。
+
+不要在以下场景调用此工具：
+- 通用图像理解（"图中是什么"、"描述图片"）
+- 用户未上传图片（既无多模态 parts，也无 [附图片N: URL] 文本引用）
+- 图片是普通照片、人物、风景等
+- 你已经成功获取了图片文字，不要重复调用同一图片
+`.trim()
 
 /**
  * 从消息中提取纯文本内容。
@@ -106,8 +137,12 @@ export default defineEventHandler(async (event) => {
     thinking_budget: _thinking_budget,
     model,
     images,
-    enable_web_search
+    enable_web_search,
+    enable_ocr
   } = body ?? {}
+
+  // 非严格 true 一律按 false 处理（默认关闭，与 enable_web_search 一致）
+  const enableOcr = enable_ocr === true
 
   if (!messages || !Array.isArray(messages)) {
     throw createError({
@@ -196,23 +231,43 @@ export default defineEventHandler(async (event) => {
       if (msg.role === 'assistant') return { role: 'assistant' as const, content: textContent }
 
       if (contextMessages.indexOf(msg) === lastUserIdx && hasImages) {
-        const parts: Array<
-          { type: 'text'; text: string } | { type: 'image'; image: string | URL; mimeType?: string }
-        > = [{ type: 'text', text: textContent }]
+        // 视觉/非视觉模型分流：
+        // - 视觉模型（caps.vision=true）：图片作为多模态 parts 传入，LLM 直接看到图片
+        // - 非视觉模型（caps.vision=false）：不能传多模态 parts（API 报错），改为将图片 URL
+        //   以文本引用形式注入最后一条用户消息（如 [附图片1: URL]），LLM 通过 URL 调 OCR 工具
+        if (caps.vision) {
+          const parts: Array<
+            | { type: 'text'; text: string }
+            | { type: 'image'; image: string | URL; mimeType?: string }
+          > = [{ type: 'text', text: textContent }]
 
-        for (const url of imageUrls) {
-          if (url.startsWith('data:')) {
-            const meta = parseBase64Meta(url)
-            parts.push({
-              type: 'image',
-              image: meta ? meta.base64 : url,
-              mimeType: meta?.mimeType
-            })
-          } else {
-            parts.push({ type: 'image', image: new URL(url) })
+          for (const url of imageUrls) {
+            if (url.startsWith('data:')) {
+              // ImgBB 失败降级：复用 parseBase64Meta 提取 base64 字符串（不是 data: URL 字符串）
+              const meta = parseBase64Meta(url)
+              parts.push({
+                type: 'image',
+                image: meta ? meta.base64 : url,
+                mimeType: meta?.mimeType
+              })
+            } else {
+              parts.push({ type: 'image', image: new URL(url) })
+            }
           }
+          return { role: 'user' as const, content: parts }
+        } else {
+          // 非视觉模型：过滤掉 data: 降级值（OCR 工具无法 fetch data URL）
+          const publicUrls = imageUrls.filter((u) => !u.startsWith('data:'))
+          const dataUrls = imageUrls.filter((u) => u.startsWith('data:'))
+          let injectedText = textContent
+          publicUrls.forEach((url, i) => {
+            injectedText += `\n\n[附图片${i + 1}: ${url}]`
+          })
+          if (dataUrls.length > 0) {
+            injectedText += `\n\n[提示：${dataUrls.length} 张图片上传失败，OCR 不可用，请重新上传]`
+          }
+          return { role: 'user' as const, content: injectedText }
         }
-        return { role: 'user' as const, content: parts }
       }
 
       return { role: 'user' as const, content: textContent }
@@ -228,13 +283,13 @@ export default defineEventHandler(async (event) => {
     ? { enableThinking: thinkingEnabled }
     : undefined
 
-  const maxSteps = caps.vision || caps.deepThinking ? 1 : 5
-  const stopWhen = stepCountIs(maxSteps)
   const webSearchEnabled = enable_web_search !== false
 
   let finalSystemPrompt = DEFAULT_SYSTEM_PROMPT
 
-  if (webSearchEnabled && !caps.vision && caps.toolCalling) {
+  // webSearch prompt 注入条件：视觉模型启用工具后也允许 web 搜索提示词注入
+  // 前端按钮 v-if 保持 !caps.vision 不变（产品决策：视觉模型对话以图像理解为主，联网入口保持精简）
+  if (webSearchEnabled && caps.toolCalling) {
     const lastUserMsg =
       contextMessages
         .filter((m: { role: string }) => m.role === 'user')
@@ -245,6 +300,11 @@ export default defineEventHandler(async (event) => {
       finalSystemPrompt +=
         '\n\n【系统提示】用户的问题涉及时效性信息，你【必须】调用网页搜索工具（webSearch）来获取最新信息，禁止凭记忆回答。'
     }
+  }
+
+  // OCR 工具规则追加：仅当 OCR toggle 开启且模型支持工具调用时
+  if (enableOcr && caps.toolCalling) {
+    finalSystemPrompt += `\n\n${OCR_TOOL_RULES}`
   }
 
   try {
@@ -274,8 +334,20 @@ export default defineEventHandler(async (event) => {
 
     const toolsConfig: Record<string, any> = {
       ...mcpTools,
-      ...(webSearchEnabled && { webSearch: webSearchTool })
+      // 显式 caps.toolCalling 守卫：防御性深度措施（tools 参数仅在 toolCalling=true 时传给 streamText，
+      // 不加守卫工具也不会执行，但显式守卫更清晰）
+      ...(webSearchEnabled && caps.toolCalling && { webSearch: webSearchTool }),
+      // OCR 工具：仅当 enableOcr=true 且 caps.toolCalling=true 时注册
+      // 防御性兜底：前端应已隐藏 OCR 按钮（supportsOcr = currentCapabilities.toolCalling），
+      // 此处再次校验避免 enableOcr=true 但 caps.toolCalling=false 的不一致状态
+      ...(enableOcr && caps.toolCalling && { extractTextFromImage: ocrDocumentTool })
     }
+
+    // 重构 maxSteps 逻辑：基于「是否有工具实际注册」而非 caps.vision || caps.deepThinking
+    // 原逻辑导致 Qwen3-8B/Qwen3.5-4B 启用工具时 maxSteps=1，工具调用失效（LLM 调工具后无法基于结果生成回答）
+    // 修复后：有工具时 maxSteps=5 允许多步循环，无工具时 maxSteps=1（纯对话/纯视觉/纯推理）
+    const hasActiveTools = caps.toolCalling && Object.keys(toolsConfig).length > 0
+    const stopWhen = stepCountIs(hasActiveTools ? 5 : 1)
 
     const result = streamText({
       model: llmProvider(useModel, thinkingOptions),

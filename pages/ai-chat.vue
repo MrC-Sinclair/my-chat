@@ -32,11 +32,13 @@ const LazyThinkingProcess = defineAsyncComponent({
 const {
   enableThinking,
   enableWebSearch,
+  enableOcr,
   currentModel,
   showSidebar,
   modelOptions,
   thinkingBudget,
   supportsVision,
+  currentSupportsOcr,
   currentCapabilities
 } = useChatConfig()
 const toast = useToast()
@@ -57,6 +59,7 @@ const chat = new Chat({
       thinking_budget: enableThinking.value ? thinkingBudget : undefined,
       model: currentModel.value,
       enable_web_search: enableWebSearch.value,
+      enable_ocr: enableOcr.value,
       images:
         uploadedImages.value.length > 0 ? uploadedImages.value.map((img) => img.dataUrl) : undefined
     })
@@ -329,13 +332,17 @@ function getToolInvocations(msg: UIMessage): any[] {
 /**
  * 根据前端开关状态过滤可见的工具调用
  * - enableWebSearch 关闭时，隐藏 webSearch 工具
- * - 其他工具（如 weather）始终显示
+ * - enableOcr 关闭时，隐藏 extractTextFromImage 工具
+ * - weather 等其他工具始终显示（无前端开关）
  */
 function getVisibleToolInvocations(msg: UIMessage): any[] {
   const all = getToolInvocations(msg)
-  if (enableWebSearch.value) return all
   // 归一化后 toolName 一定存在
-  return all.filter((inv: any) => inv.toolName !== 'webSearch')
+  return all.filter((inv: any) => {
+    if (inv.toolName === 'webSearch' && !enableWebSearch.value) return false
+    if (inv.toolName === 'extractTextFromImage' && !enableOcr.value) return false
+    return true
+  })
 }
 
 /** 从消息对象中提取思考过程内容（v5 parts 格式） */
@@ -931,8 +938,10 @@ function onDocumentClick(e: Event) {
         :is-loading="isLoading"
         v-model:enable-thinking="enableThinking"
         v-model:enable-web-search="enableWebSearch"
+        v-model:enable-ocr="enableOcr"
         v-model:images="uploadedImages"
         :supports-vision="supportsVision"
+        :supports-ocr="currentSupportsOcr"
         :current-capabilities="currentCapabilities"
         :model-options="modelOptions"
         :current-model="currentModel"

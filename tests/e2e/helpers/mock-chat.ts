@@ -126,6 +126,132 @@ export function buildCodeBlockStream(): string {
   return buildTextStream(text, 5)
 }
 
+/**
+ * 模拟 OCR 工具调用的流式响应
+ *
+ * 事件序列：tool-input-start → tool-input-delta (imageUrl JSON) → tool-input-available
+ *          → tool-output-available (Markdown 文本) → text-delta (基于 OCR 结果的回答)
+ *
+ * 与 buildWeatherToolStream 结构一致，区别：
+ * - toolName 为 'extractTextFromImage'（静态工具，非 MCP dynamic-tool）
+ * - input 包含 imageUrl 字段
+ * - output 包含 text + imageUrl + model 字段
+ */
+export function buildOcrToolStream(options?: {
+  imageUrl?: string
+  ocrText?: string
+  answerText?: string
+}): string {
+  const imageUrl = options?.imageUrl || 'https://i.ibb.co/abc/test.png'
+  const ocrText = options?.ocrText || '## 提取结果\n\n这是图片中的文字内容'
+  const answerText = options?.answerText || '根据 OCR 识别结果，图片中的文字为：这是图片中的文字内容'
+
+  const chunks: string[] = []
+  chunks.push(sseChunk({ type: 'start' }))
+  chunks.push(sseChunk({ type: 'start-step' }))
+
+  const toolCallId = 'call-ocr-1'
+  chunks.push(sseChunk({ type: 'tool-input-start', toolCallId, toolName: 'extractTextFromImage' }))
+  // 模拟 input JSON 逐 chunk 传输
+  chunks.push(
+    sseChunk({ type: 'tool-input-delta', toolCallId, inputTextDelta: '{"imageUrl":"' })
+  )
+  chunks.push(
+    sseChunk({ type: 'tool-input-delta', toolCallId, inputTextDelta: `${imageUrl}"}` })
+  )
+  chunks.push(
+    sseChunk({
+      type: 'tool-input-available',
+      toolCallId,
+      toolName: 'extractTextFromImage',
+      input: { imageUrl }
+    })
+  )
+  chunks.push(
+    sseChunk({
+      type: 'tool-output-available',
+      toolCallId,
+      output: {
+        text: ocrText,
+        imageUrl,
+        model: 'PaddlePaddle/PaddleOCR-VL-1.5'
+      }
+    })
+  )
+
+  // 工具调用后的文本回复
+  const textId = 'txt-1'
+  chunks.push(sseChunk({ type: 'text-start', id: textId }))
+  for (let i = 0; i < answerText.length; i += 5) {
+    chunks.push(
+      sseChunk({ type: 'text-delta', id: textId, delta: answerText.slice(i, i + 5) })
+    )
+  }
+  chunks.push(sseChunk({ type: 'text-end', id: textId }))
+
+  chunks.push(sseChunk({ type: 'finish-step' }))
+  chunks.push(sseChunk({ type: 'finish', finishReason: 'stop' }))
+  chunks.push('data: [DONE]\n\n')
+  return chunks.join('')
+}
+
+/**
+ * 模拟 OCR 工具调用失败的流式响应（output 包含 error 字段）
+ */
+export function buildOcrToolErrorStream(options?: {
+  imageUrl?: string
+  error?: string
+  detail?: string
+}): string {
+  const imageUrl = options?.imageUrl || 'https://i.ibb.co/abc/test.png'
+  const error = options?.error || 'OCR 处理失败'
+  const detail = options?.detail || 'URL 安全检查失败: 协议 http: 不被允许'
+
+  const chunks: string[] = []
+  chunks.push(sseChunk({ type: 'start' }))
+  chunks.push(sseChunk({ type: 'start-step' }))
+
+  const toolCallId = 'call-ocr-err'
+  chunks.push(sseChunk({ type: 'tool-input-start', toolCallId, toolName: 'extractTextFromImage' }))
+  chunks.push(
+    sseChunk({ type: 'tool-input-delta', toolCallId, inputTextDelta: '{"imageUrl":"' })
+  )
+  chunks.push(
+    sseChunk({ type: 'tool-input-delta', toolCallId, inputTextDelta: `${imageUrl}"}` })
+  )
+  chunks.push(
+    sseChunk({
+      type: 'tool-input-available',
+      toolCallId,
+      toolName: 'extractTextFromImage',
+      input: { imageUrl }
+    })
+  )
+  chunks.push(
+    sseChunk({
+      type: 'tool-output-available',
+      toolCallId,
+      output: { error, detail, imageUrl }
+    })
+  )
+
+  // 工具失败后的文本回复（LLM 基于错误信息回复用户）
+  const textId = 'txt-1'
+  const answerText = '抱歉，OCR 识别失败，请检查图片链接是否有效后重试。'
+  chunks.push(sseChunk({ type: 'text-start', id: textId }))
+  for (let i = 0; i < answerText.length; i += 5) {
+    chunks.push(
+      sseChunk({ type: 'text-delta', id: textId, delta: answerText.slice(i, i + 5) })
+    )
+  }
+  chunks.push(sseChunk({ type: 'text-end', id: textId }))
+
+  chunks.push(sseChunk({ type: 'finish-step' }))
+  chunks.push(sseChunk({ type: 'finish', finishReason: 'stop' }))
+  chunks.push('data: [DONE]\n\n')
+  return chunks.join('')
+}
+
 // ==================== Mock API 函数 ====================
 
 /**

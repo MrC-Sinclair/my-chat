@@ -151,7 +151,7 @@
 
 - `body` SHALL 是函数式写法（`() => ({...})`），AI SDK v5 DefaultChatTransport 每次请求重新调用以获取最新值。**注意**：AGENTS.md 中"`body` 必须用 `computed()` 包裹"是 v4 时代的规则，当前代码已使用函数式 body（[ai-chat.vue#L54-L62](file:///d:/code/codeWork/my-chat/pages/ai-chat.vue#L54-L62)），不要错误地改为 `computed()`
 - `enable_ocr` 字段值 SHALL 来自 `enableOcr.value`
-- 当 `enableOcr.value === false` 时 SHALL 透传 `false`（不省略）
+- `enable_ocr` 字段类型为布尔值，前端保证其值始终为 `true` 或 `false`（参考 `enable_web_search` 的现有做法）
 
 #### Scenario: OCR toggle 开启时请求体包含 enable_ocr
 
@@ -261,6 +261,8 @@
 - **成功状态**（`state === 'output-available' && output`）：显示"OCR 识别完成"标签 + Markdown 结果预览（折叠/展开）+ 图片缩略图（input.imageUrl 渲染）
 - **错误状态**（`state === 'output-error' || (output as { error?: string }).error`）：显示错误信息（红色边框 + 错误图标 + 错误详情）
 
+**安全要求**：渲染 `input.imageUrl` 缩略图前 SHALL 校验 URL 协议为 `https:` 且域名在 `ALLOWED_DOMAINS` 白名单内（与 `ocrDocumentTool` 的 SSRF 防护一致）。校验不通过时 SHALL 显示占位图标而非 `<img>`，禁止将未经验证的外部 URL 直接绑定到 `:src`。
+
 #### Scenario: OCR 工具调用中显示加载状态
 
 - **WHEN** 工具 `invocation.toolName === 'extractTextFromImage'`
@@ -274,7 +276,7 @@
 - **AND** `invocation.state` 为 `output-available`
 - **AND** `invocation.output` 不包含 `error` 字段
 - **THEN** 组件 SHALL 显示"OCR 识别完成"标签
-- **AND** SHALL 显示 `invocation.input.imageUrl` 的图片缩略图（48x48，`object-fit: cover`，`rounded`）
+- **AND** SHALL 显示 `invocation.input.imageUrl` 的图片缩略图（48x48，`object-fit: cover`，`rounded`），但 SHALL 先校验 URL 为 `https:` 且域名在白名单内，校验失败则显示占位图标
 - **AND** SHALL 显示 `invocation.output.text` 的 Markdown 预览（前 200 字符 + "..."）
 
 #### Scenario: OCR 工具调用失败显示错误
@@ -293,8 +295,10 @@
 
 系统 SHALL 在 [ai-chat.vue](file:///d:/code/codeWork/my-chat/pages/ai-chat.vue) 中确保 `extractTextFromImage` 工具调用能被 `getVisibleToolInvocations` 正确返回并传递给 `ToolInvocation` 组件。
 
+- **关键假设（需 E2E 验证）**：AI SDK v5 中，静态工具（`tool()` 定义）的工具调用 part type 可能是 `tool-extractTextFromImage`（驼峰化），也可能是 `tool-invocation` / `tool-call` 等统一类型。当前 `getToolInvocations` 依赖 `p.type.startsWith('tool-')` 提取 toolName（[ai-chat.vue#L313-L327](file:///d:/code/codeWork/my-chat/pages/ai-chat.vue#L313-L327)），如果实际 type 不是 `tool-${toolName}` 格式，则需同步修改归一化逻辑。
 - 系统 SHALL 在 `getVisibleToolInvocations` 函数中新增 OCR 工具过滤：当 `enableOcr.value === false` 时，过滤掉 `toolName === 'extractTextFromImage'` 的工具调用（与 webSearch 过滤逻辑一致）
 - 当 `enableOcr.value === true` 时 SHALL 不过滤 OCR 工具调用
+- **weather 工具无需过滤**：`weather` 工具没有前端开关，始终展示（现有行为不变）
 
 #### Scenario: OCR 工具调用被前端正确展示
 

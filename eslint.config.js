@@ -11,7 +11,8 @@ export default [
       'node_modules/**',
       'dist/**',
       '.docs/**',
-      'playwright-report/**'
+      'playwright-report/**',
+      'scripts/**'
     ]
   },
   js.configs.recommended,
