@@ -189,24 +189,34 @@ onUnmounted(() => {
   if (stickToBottomTimer) clearTimeout(stickToBottomTimer)
 })
 
-watch(messagesContainer, (el) => {
-  if (ro) { ro.disconnect(); ro = null }
-  if (import.meta.client && el) {
-    ro = new ResizeObserver(() => {
-      virtualizer.value?.measure()
-    })
-    ro.observe(el)
-    const onScroll = () => {
-      if (!stickToBottom) return
-      const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50
-      if (!isAtBottom) {
-        stickToBottom = false
-        if (stickToBottomTimer) { clearTimeout(stickToBottomTimer); stickToBottomTimer = null }
-      }
+watch(
+  messagesContainer,
+  (el) => {
+    if (ro) {
+      ro.disconnect()
+      ro = null
     }
-    el.addEventListener('scroll', onScroll, { passive: true })
-  }
-}, { immediate: true })
+    if (import.meta.client && el) {
+      ro = new ResizeObserver(() => {
+        virtualizer.value?.measure()
+      })
+      ro.observe(el)
+      const onScroll = () => {
+        if (!stickToBottom) return
+        const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50
+        if (!isAtBottom) {
+          stickToBottom = false
+          if (stickToBottomTimer) {
+            clearTimeout(stickToBottomTimer)
+            stickToBottomTimer = null
+          }
+        }
+      }
+      el.addEventListener('scroll', onScroll, { passive: true })
+    }
+  },
+  { immediate: true }
+)
 
 function remeasureAllItems() {
   if (!virtualizerParentRef.value || !virtualizer.value) return
@@ -264,12 +274,15 @@ function scheduleRemeasure() {
   })
 }
 
-watch(() => messages.value.length, () => {
-  scheduleRemeasure()
-})
+watch(
+  () => messages.value.length,
+  () => {
+    scheduleRemeasure()
+  }
+)
 
 watch(
-  () => messages.value.map(m => getMessageText(m)).join('|'),
+  () => messages.value.map((m) => getMessageText(m)).join('|'),
   () => {
     scheduleRemeasure()
   }
@@ -490,7 +503,12 @@ async function copyMessage(content: string, msgId: string) {
 type PromptIconType = 'sun' | 'image' | 'flow' | 'palette' | 'globe' | 'mail'
 
 const quickPrompts: Array<{ icon: PromptIconType; title: string; prompt: string }> = [
-  { icon: 'sun', title: '今天天气怎么样？', prompt: '今天天气怎么样？请告诉我当前城市的天气情况' },
+  {
+    icon: 'sun',
+    title: '通过MCP查询，今天天气怎么样？',
+    prompt:
+      '请调用 weather 工具查询我所在城市的实时天气，并简要告诉我：当前温度、体感温度、天气状况、以及是否需要带伞'
+  },
   {
     icon: 'image',
     title: '前端图片渲染功能',
@@ -607,9 +625,22 @@ function onDocumentClick(e: Event) {
             <line x1="9" y1="3" x2="9" y2="21" />
           </svg>
         </button>
-        <h1 class="text-base sm:text-lg font-semibold text-semi-text-0 truncate flex items-center gap-2">
-          <span class="hidden sm:inline-flex w-6 h-6 rounded-lg bg-gradient-to-br from-semi-primary to-blue-500 items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+        <h1
+          class="text-base sm:text-lg font-semibold text-semi-text-0 truncate flex items-center gap-2"
+        >
+          <span
+            class="hidden sm:inline-flex w-6 h-6 rounded-lg bg-gradient-to-br from-semi-primary to-blue-500 items-center justify-center"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-3.5 h-3.5"
+            >
               <path d="M12 8V4H8" />
               <rect width="16" height="12" x="4" y="8" rx="2" />
               <path d="M2 14h2" />
@@ -626,7 +657,16 @@ function onDocumentClick(e: Event) {
             v-tooltip="'新建会话'"
             @click="createNewSession"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-[18px] h-[18px]">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-[18px] h-[18px]"
+            >
               <path d="M12 5v14" />
               <path d="M5 12h14" />
             </svg>
@@ -639,10 +679,23 @@ function onDocumentClick(e: Event) {
           v-if="messages.length === 0"
           class="flex flex-col items-center min-h-full px-4 sm:px-6 py-6 sm:py-8 pb-32 sm:pb-8 relative"
         >
-          <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(0,100,250,0.05)_0%,_transparent_65%)] pointer-events-none" />
+          <div
+            class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(0,100,250,0.05)_0%,_transparent_65%)] pointer-events-none"
+          />
           <div class="w-full max-w-lg sm:max-w-xl my-auto flex flex-col items-center">
-            <div class="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-semi-primary to-blue-500 flex items-center justify-center mb-4 sm:mb-5 shadow-semi-card">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="w-7 h-7 sm:w-10 sm:h-10">
+            <div
+              class="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-semi-primary to-blue-500 flex items-center justify-center mb-4 sm:mb-5 shadow-semi-card"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="w-7 h-7 sm:w-10 sm:h-10"
+              >
                 <path d="M12 8V4H8" />
                 <rect width="16" height="12" x="4" y="8" rx="2" />
                 <path d="M2 14h2" />
@@ -662,10 +715,17 @@ function onDocumentClick(e: Event) {
                 class="flex items-start gap-3 px-4 sm:px-5 py-3 sm:py-4 text-left rounded-xl border border-semi-border bg-semi-bg-0 hover:border-semi-primary/30 hover:shadow-semi-elevated hover:-translate-y-0.5 hover:bg-semi-bg-0 active:scale-[0.98] transition-all duration-semi-normal group min-h-[48px] sm:min-h-[60px]"
                 @click="useQuickPrompt(prompt.prompt)"
               >
-                <span class="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-semi-primary-light flex items-center justify-center shrink-0 transition-transform duration-semi-normal group-hover:scale-105 mt-0.5">
-                  <QuickPromptIcon :icon="prompt.icon" class="w-[18px] h-[18px] sm:w-5 sm:h-5 text-semi-primary" />
+                <span
+                  class="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-semi-primary-light flex items-center justify-center shrink-0 transition-transform duration-semi-normal group-hover:scale-105 mt-0.5"
+                >
+                  <QuickPromptIcon
+                    :icon="prompt.icon"
+                    class="w-[18px] h-[18px] sm:w-5 sm:h-5 text-semi-primary"
+                  />
                 </span>
-                <span class="text-sm text-semi-text-1 font-medium leading-snug">{{ prompt.title }}</span>
+                <span class="text-sm text-semi-text-1 font-medium leading-snug">{{
+                  prompt.title
+                }}</span>
               </button>
             </div>
           </div>
@@ -744,9 +804,7 @@ function onDocumentClick(e: Event) {
               </div>
               <div
                 :data-testid="
-                  messages[virtualRow.index].role === 'user'
-                    ? 'message-user'
-                    : 'message-assistant'
+                  messages[virtualRow.index].role === 'user' ? 'message-user' : 'message-assistant'
                 "
                 :class="[
                   'rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 overflow-hidden',
@@ -755,59 +813,169 @@ function onDocumentClick(e: Event) {
                     : 'max-w-[85%] sm:max-w-[80%] bg-semi-bg-0 text-semi-text-0 shadow-semi-card border border-semi-divider/60'
                 ]"
               >
-              <template v-if="messages[virtualRow.index].role === 'user'">
-                <div v-if="editingIndex === virtualRow.index" class="space-y-2">
-                  <textarea
-                    v-model="editingText"
-                    class="w-full resize-none rounded-xl border border-semi-border bg-semi-bg-0 text-semi-text-0 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-semi-primary/20 min-h-[48px] max-h-[160px]"
-                    rows="2"
-                    @keydown.enter.prevent="submitEditing(virtualRow.index)"
-                    @keydown.escape.prevent="cancelEditing"
+                <template v-if="messages[virtualRow.index].role === 'user'">
+                  <div v-if="editingIndex === virtualRow.index" class="space-y-2">
+                    <textarea
+                      v-model="editingText"
+                      class="w-full resize-none rounded-xl border border-semi-border bg-semi-bg-0 text-semi-text-0 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-semi-primary/20 min-h-[48px] max-h-[160px]"
+                      rows="2"
+                      @keydown.enter.prevent="submitEditing(virtualRow.index)"
+                      @keydown.escape.prevent="cancelEditing"
+                    />
+                    <div class="flex items-center gap-2 justify-end">
+                      <button
+                        class="px-3 py-1.5 text-xs text-semi-text-2 hover:text-semi-text-0 hover:bg-semi-fill-1 rounded-lg transition-colors font-medium"
+                        @click="cancelEditing"
+                      >
+                        取消
+                      </button>
+                      <button
+                        class="px-3 py-1.5 text-xs font-medium text-white bg-semi-primary rounded-lg hover:bg-semi-primary-hover active:scale-95 transition-all"
+                        :disabled="!editingText.trim()"
+                        @click="submitEditing(virtualRow.index)"
+                      >
+                        发送
+                      </button>
+                    </div>
+                  </div>
+                  <div v-else class="group">
+                    <div class="whitespace-pre-wrap break-words leading-relaxed text-[15px]">
+                      {{ getMessageText(messages[virtualRow.index]) }}
+                    </div>
+                    <div
+                      v-if="
+                        getMessageImages(messages[virtualRow.index].id, virtualRow.index).length
+                      "
+                      class="flex gap-1.5 mt-2.5 flex-wrap"
+                    >
+                      <img
+                        v-for="img in getMessageImages(
+                          messages[virtualRow.index].id,
+                          virtualRow.index
+                        )"
+                        :key="img.id"
+                        :src="img.dataUrl"
+                        :alt="img.filename"
+                        class="w-20 h-20 object-cover rounded-lg border border-semi-primary/10"
+                      />
+                    </div>
+                    <div
+                      class="flex justify-end -mr-1 mt-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 sm:transition-opacity"
+                    >
+                      <button
+                        class="p-2 text-semi-text-3 hover:text-semi-text-1 hover:bg-semi-fill-1 rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+                        v-tooltip="'编辑消息'"
+                        @click="
+                          startEditing(virtualRow.index, getMessageText(messages[virtualRow.index]))
+                        "
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          class="w-4 h-4"
+                        >
+                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                          <path d="m15 5 4 4" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <LazyThinkingProcess
+                    v-if="enableThinking && getReasoningContent(messages[virtualRow.index])"
+                    :content="getReasoningContent(messages[virtualRow.index])"
+                    :is-expanded="expandedThinkingMap.get(messages[virtualRow.index].id) || false"
+                    @toggle="toggleThinkingExpand(messages[virtualRow.index].id)"
                   />
-                  <div class="flex items-center gap-2 justify-end">
-                    <button
-                      class="px-3 py-1.5 text-xs text-semi-text-2 hover:text-semi-text-0 hover:bg-semi-fill-1 rounded-lg transition-colors font-medium"
-                      @click="cancelEditing"
-                    >
-                      取消
-                    </button>
-                    <button
-                      class="px-3 py-1.5 text-xs font-medium text-white bg-semi-primary rounded-lg hover:bg-semi-primary-hover active:scale-95 transition-all"
-                      :disabled="!editingText.trim()"
-                      @click="submitEditing(virtualRow.index)"
-                    >
-                      发送
-                    </button>
-                  </div>
-                </div>
-                <div v-else class="group">
-                  <div class="whitespace-pre-wrap break-words leading-relaxed text-[15px]">
-                    {{ getMessageText(messages[virtualRow.index]) }}
-                  </div>
+
                   <div
-                    v-if="getMessageImages(messages[virtualRow.index].id, virtualRow.index).length"
-                    class="flex gap-1.5 mt-2.5 flex-wrap"
+                    v-if="getVisibleToolInvocations(messages[virtualRow.index]).length > 0"
+                    class="mb-3 space-y-2"
                   >
-                    <img
-                      v-for="img in getMessageImages(
-                        messages[virtualRow.index].id,
-                        virtualRow.index
-                      )"
-                      :key="img.id"
-                      :src="img.dataUrl"
-                      :alt="img.filename"
-                      class="w-20 h-20 object-cover rounded-lg border border-semi-primary/10"
+                    <LazyToolInvocation
+                      v-for="invocation in getVisibleToolInvocations(messages[virtualRow.index])"
+                      :key="invocation.toolCallId"
+                      :invocation="invocation"
                     />
                   </div>
+
+                  <div class="relative inline">
+                    <MarkdownRenderer
+                      v-if="getMessageText(messages[virtualRow.index])"
+                      :content="getMessageText(messages[virtualRow.index])"
+                    />
+                    <span
+                      v-if="isLastMessageLoading && virtualRow.index === messages.length - 1"
+                      class="inline-flex items-center gap-0.5 ml-1 align-middle"
+                    >
+                      <span
+                        class="typing-dot w-1.5 h-1.5 rounded-full bg-semi-primary inline-block"
+                      />
+                      <span
+                        class="typing-dot w-1.5 h-1.5 rounded-full bg-semi-primary inline-block"
+                        style="animation-delay: 0.15s"
+                      />
+                      <span
+                        class="typing-dot w-1.5 h-1.5 rounded-full bg-semi-primary inline-block"
+                        style="animation-delay: 0.3s"
+                      />
+                    </span>
+                  </div>
+
                   <div
-                    class="flex justify-end -mr-1 mt-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 sm:transition-opacity"
+                    v-if="getMessageText(messages[virtualRow.index])"
+                    class="flex items-center gap-0.5 mt-2 -ml-1"
                   >
                     <button
-                      class="p-2 text-semi-text-3 hover:text-semi-text-1 hover:bg-semi-fill-1 rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
-                      v-tooltip="'编辑消息'"
+                      class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+                      v-tooltip="'复制'"
                       @click="
-                        startEditing(virtualRow.index, getMessageText(messages[virtualRow.index]))
+                        copyMessage(
+                          getMessageText(messages[virtualRow.index]),
+                          messages[virtualRow.index].id
+                        )
                       "
+                    >
+                      <svg
+                        v-if="copiedMessageId !== messages[virtualRow.index].id"
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="w-4 h-4"
+                      >
+                        <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                      </svg>
+                      <svg
+                        v-else
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="w-4 h-4 text-semi-success"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </button>
+                    <button
+                      class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+                      v-tooltip="'重新生成'"
+                      :disabled="isLoading"
+                      @click="handleReload"
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -819,114 +987,14 @@ function onDocumentClick(e: Event) {
                         stroke-linejoin="round"
                         class="w-4 h-4"
                       >
-                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                        <path d="m15 5 4 4" />
+                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                        <path d="M3 3v5h5" />
+                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                        <path d="M16 16h5v5" />
                       </svg>
                     </button>
                   </div>
-                </div>
-              </template>
-
-              <template v-else>
-                <LazyThinkingProcess
-                  v-if="enableThinking && getReasoningContent(messages[virtualRow.index])"
-                  :content="getReasoningContent(messages[virtualRow.index])"
-                  :is-expanded="expandedThinkingMap.get(messages[virtualRow.index].id) || false"
-                  @toggle="toggleThinkingExpand(messages[virtualRow.index].id)"
-                />
-
-                <div
-                  v-if="getVisibleToolInvocations(messages[virtualRow.index]).length > 0"
-                  class="mb-3 space-y-2"
-                >
-                  <LazyToolInvocation
-                    v-for="invocation in getVisibleToolInvocations(messages[virtualRow.index])"
-                    :key="invocation.toolCallId"
-                    :invocation="invocation"
-                  />
-                </div>
-
-                <div class="relative inline">
-                  <MarkdownRenderer
-                    v-if="getMessageText(messages[virtualRow.index])"
-                    :content="getMessageText(messages[virtualRow.index])"
-                  />
-                  <span
-                    v-if="isLastMessageLoading && virtualRow.index === messages.length - 1"
-                    class="inline-flex items-center gap-0.5 ml-1 align-middle"
-                  >
-                    <span class="typing-dot w-1.5 h-1.5 rounded-full bg-semi-primary inline-block" />
-                    <span class="typing-dot w-1.5 h-1.5 rounded-full bg-semi-primary inline-block" style="animation-delay:0.15s" />
-                    <span class="typing-dot w-1.5 h-1.5 rounded-full bg-semi-primary inline-block" style="animation-delay:0.3s" />
-                  </span>
-                </div>
-
-                <div
-                  v-if="getMessageText(messages[virtualRow.index])"
-                  class="flex items-center gap-0.5 mt-2 -ml-1"
-                >
-                  <button
-                    class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
-                    v-tooltip="'复制'"
-                    @click="
-                      copyMessage(
-                        getMessageText(messages[virtualRow.index]),
-                        messages[virtualRow.index].id
-                      )
-                    "
-                  >
-                    <svg
-                      v-if="copiedMessageId !== messages[virtualRow.index].id"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      class="w-4 h-4"
-                    >
-                      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                    </svg>
-                    <svg
-                      v-else
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      class="w-4 h-4 text-semi-success"
-                    >
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  </button>
-                  <button
-                    class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
-                    v-tooltip="'重新生成'"
-                    :disabled="isLoading"
-                    @click="handleReload"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      class="w-4 h-4"
-                    >
-                      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                      <path d="M3 3v5h5" />
-                      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                      <path d="M16 16h5v5" />
-                    </svg>
-                  </button>
-                </div>
-              </template>
+                </template>
               </div>
             </div>
           </div>
