@@ -63,6 +63,37 @@ pnpm db:studio        # Drizzle Studio 可视化数据库
 - **公开残余不确定性**：任务完成时，在最终报告中列出当前无法确认的信息、潜在风险及验证方法，用 `[不确定]` 标签格式便于扫描
 - **多级对抗性深化**：**复杂改动提交前**，必须进行层层深化分析并交叉验证，用外部视角审查初稿中的每一点，核查矛盾和遗漏
 
+## 文档查询规则（context7 MCP）
+
+> 涉及下列「高频更新 / AI 相关」库的核心 API 时，**必须**先用 context7 MCP 拉取最新文档，禁止仅凭训练数据内置知识写代码。规则优先级同「AI Agent 执行纪律」。
+
+### 强制查询的库
+
+| 库 | Context7 ID | 触发场景 |
+|---|---|---|
+| Vercel AI SDK | `/vercel/ai` | `streamText` / `tool()` / `maxSteps` / `stopWhen` / `onFinish` / `onStepFinish` / 多模态 content parts / provider 配置 / `stepCountIs` |
+| Nuxt 3 | `/websites/nuxt_3_x` | `useFetch` / `useAsyncData` / `defineEventHandler` / `runtimeConfig` / SSR 相关 API / 路由约定 / `useChat` |
+| Drizzle ORM | `/drizzle-team/drizzle-orm-docs` | `schema` 定义 / `db.select/insert/update/delete` / 关联查询 / `drizzle-kit` 配置 / 迁移 |
+
+### 调用流程
+
+1. 先用 `resolve-library-id` 拿库 ID（上表已知 ID 可跳过此步，直接进入第 2 步）
+2. 再用 `query-docs` 查具体 API，`query` 参数必须聚焦单一概念（如 "streamText tool calling maxSteps"），不要一次问多个不相关主题
+3. 每个工具每个问题最多调用 3 次；若 3 次仍查不到所需信息，回退到内置知识 + WebSearch 兜底
+4. 调用结果须与项目现有代码（`server/api/chat.post.ts`、`server/db/schema.ts` 等）交叉对照，避免引入与项目版本不兼容的 API
+
+### 例外（可不调用）
+
+- 修改业务逻辑、CSS、文案、组件模板结构等与上述库 API 无关的任务
+- 上述库的 Vue 模板基础语法（`ref`、`computed`、`watch`、`v-if`/`v-for` 等）等稳定 API
+- 已在项目代码中有大量同类用法可参照时（如新增一个相似工具，可参考 `server/tools/` 现有实现）
+
+### 注意事项
+
+- Vercel AI SDK 有多个版本（`ai_5_0_0`、`ai_6.0.0-beta` 等），如项目 `package.json` 锁定具体版本，用 `/vercel/ai/<version>` 形式查询（如 `/vercel/ai/ai_5_0_0`）
+- Drizzle ORM 优先用 `/drizzle-team/drizzle-orm-docs`（官方文档源），避免用社区镜像
+- context7 库 ID 偶有失效，如查询返回空，重新 `resolve-library-id` 获取新 ID
+
 ## 架构设计
 
 ```
