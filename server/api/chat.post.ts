@@ -54,6 +54,86 @@ const MAX_IMAGES_PER_MESSAGE = 5
 const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads')
 
 /**
+ * 内网/保留 IP 判断（内联实现，不依赖 weather.ts 的 isPrivateIp）
+ *
+ * 用于过滤 x-forwarded-for 链路中的内网代理 IP，提取真实客户端公网 IP。
+ * 与 server/tools/weather.ts 的 PRIVATE_IP_PATTERNS 保持一致，
+ * 但此处独立实现以避免 chat.post.ts import weather.ts 业务函数（违反架构约束）。
+ */
+const PRIVATE_IP_INLINE_PATTERNS = [
+  /^127\./,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2[0-9]|3[01])\./,
+  /^169\.254\./,
+  /^0\.0\.0\.0$/,
+  /^::1$/,
+  /^fe80:/i,
+  /^fc00:/i,
+  /^fd[0-9a-f]{2}:/i
+]
+
+function isPrivateIpInline(ip: string): boolean {
+  return PRIVATE_IP_INLINE_PATTERNS.some((p) => p.test(ip.trim()))
+}
+
+/**
+ * 读取客户端真实 IP（用于注入 system prompt，引导 LLM 调用 getCityByIp 工具）
+ *
+ * 优先级：
+ *   1. x-forwarded-for 第一个非内网 IP（适配 Vercel/Cloudflare 等覆盖式代理）
+ *   2. x-real-ip
+ *   3. event.node.req.socket.remoteAddress
+ *
+ * 注意：当前"取第一个非内网 IP"策略不防御自建 Nginx appending 模式下的 X-Forwarded-For 伪造，
+ * 影响仅限天气查询结果不准确，非安全风险。若未来 IP 定位用于敏感场景，需改为从右向左取
+ * 第一个受信任的 IP（参考代理信任链配置）。
+ *
+ * @returns 客户端公网 IP 字符串，所有来源均为空/内网时返回空字符串
+ */
+function getClientIp(event: any): string {
+  const headers = event?.node?.req?.headers || {}
+  const remoteAddress = event?.node?.req?.socket?.remoteAddress as string | undefined
+
+  // 收集所有可用 IP 来源（按优先级）
+  const ipCandidates: string[] = []
+
+  // 1. x-forwarded-for：逗号分隔的链路，可能含多个 IP
+  const xff = headers['x-forwarded-for'] as string | undefined
+  if (xff) {
+    ipCandidates.push(...xff.split(',').map((s) => s.trim()).filter(Boolean))
+  }
+
+  // 2. x-real-ip
+  const xRealIp = headers['x-real-ip'] as string | undefined
+  if (xRealIp) {
+    ipCandidates.push(xRealIp.trim())
+  }
+
+  // 3. socket remoteAddress
+  if (remoteAddress) {
+    ipCandidates.push(remoteAddress.trim())
+  }
+
+  // 策略一：优先返回第一个非内网 IP（适配 Vercel/Cloudflare 等覆盖式代理）
+  // 在标准部署中，x-forwarded-for 第一个 IP 就是真实客户端公网 IP
+  for (const ip of ipCandidates) {
+    if (!isPrivateIpInline(ip)) {
+      return ip
+    }
+  }
+
+  // 策略二：所有来源均为内网 IP（本地开发场景），返回第一个内网 IP
+  // 这样 LLM 调用 getCityByIp 时会触发 isLocal 短路，反问用户城市
+  // 让本地开发也能测试整条链路（getCityByIp → isLocal → LLM 反问）
+  if (ipCandidates.length > 0) {
+    return ipCandidates[0]
+  }
+
+  return ''
+}
+
+/**
  * OCR 工具使用规则：追加到 system prompt 强化 LLM 调用判断
  * - 正向场景：提取文字/OCR/识别/表格/印章/手写/扫描件等
  * - 负向场景：通用图像理解/图中是什么/描述图片/无图片/普通照片
@@ -305,6 +385,15 @@ export default defineEventHandler(async (event) => {
   // OCR 工具规则追加：仅当 OCR toggle 开启且模型支持工具调用时
   if (enableOcr && caps.toolCalling) {
     finalSystemPrompt += `\n\n${OCR_TOOL_RULES}`
+  }
+
+  // 用户位置上下文注入：读取客户端 IP 并追加到 prompt
+  // LLM 看到后自主决定是否调用 getCityByIp 工具（仅当用户未提供城市名时）
+  if (caps.toolCalling) {
+    const clientIp = getClientIp(event)
+    if (clientIp) {
+      finalSystemPrompt += `\n\n【用户位置上下文】用户当前请求 IP: ${clientIp}，如需定位用户所在城市请调用 getCityByIp 工具传入该 IP。`
+    }
   }
 
   try {

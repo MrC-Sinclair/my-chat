@@ -408,6 +408,66 @@ interface ModelConfig {
 
 **数据源**：[Open-Meteo](https://open-meteo.com/) Geocoding API + Weather API（免费、无需 Key）
 
+### getCityByIp（MCP 工具）
+
+通过 MCP 协议（stdio 传输）连接独立的 [weather-server.ts](file:///d:/code/my-chat/server/mcp/weather-server.ts) 子进程，仅对支持 `toolCalling` 的模型注册。当用户未显式提供城市名但询问本地天气或位置信息时调用此工具；用户已显式提供城市名时不应调用此工具，直接使用 `weather` 工具。
+
+**输入**
+
+```ts
+{
+  ip: string  // IPv4 或 IPv6 地址
+}
+```
+
+**输出**（成功，JSON 字符串）
+
+```ts
+{
+  city: string,        // 城市名（中文，由 ip-api.com lang=zh 返回）
+  region: string,       // 省份/地区
+  country: string,     // 国家（中文）
+  lat: number,          // 纬度
+  lon: number,          // 经度
+  isLocal: false,       // 是否本地/内网 IP
+  error: null           // 错误信息（成功时为 null）
+}
+```
+
+**输出**（失败，`isError: true`，不抛异常由 LLM 决定后续动作）
+
+```ts
+{
+  city: null,
+  region: null,
+  country: null,
+  lat: null,
+  lon: null,
+  isLocal: boolean,    // true 表示因命中内网/保留地址而短路
+  error: string        // 错误信息：
+                       //   '本地/内网 IP，无法定位'（isLocal=true）
+                       //   'IP 格式无效：...'（格式校验失败）
+                       //   'IP 定位服务暂时不可用'（HTTP 5xx/网络错误）
+                       //   'IP 定位超时（10秒）'（AbortController 超时）
+                       //   '...'（ip-api.com 返回 fail 时透传 message）
+}
+```
+
+**调用约束与 SSRF 防护**
+
+- IP 格式严格校验（IPv4 四段 0-255 / IPv6 标准冒号十六进制），拒绝 `127.0.0.1\r\n`、`127.0.0.1@evil.com` 等注入
+- 内网/保留地址短路返回 `isLocal: true`，不发 HTTP 请求：
+  - IPv4：`127.0.0.0/8`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`169.254.0.0/16`（含云元数据 169.254.169.254）、`0.0.0.0`
+  - IPv6：`::1`、`fe80::/10`、`fc00::/7`（含 `fd00::/8`）
+- 使用 `encodeURIComponent(ip)` 构造 URL，防御 CRLF / `@` 注入
+- `AbortController` 10 秒超时
+- **不做 DNS 二次校验**：用户输入作为 URL path 参数（非 host），DNS rebinding 不适用
+- IP 透传机制：`chat.post.ts` 通过 `getClientIp(event)` 读取 `x-forwarded-for` / `x-real-ip` / `socket.remoteAddress`，注入到 system prompt 引导 LLM 调用此工具
+
+**数据源**：[ip-api.com](https://ip-api.com/) 免费版（HTTP，限流 45 次/分钟，`lang=zh` 返回中文）
+
+**实现**：[server/tools/weather.ts](file:///d:/code/my-chat/server/tools/weather.ts)（核心函数 `getCityByIp`）
+
 ### webSearch
 
 网页搜索工具，仅对支持 `toolCalling` 且非视觉模型注册，可通过 `enable_web_search: false` 关闭。当用户消息包含"最新/今天/近期/当前/现在/最近/新闻/实时/热点/动态"等关键词时，系统提示词会强制 LLM 调用此工具。
@@ -500,6 +560,28 @@ interface ModelConfig {
 | `IMGBB_API_KEY`   | 否   | ImgBB 图床 API Key，启用图片对话必填                 |
 | `TAVILY_API_KEY`  | 否   | Tavily 搜索 API Key，启用网页搜索必填                |
 | `DATABASE_URL`    | 是   | PostgreSQL 连接串，开发端口 5434                     |
+
+---
+
+## 部署备注：IP 透传信任链
+
+`getCityByIp` 工具依赖 `chat.post.ts` 的 `getClientIp(event)` 读取客户端真实 IP 注入到 system prompt。生产部署必须正确配置反向代理的 `X-Forwarded-For` 信任链，否则 LLM 会拿到错误的 IP（如代理服务器自身 IP），导致天气查询结果不准确。
+
+**Vercel / Cloudflare 等 Serverless 平台**：默认支持，无需额外配置。
+
+**自建 Nginx**（appending 模式）：
+
+```nginx
+location / {
+  proxy_pass http://127.0.0.1:3000;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+> ⚠️ **安全提示**：当前 `getClientIp` 取 `x-forwarded-for` 第一个非内网 IP，适配覆盖式代理（Vercel/Cloudflare）。在自建 Nginx appending 模式下，攻击者可伪造 `X-Forwarded-For: fake_ip, real_ip` 头部绕过非内网过滤，**最坏影响仅限天气查询结果不准确**，非安全风险。若未来 IP 定位用于敏感场景，需改为从右向左取第一个受信任的 IP（参考代理信任链配置）。
 
 ---
 

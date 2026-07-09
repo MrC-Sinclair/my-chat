@@ -137,6 +137,11 @@ test.describe('OCR 工具', () => {
       // mock 返回 OCR 工具调用流
       await mockChatAPI(page, buildOcrToolStream(), 80)
 
+      // 启用 OCR toggle：getVisibleToolInvocations 会在 enableOcr=false 时过滤掉 OCR 工具调用
+      const ocrBtn = page.locator('button', { hasText: 'OCR' }).first()
+      await ocrBtn.click()
+      await page.waitForTimeout(300)
+
       await typeAndSubmit(page, '提取图片中的文字')
 
       // 等待 OCR loading 出现（"正在识别图片中的文字..."）
@@ -156,6 +161,11 @@ test.describe('OCR 工具', () => {
 
     test('应显示 OCR 错误卡片', async ({ page }) => {
       await mockChatAPI(page, buildOcrToolErrorStream(), 80)
+
+      // 启用 OCR toggle：getVisibleToolInvocations 会在 enableOcr=false 时过滤掉 OCR 工具调用
+      const ocrBtn = page.locator('button', { hasText: 'OCR' }).first()
+      await ocrBtn.click()
+      await page.waitForTimeout(300)
 
       await typeAndSubmit(page, '提取图片中的文字')
 

@@ -273,14 +273,21 @@ describe('MCP Weather Server 集成测试', () => {
       const toolsResult = await connectedClient.listTools()
 
       expect(toolsResult.tools).toBeDefined()
-      expect(toolsResult.tools).toHaveLength(1)
+      // 现在注册两个工具：weather + getCityByIp
+      expect(toolsResult.tools).toHaveLength(2)
 
-      const weatherTool = toolsResult.tools[0]
-      expect(weatherTool.name).toBe('weather')
-      expect(weatherTool.description).toContain('天气')
-      expect(weatherTool.inputSchema).toBeDefined()
-      expect(weatherTool.inputSchema.type).toBe('object')
-      expect(weatherTool.inputSchema.properties).toHaveProperty('city')
+      const weatherTool = toolsResult.tools.find((t: { name: string }) => t.name === 'weather')
+      expect(weatherTool).toBeDefined()
+      expect(weatherTool!.description).toContain('天气')
+      expect(weatherTool!.inputSchema).toBeDefined()
+      expect(weatherTool!.inputSchema.type).toBe('object')
+      expect(weatherTool!.inputSchema.properties).toHaveProperty('city')
+
+      // 验证 getCityByIp 工具也注册了
+      const ipTool = toolsResult.tools.find((t: { name: string }) => t.name === 'getCityByIp')
+      expect(ipTool).toBeDefined()
+      expect(ipTool!.description).toContain('IP')
+      expect(ipTool!.inputSchema.properties).toHaveProperty('ip')
     },
     INTEGRATION_TIMEOUT
   )
@@ -378,6 +385,28 @@ describe('MCP Weather Server 集成测试', () => {
       expect(result.content).toBeDefined()
       expect(result.content[0].type).toBe('text')
       expect(result.content[0].text).toContain('未找到城市')
+    },
+    INTEGRATION_TIMEOUT
+  )
+
+  it(
+    '调用 getCityByIp 工具传入本地 IP "::1" 应返回 isLocal: true',
+    async () => {
+      const connectedClient = await connectToServer()
+
+      const result = await connectedClient.callTool({
+        name: 'getCityByIp',
+        arguments: { ip: '::1' }
+      })
+
+      expect(result.content).toBeDefined()
+      expect(result.content).toHaveLength(1)
+      expect(result.content[0].type).toBe('text')
+
+      const data = JSON.parse(result.content[0].text)
+      expect(data.isLocal).toBe(true)
+      expect(data.city).toBeNull()
+      expect(data.error).toContain('本地')
     },
     INTEGRATION_TIMEOUT
   )

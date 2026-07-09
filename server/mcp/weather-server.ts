@@ -18,7 +18,8 @@ import {
   geocodeCity,
   fetchWeather,
   describeWeatherCode,
-  describeWindDirection
+  describeWindDirection,
+  getCityByIp
 } from '../tools/weather'
 
 const server = new McpServer({
@@ -119,6 +120,54 @@ server.registerTool(
           {
             type: 'text' as const,
             text: `天气查询失败: ${errorMessage}`
+          }
+        ],
+        isError: true
+      }
+    }
+  }
+)
+
+// ============================================================================
+// IP 定位工具：通过客户端 IP 反查城市信息
+// ============================================================================
+
+server.registerTool(
+  'getCityByIp',
+  {
+    description:
+      '通过 IP 地址反查城市和区域信息。当用户未提供城市名但询问本地天气、位置相关信息时调用此工具获取大致位置。用户已显式提供城市名时不应调用此工具，直接使用 weather 工具即可。',
+    inputSchema: {
+      ip: z
+        .string()
+        .describe('IPv4 或 IPv6 地址字符串（如 "119.29.29.29"、"8.8.8.8"，不含端口和路径）')
+    }
+  },
+  async ({ ip }) => {
+    try {
+      const result = await getCityByIp(ip)
+
+      // city 为 null 时视为失败（本地/内网 IP 或 API 故障）
+      // LLM 通过 isLocal 字段区分：true=本地环境应反问用户，false=API 故障应告知稍后重试
+      const isError = result.city === null
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(result)
+          }
+        ],
+        isError
+      }
+    } catch (error) {
+      // 兜底：核心函数设计为不抛异常，此处捕获未预期边界情况
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `IP 定位失败: ${errorMessage}`
           }
         ],
         isError: true

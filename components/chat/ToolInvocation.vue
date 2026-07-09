@@ -40,10 +40,22 @@ interface OcrResult {
   model?: string
 }
 
+/** IP 定位工具返回结构（与 server/tools/weather.ts IpLocationResult 对齐） */
+interface IpLocationResult {
+  city: string | null
+  region: string | null
+  country: string | null
+  lat: number | null
+  lon: number | null
+  isLocal: boolean
+  error: string | null
+}
+
 interface ToolInvocation {
   toolCallId: string
   toolName: string
-  input: Record<string, unknown>
+  // input 在 input-streaming 状态可能不存在（AI SDK 行为），所以标记可选
+  input?: Record<string, unknown>
   state: 'input-streaming' | 'input-available' | 'output-available' | 'output-error'
   output?: unknown
   errorText?: string
@@ -84,16 +96,29 @@ function getFavicon(url: string): string {
 /**
  * 从工具输入中安全读取城市字段
  * 注：类型断言放在 script 而非模板，避免 prettier 把 Record<string, unknown> 的泛型尖括号误判为 HTML 标签
+ * 注：input 在 input-streaming 状态可能为 undefined/null，必须做空值守卫
  */
-function getInputCity(input: Record<string, unknown>): string {
+function getInputCity(input: Record<string, unknown> | undefined | null): string {
+  if (!input) return ''
   return (input as { city?: string }).city ?? ''
 }
 
 /**
  * 从工具输入中安全读取搜索 query 字段
+ * 注：input 在 input-streaming 状态可能为 undefined/null，必须做空值守卫
  */
-function getInputQuery(input: Record<string, unknown>): string {
+function getInputQuery(input: Record<string, unknown> | undefined | null): string {
+  if (!input) return ''
   return (input as { query?: string }).query ?? ''
+}
+
+/**
+ * 从工具输入中安全读取 IP 字段（getCityByIp 工具用）
+ * 注：input 在 input-streaming 状态可能为 undefined/null，必须做空值守卫
+ */
+function getInputIp(input: Record<string, unknown> | undefined | null): string {
+  if (!input) return ''
+  return (input as { ip?: string }).ip ?? ''
 }
 
 /**
@@ -121,7 +146,8 @@ function matchOcrDomain(hostname: string, entry: string): boolean {
   return hostname === entry
 }
 
-function getInputImageUrl(input: Record<string, unknown>): string | null {
+function getInputImageUrl(input: Record<string, unknown> | undefined | null): string | null {
+  if (!input) return null
   const url = (input as { imageUrl?: string }).imageUrl
   if (typeof url !== 'string' || !url) return null
   try {
@@ -316,6 +342,97 @@ onUnmounted(() => {
       <!-- 错误状态 -->
       <div v-else class="px-4 py-3 text-xs sm:text-sm text-semi-danger bg-semi-danger-light">
         {{ (invocation.output as WeatherResult).error }}
+      </div>
+    </div>
+  </div>
+
+  <!-- IP 定位工具 -->
+  <div v-else-if="invocation.toolName === 'getCityByIp'">
+    <!-- 加载中状态 -->
+    <div
+      v-if="isCalling(invocation.state)"
+      class="flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-semi-primary-light/60 border border-semi-primary/30 rounded-xl text-sm text-semi-primary-active"
+    >
+      <span class="relative flex h-4 w-4">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-semi-primary opacity-60"
+        ></span>
+        <span class="relative inline-flex rounded-full h-4 w-4 bg-semi-primary"></span>
+      </span>
+      <span class="text-xs sm:text-sm">正在通过 IP {{ getInputIp(invocation.input) }} 定位城市...</span>
+    </div>
+
+    <!-- 结果展示 -->
+    <div
+      v-else-if="invocation.state === 'output-available' && invocation.output"
+      class="bg-semi-bg-0 border border-semi-border rounded-xl overflow-hidden shadow-semi-card"
+    >
+      <!-- 成功：定位到城市 -->
+      <template v-if="(invocation.output as IpLocationResult).city">
+        <div
+          class="px-4 py-2.5 sm:px-5 sm:py-3 bg-gradient-to-r from-semi-primary-light to-semi-primary-light border-b border-semi-divider"
+        >
+          <div class="flex items-center gap-2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-4 h-4 sm:w-5 sm:h-5 text-semi-primary"
+            >
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            <span class="font-medium text-sm sm:text-base text-semi-text-0">IP 定位结果</span>
+          </div>
+        </div>
+        <div class="px-4 py-2.5 sm:px-5 sm:py-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
+          <span class="font-medium text-semi-text-0">
+            {{ (invocation.output as IpLocationResult).city }}
+          </span>
+          <span
+            v-if="(invocation.output as IpLocationResult).region"
+            class="text-semi-text-3"
+          >
+            {{ (invocation.output as IpLocationResult).region }}
+          </span>
+          <span
+            v-if="(invocation.output as IpLocationResult).country"
+            class="text-semi-text-3"
+          >
+            · {{ (invocation.output as IpLocationResult).country }}
+          </span>
+        </div>
+      </template>
+
+      <!-- 本地/内网 IP -->
+      <div
+        v-else-if="(invocation.output as IpLocationResult).isLocal"
+        class="px-4 py-3 flex items-center gap-2 text-xs sm:text-sm text-semi-text-2"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="w-4 h-4 text-semi-text-3 shrink-0"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 8v4" />
+          <path d="M12 16h.01" />
+        </svg>
+        <span>本地网络环境，无法通过 IP 定位城市</span>
+      </div>
+
+      <!-- 错误状态 -->
+      <div v-else class="px-4 py-3 text-xs sm:text-sm text-semi-danger bg-semi-danger-light">
+        {{ (invocation.output as IpLocationResult).error || 'IP 定位失败' }}
       </div>
     </div>
   </div>
@@ -555,5 +672,10 @@ onUnmounted(() => {
         </p>
       </div>
     </div>
+  </div>
+
+  <!-- 兜底：未知工具类型，避免渲染错误 -->
+  <div v-else class="px-3.5 py-2.5 text-xs sm:text-sm text-semi-text-3 bg-semi-bg-1 rounded-xl">
+    工具调用: {{ invocation.toolName }}
   </div>
 </template>
