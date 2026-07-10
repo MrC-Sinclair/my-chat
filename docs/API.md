@@ -37,7 +37,7 @@
 
 ### 安全中间件
 
-所有 `/api/*` 请求经过 [security.ts](file:///d:/code/my-chat/server/middleware/security.ts) 中间件，统一处理：
+所有 `/api/*` 请求经过 [security.ts](../server/middleware/security.ts) 中间件，统一处理：
 
 | 能力             | 配置                                                                                                  |
 | ---------------- | ----------------------------------------------------------------------------------------------------- |
@@ -360,7 +360,7 @@ interface ModelConfig {
 ]
 ```
 
-> 模型白名单定义在 [server/config/models.ts](file:///d:/code/my-chat/server/config/models.ts)，新增模型需同步此文件。
+> 模型白名单定义在 [server/config/models.ts](../server/config/models.ts)，新增模型需同步此文件。
 
 ---
 
@@ -370,7 +370,7 @@ interface ModelConfig {
 
 ### weather（MCP 工具）
 
-通过 MCP 协议（stdio 传输）连接独立的 [weather-server.ts](file:///d:/code/my-chat/server/mcp/weather-server.ts) 子进程，仅对支持 `toolCalling` 的模型注册。
+通过 MCP 协议（stdio 传输）连接独立的 [weather-server.ts](../server/mcp/weather-server.ts) 子进程，仅对支持 `toolCalling` 的模型注册。
 
 **输入**
 
@@ -410,7 +410,7 @@ interface ModelConfig {
 
 ### getCityByIp（MCP 工具）
 
-通过 MCP 协议（stdio 传输）连接独立的 [weather-server.ts](file:///d:/code/my-chat/server/mcp/weather-server.ts) 子进程，仅对支持 `toolCalling` 的模型注册。当用户未显式提供城市名但询问本地天气或位置信息时调用此工具；用户已显式提供城市名时不应调用此工具，直接使用 `weather` 工具。
+通过 MCP 协议（stdio 传输）连接独立的 [weather-server.ts](../server/mcp/weather-server.ts) 子进程，仅对支持 `toolCalling` 的模型注册。当用户未显式提供城市名但询问本地天气或位置信息时调用此工具；用户已显式提供城市名时不应调用此工具，直接使用 `weather` 工具。
 
 **输入**
 
@@ -466,7 +466,7 @@ interface ModelConfig {
 
 **数据源**：[ip-api.com](https://ip-api.com/) 免费版（HTTP，限流 45 次/分钟，`lang=zh` 返回中文）
 
-**实现**：[server/tools/weather.ts](file:///d:/code/my-chat/server/tools/weather.ts)（核心函数 `getCityByIp`）
+**实现**：[server/tools/weather.ts](../server/tools/weather.ts)（核心函数 `getCityByIp`）
 
 ### webSearch
 
@@ -544,7 +544,7 @@ interface ModelConfig {
 - Authorization 复用 `OPENAI_API_KEY`，baseURL 复用 `OPENAI_BASE_URL`
 - 请求超时 30 秒（`AbortController`）
 
-**实现**：[server/tools/ocr-document.ts](file:///d:/code/codeWork/my-chat/server/tools/ocr-document.ts)
+**实现**：[server/tools/ocr-document.ts](../server/tools/ocr-document.ts)
 
 ---
 
@@ -589,16 +589,16 @@ location / {
 
 | 文件                                                                                             | 职责                                             |
 | ------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| [server/api/chat.post.ts](file:///d:/code/my-chat/server/api/chat.post.ts)                       | AI 对话流式接口                                  |
-| [server/api/sessions.ts](file:///d:/code/my-chat/server/api/sessions.ts)                         | 会话列表 GET/POST                                |
-| [server/api/sessions/[id].ts](file:///d:/code/my-chat/server/api/sessions/[id].ts)               | 单会话 GET/PATCH/DELETE                          |
-| [server/api/models.ts](file:///d:/code/my-chat/server/api/models.ts)                             | 模型列表 GET                                     |
-| [server/middleware/security.ts](file:///d:/code/my-chat/server/middleware/security.ts)           | CSP/限流/CORS/UUID 校验                          |
-| [server/config/models.ts](file:///d:/code/my-chat/server/config/models.ts)                       | 模型白名单与能力定义                             |
-| [server/tools/web-search.ts](file:///d:/code/my-chat/server/tools/web-search.ts)                 | Tavily 网页搜索工具                              |
-| [server/tools/ocr-document.ts](file:///d:/code/my-chat/server/tools/ocr-document.ts)             | PaddleOCR-VL-1.5 OCR 文档识别工具                |
-| [server/tools/weather.ts](file:///d:/code/my-chat/server/tools/weather.ts)                       | Open-Meteo 天气查询核心函数                      |
-| [server/mcp/weather-server.ts](file:///d:/code/my-chat/server/mcp/weather-server.ts)             | MCP Weather Server（stdio）                      |
-| [server/utils/imgbb.ts](file:///d:/code/my-chat/server/utils/imgbb.ts)                           | ImgBB 图床上传                                   |
-| [server/utils/reasoning-provider.ts](file:///d:/code/my-chat/server/utils/reasoning-provider.ts) | 自定义 OpenAI Provider（reasoning_content 拦截） |
-| [docs/db-schema.md](file:///d:/code/my-chat/docs/db-schema.md)                                   | 数据库表结构文档                                 |
+| [server/api/chat.post.ts](../server/api/chat.post.ts)                       | AI 对话流式接口                                  |
+| [server/api/sessions.ts](../server/api/sessions.ts)                         | 会话列表 GET/POST                                |
+| [server/api/sessions/[id].ts](../server/api/sessions/[id].ts)               | 单会话 GET/PATCH/DELETE                          |
+| [server/api/models.ts](../server/api/models.ts)                             | 模型列表 GET                                     |
+| [server/middleware/security.ts](../server/middleware/security.ts)           | CSP/限流/CORS/UUID 校验                          |
+| [server/config/models.ts](../server/config/models.ts)                       | 模型白名单与能力定义                             |
+| [server/tools/web-search.ts](../server/tools/web-search.ts)                 | Tavily 网页搜索工具                              |
+| [server/tools/ocr-document.ts](../server/tools/ocr-document.ts)             | PaddleOCR-VL-1.5 OCR 文档识别工具                |
+| [server/tools/weather.ts](../server/tools/weather.ts)                       | Open-Meteo 天气查询核心函数                      |
+| [server/mcp/weather-server.ts](../server/mcp/weather-server.ts)             | MCP Weather Server（stdio）                      |
+| [server/utils/imgbb.ts](../server/utils/imgbb.ts)                           | ImgBB 图床上传                                   |
+| [server/utils/reasoning-provider.ts](../server/utils/reasoning-provider.ts) | 自定义 OpenAI Provider（reasoning_content 拦截） |
+| [docs/db-schema.md](./db-schema.md)                                   | 数据库表结构文档                                 |
