@@ -31,15 +31,15 @@
 
 **技术细节**：
 
-1. **Docker 镜像**：当前 `docker-compose.yml` 使用 `postgres:18-alpine`（不带 pgvector 扩展）。需改为官方 pgvector 镜像：
+1. **Docker 镜像**：当前 `docker-compose.yml` 使用 `postgres:18-alpine`（不带 pgvector 扩展）。需改为官方 pgvector 镜像（保持 PG 18 版本不变，避免大版本降级）：
    ```yaml
    # docker-compose.yml
    postgres:
-     image: pgvector/pgvector:pg17
+     image: pgvector/pgvector:pg18
    test-postgres:
-     image: pgvector/pgvector:pg17
+     image: pgvector/pgvector:pg18
    ```
-   > ⚠️ **重要**：切换镜像涉及 PostgreSQL 大版本变更，旧数据卷不兼容。切换后必须先执行 `docker compose down -v` 删除旧 volume，再 `docker compose up -d` 重建，最后 `pnpm db:push` 同步 schema。
+   > ℹ️ **版本说明**：`pgvector/pgvector:pg18` 镜像已发布（Docker Hub `docker.io/pgvector/pgvector:pg18`），与项目当前 `postgres:18-alpine` 同为 PG 18，**无需 `docker compose down -v` 删除数据卷**（同版本数据卷兼容）。只需 `docker compose up -d` 重建容器（检测到 image 变化自动重建），再 `pnpm db:push` 同步 schema。现有 sessions/messages/feedbacks 数据全部保留。
 
 2. **启用扩展**：`drizzle-kit push` 只做静态 schema 分析生成 DDL，不会执行 schema.ts 中的任意 JavaScript 代码。因此 `CREATE EXTENSION IF NOT EXISTS vector` 必须放在服务启动初始化阶段执行：在 `server/db/index.ts` 创建数据库连接后立即执行一次（幂等）：
    ```ts
@@ -61,29 +61,38 @@
      content: text('content').notNull(),
      embedding: vector('embedding', { dimensions: 1024 }).notNull(),
      role: text('role').notNull(),
-     createdAt: timestamp('created_at').notNull().defaultNow(),
+     // created_at 引用消息原始创建时间（从 messages.created_at 复制），便于按时间检索历史记忆
+     createdAt: timestamp('created_at').notNull(),
+     // archived_at 是归档执行时间（defaultNow），与 created_at 区分：前者是消息产生时间，后者是入库时间
      archivedAt: timestamp('archived_at').notNull().defaultNow()
    }, (table) => [
      index('memory_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops'))
    ])
    ```
+   > **HNSW 索引参数说明**：Drizzle ORM 的 `index().using('hnsw', ...)` API **不暴露 `WITH (m=..., ef_construction=...)` 子句**（经 context7 查询 Drizzle 官方文档确认）。生成的 SQL 为 `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops)`，使用 pgvector 的默认值 `m=16, ef_construction=64`（恰好与原设计预期一致）。不再通过环境变量覆盖（删除 `HNSW_M` / `HNSW_EF_CONSTRUCTION`）。如未来需调优，可在 `server/db/index.ts` 启动时用原始 SQL `DROP INDEX` + `CREATE INDEX ... WITH (...)` 重建索引。
 
-4. **余弦距离查询**：使用 Drizzle 原生 `cosineDistance()` 辅助函数，无需手写原始 SQL：
+4. **余弦距离查询**：使用 Drizzle 原生 `cosineDistance()` 辅助函数，参照 Drizzle 官方文档推荐写法（[vector-similarity-search.mdx](https://github.com/drizzle-team/drizzle-orm-docs/blob/main/src/content/docs/guides/vector-similarity-search.mdx)），转换为相似度后用 `desc()` 排序：
    ```ts
-   import { cosineDistance, desc, sql } from 'drizzle-orm'
+   import { cosineDistance, desc, gt, sql } from 'drizzle-orm'
+
+   // cosineDistance 返回余弦距离（0=最相似，2=最不相似）
+   // 转换为相似度（1=最相似，-1=最不相似）便于排序和阈值过滤
+   const similarity = sql<number>`1 - (${cosineDistance(memoryVectors.embedding, queryVector)})`
 
    const results = await db.select({
      content: memoryVectors.content,
      messageId: memoryVectors.messageId,
      sessionId: memoryVectors.sessionId,
      role: memoryVectors.role,
-     distance: cosineDistance(memoryVectors.embedding, queryVector)
+     distance: sql<number>`${cosineDistance(memoryVectors.embedding, queryVector)}`,
+     similarity
    })
      .from(memoryVectors)
-     .orderBy(sql`${cosineDistance(memoryVectors.embedding, queryVector)} ASC`)
+     .orderBy(desc(similarity))  // 相似度降序，最相似的在前
      .limit(20)
    ```
-   > 注：pgvector 的 `<=>` 操作符返回余弦**距离**（0=最相似，2=最不相似），ORDER BY 升序取最小距离。
+   > 注：pgvector 的 `<=>` 操作符返回余弦**距离**（0=最相似，2=最不相似）。`1 - distance` 映射为相似度（1=最相似）。召回阶段不做阈值过滤（top-20 全部传给 reranker 精排），阈值过滤在 reranker 阶段执行。
+   > **避免重复计算**：`cosineDistance()` 在 `select` 和 `orderBy` 中各调用一次是 Drizzle 的标准写法（官方示例如此），Drizzle 会将其编译为同一 SQL 表达式，不会产生额外的性能开销。
 
 5. **content 字段冗余说明**：`memory_vectors.content` 存储消息文本快照，而非通过 `message_id` JOIN `messages` 表获取。原因：①避免检索时 JOIN 开销；②消息删除（级联）时向量记录也删除，不存在数据不一致；③简化查询逻辑。这是可接受的冗余设计。
 
@@ -132,15 +141,16 @@ CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops) WITH (m 
 **理由**：用户明确选择此策略。避免全量入库的存储成本；LLM 判断重要度比规则启发式更智能；符合 Agent 架构（LLM 决策）。
 
 **重要度判断实现细节**：
-- **调用模型**：默认使用 `Qwen/Qwen3.5-4B`（轻量、支持工具调用、成本低），可通过环境变量 `MEMORY_IMPORTANCE_MODEL` 覆盖。
-- **调用方式**：直接通过 `fetch` 调用硅基流动 `/v1/chat/completions` 端点（非流式），请求体**必须**显式传入 `enable_thinking: false` 关闭思考模式。原因：Qwen3.5-4B 默认会返回 `<think>...</think>` 思考内容，若不关闭会导致 JSON 解析失败。不使用项目的 `llmProvider`（专为 streamText 设计），直接构造标准 OpenAI 兼容请求。
-- **输入**：将会话内所有候选消息（按 `created_at` 升序）以 JSON 数组形式传入，每条包含 `id`、`role`、`content` 前 2000 字符。
+- **调用模型**：默认使用 `Qwen/Qwen3.5-4B`（轻量、支持工具调用、成本低，`toggleableThinking: true`），可通过环境变量 `MEMORY_IMPORTANCE_MODEL` 覆盖。
+- **调用方式**：**复用项目现有 `createReasoningProvider()` + AI SDK v5 的 `generateText()`（非流式）**，保持与项目架构一致。通过 `llmProvider(modelId, { enableThinking: false })` 创建 provider，`enable_thinking: false` 由 `reasoning-provider.ts` 的 `createThinkingFetch` 在 customFetch 层注入（非调用方直接放请求体），与项目现有 `streamText` 调用路径一致。
+  > ⚠️ **架构一致性**：不直接用 `fetch` 调用 API。原因：①项目 `enable_thinking` 注入逻辑封装在 `reasoning-provider.ts` 的 customFetch 层（project_memory 明确记录此约束）；②customFetch 还处理 developer→system 角色修复、reasoning_content 字段映射等兼容逻辑；③直接 fetch 会绕过这些修复，可能导致非流式响应中 reasoning_content 字段干扰 JSON 解析。`generateText` 走 Chat Completions API 非流式模式，customFetch 检测到响应非 `text/event-stream` 时直接透传，不影响 `generateText` 解析 `result.text`。
+- **输入**：将会话内所有候选消息（按 `created_at` 升序）以 JSON 数组形式传入，每条包含 `id`、`role`、`content` 前 1000 字符（注：项目 `MAX_MESSAGE_LENGTH = 1000`，用户消息最长 1000 字符；assistant 消息不受此限，但截断到 1000 字符足够判断重要度）。
 - **Prompt 要求**：
   - 判断标准：长期价值（用户偏好、技术决策、事实性信息、项目背景） vs 一次性/闲聊（问候、简单计算、纯知识问答）。
   - 输出格式：严格 JSON 数组，元素为 `{ "message_id": "...", "important": true/false, "reason": "..." }`。
-- **参数**：`temperature: 0.1`（低随机性），`max_tokens: 4096`（预留足够 JSON 输出空间），`stream: false`，`enable_thinking: false`。
-- **超时**：`AbortController` 30 秒超时，超时则该次归档整体失败（记录日志，不影响对话）。
-- **失败降级**：若 LLM 返回无法解析（含思考标签、JSON 截断、格式错误等），默认该会话所有消息判为非重要，不入库（避免污染记忆库）。
+- **参数**：`temperature: 0.1`（低随机性），`maxTokens: 4096`（预留足够 JSON 输出空间），`abortSignal` 30 秒超时。
+- **超时**：通过 `generateText` 的 `abortSignal` 参数传入 `AbortController` 30 秒超时，超时则该次归档整体失败（记录日志，不影响对话）。
+- **失败降级**：若 LLM 返回无法解析（含 `<think>` 标签、JSON 截断、格式错误等），默认该会话所有消息判为非重要，不入库（避免污染记忆库）。
 
 **替代方案**：全量入库（成本高、噪声大）、用户手动收藏（需用户操作、体验差）、每条消息实时判断（频繁 LLM 调用、成本高）。
 
@@ -151,8 +161,9 @@ CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops) WITH (m 
 **理由**：当前项目无显式「会话结束」事件，用户切换会话是自然的「上一个会话告一段落」信号。重要度筛选入库本质是消息持久化操作，按 AGENTS.md「消息持久化走 Workflow」原则，用代码编排（非 LLM 工具）合理。但纯前端触发无法覆盖标签页关闭场景，因此需要服务端兜底。
 
 **触发入口**：
-1. **前端触发**：`useChatSession` composable 的 `switchSession()` 和 `createNewSession()` 两个方法中，在执行切换/创建前，先对 `currentSessionId`（上一个会话）异步调用归档 API（静默失败，不阻塞切换）。前端同时在 `/api/chat` 请求 body 中传入 `lastSessionId` 字段（即切换前的会话 ID），供服务端兜底使用。
-2. **服务端兜底**：`server/api/chat.post.ts` 从请求 body 读取 `lastSessionId`（前端传入的上一个会话 ID），在 `onFinish` 回调中除了保存当前消息外，若 `lastSessionId` 存在且不等于当前 `sessionId`，则异步触发该会话的归档（不阻塞当前对话流返回）。不使用服务端全局缓存/Map 来追踪会话状态——保持服务端无状态，所有上下文通过请求参数传递，避免并发场景下状态不一致。
+1. **前端触发**：`useChatSession` composable 的 `switchSession()` 和 `createNewSession()` 两个方法中，**在修改 `currentSessionId.value` 之前**先保存旧值 `const previousSessionId = currentSessionId.value`，对 `previousSessionId` 异步调用归档 API（fire-and-forget，不 await 完成，`.catch(console.error)` 兜底，不阻塞切换）。**首次加载时 `currentSessionId` 为空字符串，不触发归档**。前端同时在 `/api/chat` 请求 body 中传入 `lastSessionId` 字段（即切换前的会话 ID），供服务端兜底使用。`lastSessionId` 需通过 ref 维护，在会话切换时更新为 `previousSessionId`，并在 `useChat` 的 `body` computed 中读取（遵循 AGENTS.md「useChat body 必须用 computed 包裹」规则）。
+2. **服务端兜底**：`server/api/chat.post.ts` 从请求 body 读取 `lastSessionId`（前端传入的上一个会话 ID），在 `onFinish` 回调中除了保存当前消息外，若 `lastSessionId` 存在且不等于当前 `sessionId`，则**fire-and-forget** 触发该会话的归档（启动归档 Promise 但**不 await 完成**，用 `.catch(console.error)` 兜底，不阻塞 `onFinish` 返回和流结束信号）。不使用服务端全局缓存/Map 来追踪会话状态——保持服务端无状态，所有上下文通过请求参数传递，避免并发场景下状态不一致。
+   > ⚠️ **fire-and-forget 语义**：`onFinish` 中只启动归档任务但不等待完成。归档是异步后台操作，可能耗时数十秒（LLM 重要度判断 + embedding）。若 `await` 归档完成会延迟流的 `finish` 事件，导致前端长时间等待。现有的 `await saveMessagesToDb(...)` 是必要的同步持久化（快），归档则是可异步的增强操作（慢）。
 
 **已知局限及缓解**：
 - 用户关闭浏览器标签页 → 最后一个会话可能延迟归档。缓解：服务端兜底会在用户下一次发起任意 `/api/chat` 请求时触发；若用户永远不返回，则内容仍保留在 `messages` 表中，属于可接受的数据未提升为“长期记忆”，不会丢失原始对话。
@@ -238,16 +249,16 @@ CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops) WITH (m 
 
 ### 决策 13：HNSW 索引参数
 
-**选择**：建表时同步创建 HNSW 索引（`vector_cosine_ops`），默认 `m=16, ef_construction=64`。同时暴露环境变量 `HNSW_M` / `HNSW_EF_CONSTRUCTION` 供不同数据规模调优。
+**选择**：建表时同步创建 HNSW 索引（`vector_cosine_ops`），使用 pgvector 默认参数 `m=16, ef_construction=64`。**不暴露环境变量覆盖**（Drizzle ORM 的 `index().using('hnsw', ...)` API 不支持 `WITH` 子句，详见决策 1 第 3 点说明）。
 
-**理由**：HNSW 适合写入少、查询中的场景；参数可调避免对小数据量过度消耗内存。
+**理由**：HNSW 适合写入少、查询中的场景。pgvector 默认值 `m=16, ef_construction=64` 恰好是业界通用推荐值，对本项目万级数据量完全够用。如未来数据规模增长需调优，可在 `server/db/index.ts` 启动时用原始 SQL `DROP INDEX` + `CREATE INDEX ... WITH (m=..., ef_construction=...)` 重建索引（脱离 Drizzle schema 管理）。
 
 ## Risks / Trade-offs
 
 | 风险 | 缓解 |
 | --- | --- |
 | 重要度判断 LLM 调用增加成本和延迟 | 用轻量模型（Qwen3.5-4B 关闭思考 enable_thinking: false）；异步执行不阻塞对话；进程内并发锁 + 消息级幂等守卫避免重复调用 |
-| Docker 镜像切换涉及 PG 大版本变更 | 使用 `pgvector/pgvector:pg17` 镜像；Migration Plan 明确 `docker compose down -v` 删除旧 volume 后重建；扩展在 db/index.ts 启动时自动启用 |
+| Docker 镜像切换涉及 PG 大版本变更 | 使用 `pgvector/pgvector:pg18` 镜像（与当前 `postgres:18-alpine` 同为 PG 18，无需 `docker compose down -v`，数据卷兼容）；扩展在 db/index.ts 启动时自动启用 |
 | bge-m3 embedding 超长输入 | 不做客户端截断，由硅基流动 API 自行截断处理；超长时仅记录警告日志 |
 | 记忆无用户隔离，多用户场景下隐私问题 | 当前项目无用户系统，属可接受现状；后续引入用户系统时再隔离 |
 | 重排序 API 失败导致检索降级 | 重排序失败时降级为仅 embedding 余弦距离检索结果（top-5，score 映射为 1-distance/2），不中断流程 |
@@ -255,21 +266,21 @@ CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops) WITH (m 
 | 归档进行中用户删除会话 | `memory_vectors` 外键级联删除自动清理已写入记录；后续写入因外键约束失败（记录日志不抛异常） |
 | 用户关闭浏览器导致最后一个会话延迟归档 | 前端传 `lastSessionId` + 服务端 `/api/chat` onFinish 兜底；若用户永远不返回，原始对话仍保留在 `messages` 表 |
 | 敏感信息（密码/API Key）被误入库 | 基础正则启发式过滤；明确记录为可接受的基础防护，非绝对安全 |
-| Qwen3.5-4B 思考模式未关闭导致 JSON 解析失败 | 请求体强制传 `enable_thinking: false`；解析失败时整体降级为不入库 |
+| Qwen3.5-4B 思考模式未关闭导致 JSON 解析失败 | 通过 `createReasoningProvider` + `generateText` + `{ enableThinking: false }` 在 customFetch 层注入 `enable_thinking: false`（架构一致）；解析失败时整体降级为不入库 |
 
 ## Migration Plan
 
-1. **Docker 调整**：修改 `docker-compose.yml`，将 `postgres` 和 `test-postgres` 服务镜像切换为 `pgvector/pgvector:pg17`。切换后**必须**执行 `docker compose down -v` 删除旧数据 volume（PostgreSQL 大版本间数据文件不兼容），再 `docker compose up -d` 重建容器。
+1. **Docker 调整**：修改 `docker-compose.yml`，将 `postgres` 和 `test-postgres` 服务镜像切换为 `pgvector/pgvector:pg18`（与当前 `postgres:18-alpine` 同为 PG 18，**无需 `docker compose down -v`**，数据卷兼容）。执行 `docker compose up -d` 重建容器（检测到 image 变化自动重建），现有数据全部保留。
 2. **DB 迁移**：
    - 在 `server/db/index.ts` 数据库连接初始化后添加 `CREATE EXTENSION IF NOT EXISTS vector`（幂等执行）；
    - 在 `server/db/schema.ts` 中新增 `memoryVectors` 表（使用 Drizzle 原生 `vector({ dimensions: 1024 })` 类型，含 `archived_at` 字段，HNSW 索引通过第二个参数回调定义）；
    - 运行 `pnpm db:push` 同步 schema（开发库和测试库都需要）；
    - 测试数据库（5433端口）同样需要重建容器并 db:push。
-3. **runtimeConfig 扩展**：在 `nuxt.config.ts` 新增 `embeddingModel`、`rerankerModel`、`memoryImportanceModel`、`hnswM`、`hnswEfConstruction` 等非 public 字段；同步更新 `.env.example`
-4. **后端服务与工具**：新增 `server/utils/embedding.ts`（embedding 服务，超长文本交由 API 截断）、`server/utils/reranker.ts`（重排序服务，传 return_documents: true）、`server/tools/recall-memory.ts`（检索工具，返回结果含 score）、`server/utils/memory-archive.ts`（归档逻辑，重要度判断 fetch 时传 enable_thinking: false，含进程内并发锁）
-5. **注册工具 + prompt 注入**：在 `chat.post.ts` 的 `toolsConfig` 注册 `recallMemoryTool`（仅对支持工具调用的模型启用）；追加 recall-memory 使用规则到 system prompt；在请求 body 中读取 `lastSessionId`，在 `onFinish` 中加入服务端归档兜底
+3. **runtimeConfig 扩展**：在 `nuxt.config.ts` 新增 `embeddingModel`、`rerankerModel`、`memoryImportanceModel` 等非 public 字段；同步更新 `.env.example`（不再新增 `hnswM`/`hnswEfConstruction`，HNSW 使用 pgvector 默认参数，详见决策 13）
+4. **后端服务与工具**：新增 `server/utils/embedding.ts`（embedding 服务，超长文本交由 API 截断）、`server/utils/reranker.ts`（重排序服务，传 return_documents: true）、`server/tools/recall-memory.ts`（检索工具，返回结果含 score）、`server/utils/memory-archive.ts`（归档逻辑，重要度判断复用 `createReasoningProvider` + `generateText` + `{ enableThinking: false }`，含进程内并发锁）
+5. **注册工具 + prompt 注入**：在 `chat.post.ts` 的 `toolsConfig` 注册 `recallMemoryTool`（仅对支持工具调用的模型启用）；追加 recall-memory 使用规则到 system prompt；在请求 body 中读取 `lastSessionId`，在 `onFinish` 中 fire-and-forget 触发服务端归档兜底（不 await 完成，`.catch(console.error)` 兜底）
 6. **归档 API**：新增 `server/api/sessions/[id]/archive-memory.post.ts`，内部自行校验 UUID 格式，使用 `Map<string, Promise<void>>` 实现进程内并发锁
-7. **前端触发**：在 `useChatSession` 的 `switchSession()` 和 `createNewSession()` 中，对上一个会话异步调用归档 API（静默失败）；在 `/api/chat` 请求中传递 `lastSessionId` 字段
+7. **前端触发**：在 `useChatSession` 的 `switchSession()` 和 `createNewSession()` 中，**在修改 `currentSessionId.value` 之前**先保存旧值 `previousSessionId`，对非空的 `previousSessionId` fire-and-forget 调用归档 API（不 await 完成，`.catch(console.error)` 兜底）；维护 `lastSessionId` ref 并在 `useChat` 的 `body` computed 中传入 `/api/chat` 请求
 8. **前端展示**：在 `components/chat/ToolInvocation.vue` 新增 `recall-memory` 分支
 9. **文档同步**：更新 `docs/db-schema.md`（新增 `memory_vectors` 表含 `archived_at` 字段）、`docs/API.md`（新增 `POST /api/sessions/:id/archive-memory`）
 10. **回滚策略**：若发现问题，移除 `recall-memory` 工具注册即可禁用检索（向量表数据保留不影响）；归档 API 移除后不影响对话主流程

@@ -7,15 +7,16 @@
 #### Scenario: 会话切换触发归档
 
 - **WHEN** 用户切换到另一个会话或新建会话
-- **THEN** 前端对切换前的 `currentSessionId`（上一个会话）异步调用 `POST /api/sessions/:id/archive-memory` 触发重要度筛选入库
-- **AND** 前端同时在 `/api/chat` 请求 body 中传入 `lastSessionId` 字段供服务端兜底
+- **THEN** 前端在修改 `currentSessionId.value` **之前**先保存旧值 `previousSessionId`，对非空的 `previousSessionId` fire-and-forget 调用 `POST /api/sessions/:id/archive-memory` 触发重要度筛选入库（不 await 完成，`.catch(console.error)` 兜底，不阻塞切换）
+- **AND** 首次加载 `currentSessionId` 为空字符串时不触发归档
+- **AND** 前端维护 `lastSessionId` ref（更新为 `previousSessionId`），在 `useChat` 的 `body` computed 中传入 `/api/chat` 请求供服务端兜底
 - **AND** 归档异步执行，不阻塞用户在新会话中的对话
 
 #### Scenario: 服务端兜底触发归档
 
 - **WHEN** 用户发送消息时，请求 body 中包含 `lastSessionId` 且该值不等于当前 `sessionId`
-- **THEN** `server/api/chat.post.ts` 在 `onFinish` 回调中异步触发该 `lastSessionId` 会话的归档
-- **AND** 该兜底不阻塞当前对话流返回
+- **THEN** `server/api/chat.post.ts` 在 `onFinish` 回调中**fire-and-forget** 触发该 `lastSessionId` 会话的归档（启动归档 Promise 但不 await 完成，`.catch(console.error)` 兜底）
+- **AND** 该兜底不阻塞当前对话流返回和流结束信号
 
 #### Scenario: 重要内容被筛选入库
 
@@ -32,9 +33,10 @@
 #### Scenario: 重要度判断关闭思考模式
 
 - **WHEN** 归档流程调用 LLM 做重要度判断
-- **THEN** 请求体必须包含 `enable_thinking: false` 关闭思考模式
-- **AND** 使用非流式调用（`stream: false`），`temperature: 0.1`，`max_tokens: 4096`
-- **AND** 30 秒超时控制，超时整体跳过
+- **THEN** 系统复用项目现有 `createReasoningProvider()` + AI SDK v5 `generateText()`（非流式），通过 `llmProvider(modelId, { enableThinking: false })` 创建 provider
+- **AND** `enable_thinking: false` 由 `reasoning-provider.ts` 的 `createThinkingFetch` 在 customFetch 层注入（非调用方直接放请求体），保持与项目现有 `streamText` 调用路径架构一致
+- **AND** 参数 `temperature: 0.1`，`maxTokens: 4096`
+- **AND** 通过 `generateText` 的 `abortSignal` 参数传入 30 秒超时控制，超时整体跳过
 
 #### Scenario: 重要度判断失败降级
 
@@ -47,7 +49,7 @@
 - **WHEN** 归档 API 被调用
 - **THEN** 系统先查询 `memory_vectors` 中已存在的 `message_id` 集合
 - **AND** 仅对尚未入库的消息执行 LLM 重要度判断和 embedding
-- **AND** 已入库的消息直接跳过，不重复调用服务
+- **AND** 已入库的消息直接跳过，**不进入 LLM 重要度判断、不调用 embedding 服务**，避免重复成本
 
 #### Scenario: 进程内并发锁防重复执行
 
@@ -200,19 +202,19 @@
 - **WHEN** 服务启动并创建数据库连接
 - **THEN** 立即执行 `CREATE EXTENSION IF NOT EXISTS vector`（幂等，已存在时跳过）
 - **AND** `memory_vectors` 表的 `vector(1024)` 类型可正常创建
-- **AND** 切换 Docker 镜像到 `pgvector/pgvector:pg17` 后需执行 `docker compose down -v` 删除旧 volume 重建容器
+- **AND** 切换 Docker 镜像到 `pgvector/pgvector:pg18`（与当前 `postgres:18-alpine` 同为 PG 18，无需 `docker compose down -v`，数据卷兼容）
 
 #### Scenario: 向量表创建含 HNSW 索引
 
 - **WHEN** 系统初始化 `memory_vectors` 表
 - **THEN** 表包含 HNSW 索引（`index('memory_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops'))`）
-- **AND** `m` 和 `ef_construction` 可通过环境变量 `HNSW_M` / `HNSW_EF_CONSTRUCTION` 覆盖（默认 16/64）
+- **AND** 使用 pgvector 默认参数 `m=16, ef_construction=64`（Drizzle ORM API 不支持 `WITH` 子句，不通过环境变量覆盖）
 - **AND** 后续检索时自动使用该索引加速
 
 #### Scenario: 向量入库
 
 - **WHEN** 归档流程对某条重要消息完成 embedding
-- **THEN** 系统向 `memory_vectors` 表插入一条记录，包含：`id`（UUID）、`message_id`（外键关联 `messages.id`，级联删除）、`session_id`（外键关联 `sessions.id`，级联删除）、`content`（消息文本快照）、`embedding`（1024 维向量）、`role`（消息角色）、`created_at`（消息创建时间）、`archived_at`（归档时间）
+- **THEN** 系统向 `memory_vectors` 表插入一条记录，包含：`id`（UUID）、`message_id`（外键关联 `messages.id`，级联删除）、`session_id`（外键关联 `sessions.id`，级联删除）、`content`（消息文本快照）、`embedding`（1024 维向量）、`role`（消息角色）、`created_at`（**从 `messages.created_at` 复制**，消息原始创建时间，便于按时间检索历史记忆）、`archived_at`（归档执行时间，`defaultNow()`）
 - **AND** 插入成功后该消息可被检索
 
 #### Scenario: 删除会话级联删除记忆
