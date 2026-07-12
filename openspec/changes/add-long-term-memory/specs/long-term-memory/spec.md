@@ -9,7 +9,7 @@
 - **WHEN** 用户切换到另一个会话或新建会话
 - **THEN** 前端在修改 `currentSessionId.value` **之前**先保存旧值 `previousSessionId`，对非空的 `previousSessionId` fire-and-forget 调用 `POST /api/sessions/:id/archive-memory` 触发重要度筛选入库（不 await 完成，`.catch(console.error)` 兜底，不阻塞切换）
 - **AND** 首次加载 `currentSessionId` 为空字符串时不触发归档
-- **AND** 前端维护 `lastSessionId` ref（更新为 `previousSessionId`），在 `useChat` 的 `body` computed 中传入 `/api/chat` 请求供服务端兜底
+- **AND** 前端维护 `lastSessionId` ref（更新为 `previousSessionId`），在 `pages/ai-chat.vue` 的 `DefaultChatTransport.body` 函数中追加 `lastSessionId: lastSessionId.value` 字段传入 `/api/chat` 请求供服务端兜底（项目使用 `new Chat()` + `DefaultChatTransport`，非 `useChat` composable）
 - **AND** 归档异步执行，不阻塞用户在新会话中的对话
 
 #### Scenario: 服务端兜底触发归档
@@ -35,7 +35,7 @@
 - **WHEN** 归档流程调用 LLM 做重要度判断
 - **THEN** 系统复用项目现有 `createReasoningProvider()` + AI SDK v5 `generateText()`（非流式），通过 `llmProvider(modelId, { enableThinking: false })` 创建 provider
 - **AND** `enable_thinking: false` 由 `reasoning-provider.ts` 的 `createThinkingFetch` 在 customFetch 层注入（非调用方直接放请求体），保持与项目现有 `streamText` 调用路径架构一致
-- **AND** 参数 `temperature: 0.1`，`maxTokens: 4096`
+- **AND** 参数 `temperature: 0.1`，`maxOutputTokens: 4096`（AI SDK v5 参数名，非 `maxTokens`）
 - **AND** 通过 `generateText` 的 `abortSignal` 参数传入 30 秒超时控制，超时整体跳过
 
 #### Scenario: 重要度判断失败降级
@@ -86,8 +86,8 @@
 
 #### Scenario: 疑似敏感信息跳过入库
 
-- **WHEN** 某条消息内容匹配敏感信息正则（如 `sk-...` API Key、`password=...`、`api_key=...`、`token=...`）
-- **THEN** 系统跳过该消息的重要度判断和 embedding
+- **WHEN** 某条 `role='user'` 消息内容匹配敏感信息正则（如 `sk-...` API Key、`password=...`、`api_key=...`、`token=...`）
+- **THEN** 系统跳过该消息的重要度判断和 embedding（**仅对 user 消息过滤，assistant 消息不过滤**，避免误杀编程助手的代码回答）
 - **AND** 记录一条警告日志标注该消息因敏感信息被过滤
 
 #### Scenario: 过短内容跳过入库

@@ -1,10 +1,10 @@
 ## 1. 数据库基础设施
 
-- [ ] 1.1 修改 `docker-compose.yml`，将 `postgres` 和 `test-postgres` 服务镜像切换为 `pgvector/pgvector:pg18`（与当前 `postgres:18-alpine` 同为 PG 18，无需 `docker compose down -v`，数据卷兼容）；执行 `docker compose up -d` 重建容器即可
+- [ ] 1.1 修改 `docker-compose.yml`，将 `postgres` 和 `test-postgres` 服务镜像切换为 `pgvector/pgvector:pg18`（与当前 `postgres:18-alpine` 同为 PG 18，数据文件格式预期兼容；Alpine→Debian 基础镜像可能导致 locale/collation 差异，需先在 test-postgres 5433 验证 + `pnpm test:api` 通过后再切开发库，必要时 `REINDEX DATABASE`）；执行 `docker compose up -d` 重建容器即可
 - [ ] 1.2 在 `server/db/index.ts` 中，数据库连接创建后立即执行 `CREATE EXTENSION IF NOT EXISTS vector` SQL 语句（使用 postgres 客户端的 tagged template 语法，幂等执行，已存在时跳过）；验证服务启动时扩展自动启用
 - [ ] 1.3 修改 `server/db/schema.ts`：导入 Drizzle 原生 `vector`（from `drizzle-orm/pg-core`），新增 `memoryVectors` 表（字段：`id` 主键、`message_id` 外键→messages.id 级联删除、`session_id` 外键→sessions.id 级联删除、`content` text NOT NULL、`embedding` 使用 `vector({ dimensions: 1024 })` NOT NULL、`role` text NOT NULL、`created_at` timestamp NOT NULL **从 messages.created_at 复制（非 defaultNow）**、`archived_at` timestamp NOT NULL defaultNow()）
 - [ ] 1.4 在 pgTable 第二个参数回调中创建 HNSW 向量索引（`index('memory_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops'))`），**使用 pgvector 默认参数（m=16, ef_construction=64），不通过环境变量覆盖**（Drizzle API 不支持 WITH 子句，详见 design.md 决策 13）
-- [ ] 1.5 运行 `pnpm db:push` 同步 schema 到开发数据库和测试数据库，验证表 + 索引创建成功
+- [ ] 1.5 运行 `pnpm db:push` 同步 schema 到开发数据库（端口 5434）和测试数据库（端口 5433）。测试库需临时切换 `DATABASE_URL`：PowerShell 下 `$env:DATABASE_URL='postgresql://sw_pad_test:sw_pad_test@localhost:5433/sw_pad_test'; pnpm db:push`，同步后恢复原值。验证表 + 索引创建成功
 - [ ] 1.6 同步更新 `docs/db-schema.md` 记录 `memory_vectors` 表结构（含 `archived_at` 字段）
 
 ## 2. 配置扩展
@@ -40,12 +40,12 @@
 
 ## 6. 重要度筛选入库（归档）
 
-- [ ] 6.1 新增 `server/utils/memory-archive.ts`，实现重要度判断逻辑：默认使用 `Qwen/Qwen3.5-4B`，**复用项目现有 `createReasoningProvider()` + AI SDK v5 `generateText()`（非流式）**，通过 `llmProvider(modelId, { enableThinking: false })` 创建 provider（`enable_thinking: false` 由 customFetch 层注入，非请求体直接传），参数 `temperature: 0.1`、`maxTokens: 4096`，输出严格 JSON 数组判断每条消息重要度（详见 design.md 决策 5）
+- [ ] 6.1 新增 `server/utils/memory-archive.ts`，实现重要度判断逻辑：默认使用 `Qwen/Qwen3.5-4B`，**复用项目现有 `createReasoningProvider()` + AI SDK v5 `generateText()`（非流式）**，通过 `llmProvider(modelId, { enableThinking: false })` 创建 provider（`enable_thinking: false` 由 customFetch 层注入，非请求体直接传），参数 `temperature: 0.1`、`maxOutputTokens: 4096`（AI SDK v5 参数名为 `maxOutputTokens`，非 `maxTokens`），输出严格 JSON 数组判断每条消息重要度（详见 design.md 决策 5）
 - [ ] 6.2 实现 30 秒超时（通过 `generateText` 的 `abortSignal` 参数传入 `AbortController`），超时则该次归档整体失败（记录日志）
 - [ ] 6.3 实现 JSON 解析容错：若 LLM `result.text` 返回含 `<think>` 标签或格式错误，整体降级为不入库（避免污染记忆库）
 - [ ] 6.4 实现入库逻辑：对 LLM 判断为重要的消息调用 embedding 服务 → 写入 `memory_vectors` 表（`created_at` 从 `messages.created_at` 复制，`archived_at` 用 `defaultNow()`）
 - [ ] 6.5 实现重复归档守卫（以 `message_id` 为粒度：已存在记录的消息跳过，未存在的消息继续处理）
-- [ ] 6.6 实现消息过滤（排除 `role='system'`、敏感信息正则匹配、content 长度 < 5 字符的空短消息；注意：messages 表中不存在独立的工具调用结果消息，无需过滤）
+- [ ] 6.6 实现消息过滤（排除 `role='system'`；**敏感信息正则仅对 `role='user'` 消息过滤**，避免误杀 assistant 的代码回答；content 长度 < 5 字符的空短消息跳过；注意：messages 表中不存在独立的工具调用结果消息，无需过滤）
 - [ ] 6.7 实现进程内并发锁（`Map<string, Promise<void>>`）：同一会话归档进行中时，重复请求直接返回不重复执行
 - [ ] 6.8 实现失败容错（单条消息 embedding 失败跳过、不阻断其他消息；LLM 判断失败或超时则整体跳过该次归档，下次重试）
 - [ ] 6.9 运行 `pnpm lint` + `pnpm typecheck` 验证
@@ -53,7 +53,7 @@
 ## 7. 归档 API
 
 - [ ] 7.1 新增 `server/api/sessions/[id]/archive-memory.post.ts`，调用 `memory-archive.ts` 异步执行归档
-- [ ] 7.2 实现参数校验（`id` 为标准 UUID v4 格式，否则返回 400；会话不存在返回 404）
+- [ ] 7.2 实现参数校验（`id` 为标准 UUID v4 格式，否则返回 400；会话不存在返回 404）。**方案：路由内自行校验，不扩展 `server/middleware/security.ts`**（现有中间件 UUID 正则只匹配单段路径，扩展为多段会影响现有路由匹配，本期选择路由内聚校验）
 - [ ] 7.3 集成进程内并发锁（复用 memory-archive.ts 中的锁或在 API 层实现）
 - [ ] 7.4 实现消息级幂等响应（已存在的 `message_id` 直接跳过，不重复处理）
 - [ ] 7.5 运行 `pnpm lint` + `pnpm typecheck` 验证
@@ -66,11 +66,12 @@
 - [ ] 8.3 在 `onFinish` 回调中加入服务端归档兜底：若 `lastSessionId` 存在且不等于当前 `sessionId`，则**fire-and-forget** 触发该会话归档（启动 Promise 但**不 await 完成**，`.catch(console.error)` 兜底，不阻塞 `onFinish` 返回和流结束信号）；不引入全局会话缓存，保持服务端无状态
 - [ ] 8.4 验证 `maxSteps` 动态计算正确（`hasActiveTools` 包含 recall-memory）
 - [ ] 8.5 运行 `pnpm lint` + `pnpm typecheck` 验证
+- [ ] 8.6 验证 `onFinish` fire-and-forget 在 Nitro 请求生命周期结束后是否被截断：用 mock 10s 归档函数（`setTimeout(resolve, 10_000)`）替换真实归档逻辑，发起 `/api/chat` 请求，观察响应返回后 10s 内归档是否完整执行（日志确认）；若被截断，改用 `event.waitUntil` 或后台任务队列
 
 ## 9. 前端触发归档
 
-- [ ] 9.1 在 `composables/useChatSession.ts` 的 `switchSession()` 和 `createNewSession()` 方法中，**在修改 `currentSessionId.value` 之前**先保存旧值 `const previousSessionId = currentSessionId.value`，对**非空**的 `previousSessionId` fire-and-forget 调用 `POST /api/sessions/:id/archive-memory`（不 await 完成，`.catch(console.error)` 兜底，不阻塞切换）；首次加载 `currentSessionId` 为空字符串时不触发归档
-- [ ] 9.2 维护 `lastSessionId` ref（在会话切换时更新为 `previousSessionId`），在 `useChat` 的 `body` computed 中传入 `/api/chat` 请求（遵循 AGENTS.md「useChat body 必须用 computed 包裹」规则）
+- [ ] 9.1 在 `composables/useChatSession.ts` 的 `switchSession()` 和 `createNewSession()` 方法中，**在修改 `currentSessionId.value` 之前**先保存旧值 `const previousSessionId = currentSessionId.value`，对**非空**的 `previousSessionId` fire-and-forget 调用 `POST /api/sessions/:id/archive-memory`（不 await 完成，`.catch(console.error)` 兜底，不阻塞切换）；首次加载 `currentSessionId` 为空字符串时不触发归档。**注意**：当前 `switchSession`（L53）和 `createNewSession`（L43）均直接赋值 `currentSessionId.value`，未保存旧值，需改造为先保存 `previousSessionId` 再赋值
+- [ ] 9.2 维护 `lastSessionId` ref（在会话切换时更新为 `previousSessionId`），在 `pages/ai-chat.vue` 的 `DefaultChatTransport.body` 函数中追加 `lastSessionId: lastSessionId.value` 字段传入 `/api/chat` 请求（项目使用 `new Chat({ transport: new DefaultChatTransport({ body: () => ({...}) }) })`，`body` 是普通函数每次请求重新求值，等价于 computed 响应式效果；非 `useChat` composable）
 - [ ] 9.3 实现静默失败（归档失败不弹 toast、不阻断切换，仅 console.error）
 - [ ] 9.4 实现前端防重复守卫（同一会话归档请求进行中不重复调用）
 - [ ] 9.5 运行 `pnpm lint` + `pnpm typecheck` 验证
@@ -93,3 +94,9 @@
 - [ ] 11.6 新增 `tests/e2e/recall-memory.e2e.test.ts`，测试 recall-memory 完整链路；LLM 自主调用 case 作为可选冒烟测试，核心链路通过直接调用 API/工具覆盖
 - [ ] 11.7 运行 `pnpm test:unit` + `pnpm test:api` 验证全部通过
 - [ ] 11.8 运行 `pnpm test:all` 验证不影响现有测试
+
+## 12. 文档同步
+
+- [ ] 12.1 更新 `AGENTS.md`「Agent 架构设计规范 > 记忆系统」章节：当前内容「仅对话历史（DB `messages` 表）作为记忆」已过时，需新增 `memory_vectors` 表（长期记忆存储）和 `recall-memory` 工具（LLM 自主检索跨会话历史）说明；明确「会话切换时归档走 Workflow，检索走 Agent（LLM 自主调用 recall-memory）」的架构划分
+- [ ] 12.2 更新 `docs/db-schema.md` 记录 `memory_vectors` 表结构（含 `archived_at` 字段、HNSW 索引、外键级联关系）
+- [ ] 12.3 更新 `docs/API.md` 记录 `POST /api/sessions/:id/archive-memory` 接口（路径参数 UUID 校验、并发锁、消息级幂等）

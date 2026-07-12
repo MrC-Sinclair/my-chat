@@ -39,7 +39,7 @@
    test-postgres:
      image: pgvector/pgvector:pg18
    ```
-   > ℹ️ **版本说明**：`pgvector/pgvector:pg18` 镜像已发布（Docker Hub `docker.io/pgvector/pgvector:pg18`），与项目当前 `postgres:18-alpine` 同为 PG 18，**无需 `docker compose down -v` 删除数据卷**（同版本数据卷兼容）。只需 `docker compose up -d` 重建容器（检测到 image 变化自动重建），再 `pnpm db:push` 同步 schema。现有 sessions/messages/feedbacks 数据全部保留。
+   > ℹ️ **版本说明**：`pgvector/pgvector:pg18` 镜像已发布（Docker Hub `docker.io/pgvector/pgvector:pg18`），与项目当前 `postgres:18-alpine` 同为 PG 18，PG 主版本相同则数据文件格式兼容，**预期无需 `docker compose down -v` 删除数据卷**。但需注意：`postgres:18-alpine` 基于 Alpine Linux，`pgvector/pgvector:pg18` 基于 Debian（pgvector 官方镜像不提供 alpine 变体），两者默认 locale/collation 可能不同（Alpine 默认 C，Debian 默认 en_US.utf8），可能导致索引排序顺序变化。**实施时需先在测试库（5433 端口）验证切换**：`docker compose up -d test-postgres` → `pnpm db:push`（指向测试库）→ `pnpm test:api`，确认无 collation 问题后再切换开发库。如出现 collation 不一致问题，需在切换后执行 `REINDEX DATABASE`。另外需确认卷挂载路径 `/var/lib/postgresql` 与 pgvector 镜像的 `PGDATA` 环境变量一致。
 
 2. **启用扩展**：`drizzle-kit push` 只做静态 schema 分析生成 DDL，不会执行 schema.ts 中的任意 JavaScript 代码。因此 `CREATE EXTENSION IF NOT EXISTS vector` 必须放在服务启动初始化阶段执行：在 `server/db/index.ts` 创建数据库连接后立即执行一次（幂等）：
    ```ts
@@ -148,7 +148,7 @@ CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops) WITH (m 
 - **Prompt 要求**：
   - 判断标准：长期价值（用户偏好、技术决策、事实性信息、项目背景） vs 一次性/闲聊（问候、简单计算、纯知识问答）。
   - 输出格式：严格 JSON 数组，元素为 `{ "message_id": "...", "important": true/false, "reason": "..." }`。
-- **参数**：`temperature: 0.1`（低随机性），`maxTokens: 4096`（预留足够 JSON 输出空间），`abortSignal` 30 秒超时。
+- **参数**：`temperature: 0.1`（低随机性），`maxOutputTokens: 4096`（预留足够 JSON 输出空间；AI SDK v5 参数名为 `maxOutputTokens`，非 `maxTokens`），`abortSignal` 30 秒超时。也可改用 AI SDK v5 原生 `timeout: 30_000` 选项（可与 `abortSignal` 并用，更简洁）。
 - **超时**：通过 `generateText` 的 `abortSignal` 参数传入 `AbortController` 30 秒超时，超时则该次归档整体失败（记录日志，不影响对话）。
 - **失败降级**：若 LLM 返回无法解析（含 `<think>` 标签、JSON 截断、格式错误等），默认该会话所有消息判为非重要，不入库（避免污染记忆库）。
 
@@ -161,20 +161,22 @@ CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops) WITH (m 
 **理由**：当前项目无显式「会话结束」事件，用户切换会话是自然的「上一个会话告一段落」信号。重要度筛选入库本质是消息持久化操作，按 AGENTS.md「消息持久化走 Workflow」原则，用代码编排（非 LLM 工具）合理。但纯前端触发无法覆盖标签页关闭场景，因此需要服务端兜底。
 
 **触发入口**：
-1. **前端触发**：`useChatSession` composable 的 `switchSession()` 和 `createNewSession()` 两个方法中，**在修改 `currentSessionId.value` 之前**先保存旧值 `const previousSessionId = currentSessionId.value`，对 `previousSessionId` 异步调用归档 API（fire-and-forget，不 await 完成，`.catch(console.error)` 兜底，不阻塞切换）。**首次加载时 `currentSessionId` 为空字符串，不触发归档**。前端同时在 `/api/chat` 请求 body 中传入 `lastSessionId` 字段（即切换前的会话 ID），供服务端兜底使用。`lastSessionId` 需通过 ref 维护，在会话切换时更新为 `previousSessionId`，并在 `useChat` 的 `body` computed 中读取（遵循 AGENTS.md「useChat body 必须用 computed 包裹」规则）。
+1. **前端触发**：`useChatSession` composable 的 `switchSession()` 和 `createNewSession()` 两个方法中，**在修改 `currentSessionId.value` 之前**先保存旧值 `const previousSessionId = currentSessionId.value`，对 `previousSessionId` 异步调用归档 API（fire-and-forget，不 await 完成，`.catch(console.error)` 兜底，不阻塞切换）。**首次加载时 `currentSessionId` 为空字符串，不触发归档**。前端同时在 `/api/chat` 请求 body 中传入 `lastSessionId` 字段（即切换前的会话 ID），供服务端兜底使用。`lastSessionId` 需通过 ref 维护，在会话切换时更新为 `previousSessionId`，并在 `pages/ai-chat.vue` 的 `DefaultChatTransport.body` 函数中读取（项目实际使用 `new Chat({ transport: new DefaultChatTransport({ body: () => ({...}) }) })`，`body` 是普通函数，每次请求重新求值，等价于 computed 的响应式效果；非 `useChat` composable）。
 2. **服务端兜底**：`server/api/chat.post.ts` 从请求 body 读取 `lastSessionId`（前端传入的上一个会话 ID），在 `onFinish` 回调中除了保存当前消息外，若 `lastSessionId` 存在且不等于当前 `sessionId`，则**fire-and-forget** 触发该会话的归档（启动归档 Promise 但**不 await 完成**，用 `.catch(console.error)` 兜底，不阻塞 `onFinish` 返回和流结束信号）。不使用服务端全局缓存/Map 来追踪会话状态——保持服务端无状态，所有上下文通过请求参数传递，避免并发场景下状态不一致。
    > ⚠️ **fire-and-forget 语义**：`onFinish` 中只启动归档任务但不等待完成。归档是异步后台操作，可能耗时数十秒（LLM 重要度判断 + embedding）。若 `await` 归档完成会延迟流的 `finish` 事件，导致前端长时间等待。现有的 `await saveMessagesToDb(...)` 是必要的同步持久化（快），归档则是可异步的增强操作（慢）。
+   > ⚠️ **Nitro 生命周期验证**：`onFinish` 在流结束后被调用，fire-and-forget 启动的 Promise 是否会在 Nitro 请求生命周期结束后被截断需实测验证。标准 Node.js HTTP server 中不截断，但 Nitro 可能有请求结束后的资源清理逻辑。**实现后需用 mock 10s 归档函数验证**：观察 `/api/chat` 响应返回后归档是否完整执行；若被截断，需改用 `event.waitUntil`（如 Nitro 支持）或改为后台任务队列。
 
 **已知局限及缓解**：
 - 用户关闭浏览器标签页 → 最后一个会话可能延迟归档。缓解：服务端兜底会在用户下一次发起任意 `/api/chat` 请求时触发；若用户永远不返回，则内容仍保留在 `messages` 表中，属于可接受的数据未提升为“长期记忆”，不会丢失原始对话。
 - 用户长时间停留一个会话不切换 → 该会话内容不会归档。缓解：同上，用户下次切换或发送新消息时触发归档。
 - 切回正在归档的会话 → 归档异步进行中，切换操作不受影响；归档写入时 `memory_vectors` 已有该消息记录，切换回来时检索即可获取。
+- **快速连续切换 A→B→C 时，中间会话 A 的归档仅依赖前端 fire-and-forget 成功**：`lastSessionId` ref 每次切换更新为 `previousSessionId`，切换 B→C 时 `lastSessionId=B`，服务端兜底只覆盖 B，不覆盖 A。若前端 archive(A) 因网络抖动失败，A 的内容不会被服务端兜底归档（除非用户切回 A 再切走）。缓解：前端 fire-and-forget 已加 `.catch(console.error)`，网络抖动概率低；即使 A 未归档，原始对话仍保留在 `messages` 表，用户切回 A 再切走时触发归档。本期不引入「查询所有未归档会话」的服务端兜底（会增加复杂度），未来可考虑。
 
 **替代方案**：显式「结束会话」按钮（需新增前端 UI，增加用户操作负担）、每条消息后判断（不符合用户选择的「会话结束」时机）、超时触发（不可靠）。
 
 **参数校验与错误处理**：
 - 路径参数 `id`：校验非空、为标准 UUID v4 格式，不存在返回 404。
-  - 注意：现有 `server/middleware/security.ts` 的 UUID 正则只匹配 `/api/sessions/:id`（单段路径），`archive-memory` 是多段路径，因此需在路由文件内自行校验，或同步扩展中间件正则。
+  - **方案选定：路由内自行校验，不扩展 `server/middleware/security.ts`**。现有 `security.ts` 的 UUID 正则只匹配 `/api/sessions/:id`（单段路径），`archive-memory` 是多段路径。扩展中间件正则为多段会引入复杂度且影响现有路由匹配，本期选择在 `archive-memory.post.ts` 路由文件内用 `UUID_REGEX` 自行校验，与路由逻辑内聚。未来如多段路径增多，再统一扩展中间件。
 - **进程内并发锁**：使用 `Map<string, Promise<void>>` 记录正在归档的 sessionId，同一会话的归档请求若已有进行中的 Promise，则直接返回不重复执行（前端防重复 + API 层双重守卫，避免前端触发和服务端兜底同时命中导致 LLM 重复调用）。
 - 重复归档守卫：以 `message_id` 为粒度判断。归档前查询 `memory_vectors`，只对该会话中尚未存在记录的消息执行 LLM 重要度判断和 embedding；已入库的消息直接跳过。这样即使某次归档中断，下次也能继续补齐剩余消息。
 - LLM 重要度判断失败：记录错误日志，该次归档整体跳过（不入库，下次重试），不抛异常，不影响对话。
@@ -232,7 +234,7 @@ CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops) WITH (m 
 
 **过滤规则**：
 - 角色排除：仅排除 `role='system'` 的消息（实际上该角色消息通常不会出现在用户产生的 messages 中，但做防御性过滤）。
-- 敏感信息启发式：内容匹配 `sk-[a-zA-Z0-9]{20,}`、`api[_-]?key[:=]\s*\S+`、`password[:=]\s*\S+`、`token[:=]\s*\S+` 等正则时，跳过该条消息并记录日志。
+- 敏感信息启发式：**仅对 `role='user'` 消息过滤**（assistant 消息是模型回答，不含用户真实密钥；且本项目是编程助手，assistant 大量讨论代码含 API key/token 字样，过滤会误杀重要技术决策）。`role='user'` 消息内容匹配 `sk-[a-zA-Z0-9]{20,}`、`api[_-]?key[:=]\s*\S+`、`password[:=]\s*\S+`、`token[:=]\s*\S+` 等正则时，跳过该条消息并记录日志。
 - 长度过滤：`content` 为空或纯空白、长度小于 5 个字符的消息跳过。
 
 ### 决策 12：检索阈值与 top-K 参数
@@ -258,7 +260,7 @@ CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops) WITH (m 
 | 风险 | 缓解 |
 | --- | --- |
 | 重要度判断 LLM 调用增加成本和延迟 | 用轻量模型（Qwen3.5-4B 关闭思考 enable_thinking: false）；异步执行不阻塞对话；进程内并发锁 + 消息级幂等守卫避免重复调用 |
-| Docker 镜像切换涉及 PG 大版本变更 | 使用 `pgvector/pgvector:pg18` 镜像（与当前 `postgres:18-alpine` 同为 PG 18，无需 `docker compose down -v`，数据卷兼容）；扩展在 db/index.ts 启动时自动启用 |
+| Docker 镜像切换涉及 PG 大版本变更 | 使用 `pgvector/pgvector:pg18` 镜像（与当前 `postgres:18-alpine` 同为 PG 18，数据文件格式兼容；但 Alpine→Debian 基础镜像可能导致 locale/collation 差异，需先在测试库 5433 验证切换 + `pnpm test:api` 通过后再切开发库，必要时 `REINDEX DATABASE`）；扩展在 db/index.ts 启动时自动启用 |
 | bge-m3 embedding 超长输入 | 不做客户端截断，由硅基流动 API 自行截断处理；超长时仅记录警告日志 |
 | 记忆无用户隔离，多用户场景下隐私问题 | 当前项目无用户系统，属可接受现状；后续引入用户系统时再隔离 |
 | 重排序 API 失败导致检索降级 | 重排序失败时降级为仅 embedding 余弦距离检索结果（top-5，score 映射为 1-distance/2），不中断流程 |
@@ -267,10 +269,11 @@ CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops) WITH (m 
 | 用户关闭浏览器导致最后一个会话延迟归档 | 前端传 `lastSessionId` + 服务端 `/api/chat` onFinish 兜底；若用户永远不返回，原始对话仍保留在 `messages` 表 |
 | 敏感信息（密码/API Key）被误入库 | 基础正则启发式过滤；明确记录为可接受的基础防护，非绝对安全 |
 | Qwen3.5-4B 思考模式未关闭导致 JSON 解析失败 | 通过 `createReasoningProvider` + `generateText` + `{ enableThinking: false }` 在 customFetch 层注入 `enable_thinking: false`（架构一致）；解析失败时整体降级为不入库 |
+| 进程内并发锁在多进程部署下失效 | `Map<string, Promise<void>>` 是进程内变量，仅适用当前 docker 单进程部署；若未来引入 PM2 cluster 模式或多实例部署，不同 worker 的锁互不可见，同一会话可能被多个 worker 同时归档（靠 message_id 唯一约束兜底但浪费 LLM 调用成本）。多进程部署需升级为 DB 行锁（`SELECT ... FOR UPDATE`）或 Redis 分布式锁 |
 
 ## Migration Plan
 
-1. **Docker 调整**：修改 `docker-compose.yml`，将 `postgres` 和 `test-postgres` 服务镜像切换为 `pgvector/pgvector:pg18`（与当前 `postgres:18-alpine` 同为 PG 18，**无需 `docker compose down -v`**，数据卷兼容）。执行 `docker compose up -d` 重建容器（检测到 image 变化自动重建），现有数据全部保留。
+1. **Docker 调整**：修改 `docker-compose.yml`，将 `postgres` 和 `test-postgres` 服务镜像切换为 `pgvector/pgvector:pg18`（与当前 `postgres:18-alpine` 同为 PG 18，数据文件格式预期兼容）。**先在 test-postgres（5433）验证**：切换镜像 → `docker compose up -d test-postgres` → 临时设置 `DATABASE_URL` 指向测试库 → `pnpm db:push` → `pnpm test:api` 通过后再切换开发库。注意 Alpine→Debian 基础镜像的 locale/collation 差异，必要时 `REINDEX DATABASE`。
 2. **DB 迁移**：
    - 在 `server/db/index.ts` 数据库连接初始化后添加 `CREATE EXTENSION IF NOT EXISTS vector`（幂等执行）；
    - 在 `server/db/schema.ts` 中新增 `memoryVectors` 表（使用 Drizzle 原生 `vector({ dimensions: 1024 })` 类型，含 `archived_at` 字段，HNSW 索引通过第二个参数回调定义）；
