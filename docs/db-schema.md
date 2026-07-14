@@ -1,11 +1,13 @@
 # 数据库表结构
 
-基于 PostgreSQL + Drizzle ORM，开发端口 **5434**，测试端口 **5433**。
+基于 PostgreSQL + Drizzle ORM，开发端口 **5434**，测试端口 **5433**。Docker 镜像使用 `pgvector/pgvector:pg18`（含 pgvector 扩展）。
 
 ## ER 关系图
 
 ```
 sessions (1) ──── (N) messages (1) ──── (N) feedbacks
+   │                     │
+   └────── (N) ──────────┴── memory_vectors (1:1 关联 messages，冗余存储 content 快照)
 ```
 
 所有外键均设置 `onDelete: 'cascade'`，删除父记录时子记录级联删除。
@@ -55,9 +57,42 @@ sessions (1) ──── (N) messages (1) ──── (N) feedbacks
 
 ---
 
+### memory_vectors — 长期记忆向量表
+
+跨会话长期记忆存储，使用 pgvector 扩展。会话切换时由 LLM 判断重要度，仅对重要消息做 embedding 入库。`recall-memory` 工具通过余弦距离检索跨会话历史。
+
+| 列名          | 类型           | 约束                                                      | 说明                                                          |
+| ------------- | -------------- | --------------------------------------------------------- | ------------------------------------------------------------- |
+| `id`          | `text`         | PK                                                        | 记忆唯一标识，`crypto.randomUUID()`                           |
+| `message_id`  | `text`         | FK → `messages.id`, ON DELETE CASCADE                     | 关联消息 ID                                                   |
+| `session_id`  | `text`         | FK → `sessions.id`, ON DELETE CASCADE                     | 关联会话 ID                                                   |
+| `content`     | `text`         | NOT NULL                                                  | 消息文本快照（冗余存储，避免检索时 JOIN）                     |
+| `embedding`   | `vector(1024)` | NOT NULL                                                  | 1024 维 embedding 向量（BAAI/bge-m3 输出维度）                |
+| `role`        | `text`         | NOT NULL                                                  | 消息角色：`user` / `assistant`（归档时已过滤 system）         |
+| `created_at`  | `timestamp`    | NOT NULL                                                  | **从 `messages.created_at` 复制**（消息原始创建时间，非 defaultNow） |
+| `archived_at` | `timestamp`    | NOT NULL, DEFAULT NOW()                                   | 归档执行时间                                                  |
+
+**索引**
+
+| 索引名                | 类型  | 列/算子                       | 参数                                            |
+| --------------------- | ----- | ----------------------------- | ----------------------------------------------- |
+| `memory_embedding_idx` | HNSW | `embedding vector_cosine_ops` | pgvector 默认 `m=16, ef_construction=64`        |
+
+> Drizzle ORM 的 `index().using('hnsw', ...)` API 不支持 `WITH` 子句，使用 pgvector 默认参数。如需调优，可在 `server/db/index.ts` 启动时用原始 SQL `DROP INDEX` + `CREATE INDEX ... WITH (...)` 重建索引。
+
+---
+
+## 扩展依赖
+
+| 扩展名    | 启用方式                                                  | 说明                                       |
+| --------- | --------------------------------------------------------- | ------------------------------------------ |
+| `vector`  | `server/db/index.ts` 启动时执行 `CREATE EXTENSION IF NOT EXISTS vector` | pgvector 向量类型与距离算子，幂等执行      |
+
+---
+
 ## 索引建议
 
-当前表结构未定义显式索引。以下场景建议添加：
+当前表结构中除 `memory_vectors.embedding` 的 HNSW 索引外，未定义其他显式索引。以下场景建议添加：
 
 | 表       | 建议索引                   | 原因                   |
 | -------- | -------------------------- | ---------------------- |

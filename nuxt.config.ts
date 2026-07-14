@@ -150,6 +150,7 @@ export default defineNuxtConfig({
    * 非 public：仅在服务端可用，不会发送到浏览器
    *   - openAiApiKey：LLM API 密钥，仅服务端调用 AI 时使用
    *   - databaseUrl：数据库连接字符串，仅服务端连接数据库时使用
+   *   - embeddingModel / rerankerModel / memoryImportanceModel：长期记忆系统模型配置
    *
    * 环境变量优先级：
    *   NUXT_PUBLIC_APP_TITLE > runtimeConfig.public.appTitle
@@ -163,6 +164,13 @@ export default defineNuxtConfig({
     openAiApiKey: process.env.OPENAI_API_KEY,
     openAiBaseUrl: process.env.OPENAI_BASE_URL,
     systemPrompt: process.env.SYSTEM_PROMPT || '',
-    databaseUrl: process.env.DATABASE_URL
+    databaseUrl: process.env.DATABASE_URL,
+    // 长期记忆系统模型配置（可选，有默认值）
+    // embedding 模型：BAAI/bge-m3 输出 1024 维向量，与 schema.ts vector dimensions 对齐
+    embeddingModel: process.env.EMBEDDING_MODEL || 'BAAI/bge-m3',
+    // 重排序模型：BAAI/bge-reranker-v2-m3，对 query-document 对做交叉编码精排
+    rerankerModel: process.env.RERANKER_MODEL || 'BAAI/bge-reranker-v2-m3',
+    // 重要度判断模型：默认 Qwen/Qwen3.5-4B（轻量、toggleableThinking），通过 createReasoningProvider 调用
+    memoryImportanceModel: process.env.MEMORY_IMPORTANCE_MODEL || 'Qwen/Qwen3.5-4B'
   }
 })

@@ -6,6 +6,8 @@ import { messages as messagesTable, sessions } from '~/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { webSearchTool } from '~/server/tools/web-search'
 import { ocrDocumentTool } from '~/server/tools/ocr-document'
+import { recallMemoryTool } from '~/server/tools/recall-memory'
+import { archiveSessionMessages } from '~/server/utils/memory-archive'
 import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/models'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
@@ -134,6 +136,32 @@ function getClientIp(event: any): string {
 }
 
 /**
+ * recall-memory 工具使用规则：追加到 system prompt 强化 LLM 调用判断
+ * - 正向场景：用户提及过去会话内容、历史偏好、之前的技术决策
+ * - 负向场景：当前会话内追问、纯知识问答、简单计算
+ * - 调用后行为：基于检索结果回答，引用来源
+ * - 防滥用：当前会话已有内容不调用
+ */
+const RECALL_MEMORY_TOOL_RULES = `
+【长期记忆检索工具使用规则】
+当用户问题涉及以下场景时，调用 recallMemory 工具检索跨会话的长期历史记忆：
+- 用户明确提及过去会话的内容：「之前」「上次」「历史」「过去」「以前说过」「之前讨论的」「我记得」
+- 需要回忆用户的历史偏好、技术决策、项目背景
+- 用户询问之前讨论过但当前会话中不存在的内容
+
+调用后行为：
+- 基于检索结果回答用户问题
+- 可引用来源，如「根据你之前提到的…」「在上次的讨论中…」
+- 若检索返回空结果或未找到相关记忆，如实告知用户「未在历史记忆中找到相关内容」，不要编造
+
+不要在以下场景调用此工具：
+- 当前会话内已经讨论过的内容（当前会话的消息已在上下文中，无需检索）
+- 纯知识问答（如「什么是 React」「解释 SSRF」）—— 这类问题用 webSearch 或直接回答
+- 简单计算或事实查询（如「1+1」「中国的首都」）
+- 用户未提及任何历史相关线索的常规问题
+`.trim()
+
+/**
  * OCR 工具使用规则：追加到 system prompt 强化 LLM 调用判断
  * - 正向场景：提取文字/OCR/识别/表格/印章/手写/扫描件等
  * - 负向场景：通用图像理解/图中是什么/描述图片/无图片/普通照片
@@ -218,7 +246,8 @@ export default defineEventHandler(async (event) => {
     model,
     images,
     enable_web_search,
-    enable_ocr
+    enable_ocr,
+    lastSessionId
   } = body ?? {}
 
   // 非严格 true 一律按 false 处理（默认关闭，与 enable_web_search 一致）
@@ -387,6 +416,12 @@ export default defineEventHandler(async (event) => {
     finalSystemPrompt += `\n\n${OCR_TOOL_RULES}`
   }
 
+  // recall-memory 工具规则追加：模型支持工具调用时默认启用长期记忆检索
+  // 注：工具本体在 toolsConfig 中注册（任务 8.1），此处仅注入使用规则指导 LLM 调用时机
+  if (caps.toolCalling) {
+    finalSystemPrompt += `\n\n${RECALL_MEMORY_TOOL_RULES}`
+  }
+
   // 用户位置上下文注入：读取客户端 IP 并追加到 prompt
   // LLM 看到后自主决定是否调用 getCityByIp 工具（仅当用户未提供城市名时）
   if (caps.toolCalling) {
@@ -429,7 +464,10 @@ export default defineEventHandler(async (event) => {
       // OCR 工具：仅当 enableOcr=true 且 caps.toolCalling=true 时注册
       // 防御性兜底：前端应已隐藏 OCR 按钮（supportsOcr = currentCapabilities.toolCalling），
       // 此处再次校验避免 enableOcr=true 但 caps.toolCalling=false 的不一致状态
-      ...(enableOcr && caps.toolCalling && { extractTextFromImage: ocrDocumentTool })
+      ...(enableOcr && caps.toolCalling && { extractTextFromImage: ocrDocumentTool }),
+      // recall-memory 工具：仅当 caps.toolCalling=true 时注册（默认启用，无前端开关）
+      // LLM 自主决定调用时机（Agentic RAG），使用规则已注入 system prompt
+      ...(caps.toolCalling && { recallMemory: recallMemoryTool })
     }
 
     // 重构 maxSteps 逻辑：基于「是否有工具实际注册」而非 caps.vision || caps.deepThinking
@@ -477,6 +515,20 @@ export default defineEventHandler(async (event) => {
           )
         } catch (err) {
           console.error('保存消息到数据库失败:', err)
+        }
+
+        // 服务端归档兜底：若 lastSessionId 存在且不等于当前 sessionId，fire-and-forget 触发归档
+        // 覆盖浏览器关闭/刷新场景：前端 fire-and-forget 可能因网络抖动失败，服务端兜底补齐
+        // 注：archiveSessionMessages 内置进程内并发锁，重复请求直接返回不重复执行
+        // 注：不 await 完成，不阻塞 onFinish 返回和流结束信号（详见 design.md 决策 6）
+        if (
+          lastSessionId &&
+          typeof lastSessionId === 'string' &&
+          lastSessionId !== sessionId
+        ) {
+          archiveSessionMessages(lastSessionId).catch((err) => {
+            console.error(`[chat.post] 服务端归档兜底失败（会话 ${lastSessionId}）:`, err)
+          })
         }
       }
     })

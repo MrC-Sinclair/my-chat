@@ -51,6 +51,31 @@ interface IpLocationResult {
   error: string | null
 }
 
+/**
+ * recall-memory 工具返回结构（与 server/tools/recall-memory.ts 对齐）
+ *
+ * 三种状态：
+ *   - 成功有结果：{ memories: [...], totalResults, query }
+ *   - 空结果：{ memories: [], message: "未找到相关历史记忆", query }
+ *   - 错误：{ error, detail, memories: [], query }
+ *   - reranker 降级：{ memories, totalResults, query, warning }
+ */
+interface RecallMemoryResult {
+  memories?: Array<{
+    content: string
+    message_id: string
+    session_id: string
+    role: string
+    score: number
+  }>
+  totalResults?: number
+  query?: string
+  message?: string
+  warning?: string
+  error?: string
+  detail?: string
+}
+
 interface ToolInvocation {
   toolCallId: string
   toolName: string
@@ -671,6 +696,151 @@ onUnmounted(() => {
           {{ (invocation.output as OcrResult).detail }}
         </p>
       </div>
+    </div>
+  </div>
+
+  <!-- recall-memory 工具：检索跨会话长期记忆 -->
+  <div v-else-if="invocation.toolName === 'recallMemory'">
+    <!-- 加载中状态 -->
+    <div
+      v-if="isCalling(invocation.state)"
+      class="flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-semi-primary-light/60 border border-semi-primary/30 rounded-xl text-sm text-semi-primary-active"
+    >
+      <span class="relative flex h-4 w-4">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-semi-primary opacity-60"
+        ></span>
+        <span class="relative inline-flex rounded-full h-4 w-4 bg-semi-primary"></span>
+      </span>
+      <span class="text-xs sm:text-sm">正在回忆历史记忆...</span>
+    </div>
+
+    <!-- 结果展示 -->
+    <div
+      v-else-if="invocation.state === 'output-available' && invocation.output"
+      class="bg-semi-bg-0 border border-semi-border rounded-xl overflow-hidden shadow-semi-card"
+    >
+      <!-- 错误状态 -->
+      <div
+        v-if="(invocation.output as RecallMemoryResult).error"
+        class="px-4 py-3 bg-semi-danger-light"
+      >
+        <div class="flex items-center gap-2 mb-1">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="w-4 h-4 text-semi-danger shrink-0"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span class="text-xs sm:text-sm text-semi-danger font-medium">
+            {{ (invocation.output as RecallMemoryResult).error }}
+          </span>
+        </div>
+        <p
+          v-if="(invocation.output as RecallMemoryResult).detail"
+          class="text-semi-micro text-semi-text-3 ml-6"
+        >
+          {{ (invocation.output as RecallMemoryResult).detail }}
+        </p>
+      </div>
+
+      <!-- 无结果状态 -->
+      <div
+        v-else-if="
+          !(invocation.output as RecallMemoryResult).memories?.length
+        "
+        class="px-4 py-3 flex items-center gap-2 text-xs sm:text-sm text-semi-text-2"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="w-4 h-4 text-semi-text-3 shrink-0"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+          <line x1="8" y1="11" x2="14" y2="11" />
+        </svg>
+        <span>{{
+          (invocation.output as RecallMemoryResult).message || '未找到相关历史记忆'
+        }}</span>
+      </div>
+
+      <!-- 检索完成：有结果 -->
+      <template v-else>
+        <!-- 头部：检索摘要 -->
+        <div
+          class="px-4 py-2.5 sm:px-5 sm:py-3 bg-gradient-to-r from-semi-primary-light to-semi-primary-light border-b border-semi-divider"
+        >
+          <div class="flex items-center gap-2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-4 h-4 sm:w-5 sm:h-5 text-semi-primary"
+            >
+              <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
+              <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
+            </svg>
+            <span class="font-medium text-sm sm:text-base text-semi-text-0">
+              已检索 {{ (invocation.output as RecallMemoryResult).memories!.length }} 条相关记忆
+            </span>
+            <span
+              v-if="(invocation.output as RecallMemoryResult).warning"
+              class="ml-auto text-semi-micro text-semi-text-3"
+            >
+              降级模式
+            </span>
+          </div>
+        </div>
+
+        <!-- 记忆列表预览（最多 3 条） -->
+        <div class="px-3 py-2 sm:px-4 sm:py-3 space-y-2">
+          <div
+            v-for="(memory, idx) in (invocation.output as RecallMemoryResult).memories!.slice(0, 3)"
+            :key="memory.message_id"
+            class="p-2.5 sm:p-3 rounded-lg bg-semi-bg-1"
+          >
+            <div class="flex items-center gap-2 mb-1">
+              <span
+                class="text-semi-micro font-medium px-1.5 py-0.5 rounded"
+                :class="
+                  memory.role === 'user'
+                    ? 'bg-semi-primary-light text-semi-primary-active'
+                    : 'bg-semi-bg-2 text-semi-text-3'
+                "
+              >
+                {{ memory.role === 'user' ? '我' : 'AI' }}
+              </span>
+              <span class="text-semi-micro text-semi-text-3">
+                相关度 {{ Math.round(memory.score * 100) }}%
+              </span>
+              <span v-if="idx === 2 && (invocation.output as RecallMemoryResult).memories!.length > 3" class="text-semi-micro text-semi-text-3 ml-auto">
+                +{{ (invocation.output as RecallMemoryResult).memories!.length - 3 }} 条
+              </span>
+            </div>
+            <p class="text-xs text-semi-text-2 line-clamp-2 leading-relaxed">
+              {{ memory.content }}
+            </p>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 

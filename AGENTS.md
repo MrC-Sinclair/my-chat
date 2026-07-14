@@ -143,7 +143,18 @@ server/middleware/   → security.ts
 
 ### 记忆系统
 
-仅对话历史（DB `messages` 表）作为记忆，`streamText` 循环内的工具调用结果天然作为短期上下文。禁止中间结果写全局变量。
+记忆分为两层：
+
+| 层级 | 存储 | 生命周期 | 触发方式 |
+| --- | --- | --- | --- |
+| 短期记忆 | DB `messages` 表 + `streamText` 循环内工具调用结果 | 单次会话 | 自然累积 |
+| 长期记忆 | DB `memory_vectors` 表（pgvector 1024 维） | 跨会话持久 | 会话切换时归档 |
+
+**归档走 Workflow**（代码预编排）：会话切换时，前端 fire-and-forget 调用 `POST /api/sessions/:id/archive-memory`，服务端 `memory-archive.ts` 按固定流程执行（查询消息 → LLM 重要度判断 → embedding 入库）。进程内并发锁 + 消息级幂等保证不重复归档。此路径不由 LLM 决策，因为「何时归档」是确定性触发（会话切换），「哪些消息重要」由 LLM 单次判断但不涉及工具组合。
+
+**检索走 Agent**（LLM 自主决策）：`recall-memory` 作为 `tool()` 注册，调用与否、何时调用全由 LLM 自主决定。两阶段检索（embedding top-20 → reranker top-5），失败降级不中断流。详见 `server/tools/recall-memory.ts`。
+
+禁止中间结果写全局变量。`streamText` 循环内的工具调用结果天然作为短期上下文。
 
 > 📋 远期演进方向详见 `openspec/agent-future-roadmap.md`。
 

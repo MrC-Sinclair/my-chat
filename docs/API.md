@@ -12,6 +12,7 @@
 | `GET`    | `/api/sessions/:id` | 获取会话历史消息               | 无   |
 | `PATCH`  | `/api/sessions/:id` | 重命名会话                     | 无   |
 | `DELETE` | `/api/sessions/:id` | 删除会话（级联删除消息和反馈） | 无   |
+| `POST`   | `/api/sessions/:id/archive-memory` | 触发会话归档（长期记忆入库）   | 无   |
 | `GET`    | `/api/models`       | 获取可用模型列表               | 无   |
 
 ## 通用约定
@@ -318,6 +319,66 @@ interface Message {
 
 ---
 
+### POST /api/sessions/:id/archive-memory
+
+触发指定会话的重要度筛选入库（长期记忆归档）。异步执行：立即返回 `202 Accepted`，归档在后台进行（LLM 重要度判断 + embedding 入库），不阻塞对话。
+
+**路径参数**
+
+| 字段 | 类型            | 必填 | 说明                          |
+| ---- | --------------- | ---- | ----------------------------- |
+| `id` | `string` (UUID) | 是   | 会话 ID，必须为标准 UUID v4   |
+
+**请求体**：无
+
+**响应**（`202 Accepted`）
+
+```json
+{
+  "message": "归档已触发，后台异步执行中",
+  "sessionId": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**归档流程**（后台异步执行，调用方不感知）
+
+1. 查询会话所有消息，过滤候选消息（排除 `system`、空短消息、含敏感信息的 user 消息）
+2. 查询已归档 `message_id`，排除已归档消息（消息级幂等）
+3. 调用 LLM（默认 `Qwen/Qwen3.5-4B`，`enable_thinking: false`）判断每条消息重要度，输出严格 JSON 数组
+4. 对重要消息调用 embedding 服务（`BAAI/bge-m3`，1024 维）→ 写入 `memory_vectors` 表
+
+**并发与幂等**
+
+| 机制             | 实现位置 | 说明                                                                                          |
+| ---------------- | -------- | --------------------------------------------------------------------------------------------- |
+| 进程内并发锁     | memory-archive.ts | `Map<sessionId, Promise>`，同一会话归档进行中时重复请求直接返回不重复执行                     |
+| 消息级幂等       | memory-archive.ts | 归档前查询 `memory_vectors`，已入库的 `message_id` 自动跳过                                   |
+| fire-and-forget  | API 层   | 调用 `archiveSessionMessages()` 不 await，立即返回 202                                        |
+
+**失败容错**
+
+- LLM 重要度判断失败/超时（30 秒）→ 整体跳过该次归档，记录日志，不抛异常
+- 单条消息 embedding 失败 → 跳过该条，继续处理其他消息
+- 会话删除并发 → `memory_vectors` 外键级联删除清理已写入记录，后续写入因外键约束失败（记录日志）
+
+**示例**
+
+```bash
+curl -X POST http://localhost:3000/api/sessions/550e8400-e29b-41d4-a716-446655440000/archive-memory
+```
+
+**错误码**
+
+| 状态码 | 触发条件                            |
+| ------ | ----------------------------------- |
+| `400`  | `id` 缺失或非 UUID v4 格式          |
+| `404`  | 会话不存在                          |
+| `429`  | 触发限流                            |
+
+> 归档内部错误（LLM 失败、embedding 失败等）不通过 HTTP 状态码反映，API 仍返回 202，错误仅记录在服务端日志。
+
+---
+
 ### GET /api/models
 
 返回当前 LLM Provider 支持的可用模型白名单。前端用于动态切换模型。
@@ -591,7 +652,8 @@ location / {
 | ------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
 | [server/api/chat.post.ts](../server/api/chat.post.ts)                       | AI 对话流式接口                                  |
 | [server/api/sessions.ts](../server/api/sessions.ts)                         | 会话列表 GET/POST                                |
-| [server/api/sessions/[id].ts](../server/api/sessions/[id].ts)               | 单会话 GET/PATCH/DELETE                          |
+| [server/api/sessions/[id]/index.ts](../server/api/sessions/[id]/index.ts)   | 单会话 GET/PATCH/DELETE                          |
+| [server/api/sessions/[id]/archive-memory.post.ts](../server/api/sessions/[id]/archive-memory.post.ts) | 会话归档 API（长期记忆入库）     |
 | [server/api/models.ts](../server/api/models.ts)                             | 模型列表 GET                                     |
 | [server/middleware/security.ts](../server/middleware/security.ts)           | CSP/限流/CORS/UUID 校验                          |
 | [server/config/models.ts](../server/config/models.ts)                       | 模型白名单与能力定义                             |
@@ -601,4 +663,8 @@ location / {
 | [server/mcp/weather-server.ts](../server/mcp/weather-server.ts)             | MCP Weather Server（stdio）                      |
 | [server/utils/imgbb.ts](../server/utils/imgbb.ts)                           | ImgBB 图床上传                                   |
 | [server/utils/reasoning-provider.ts](../server/utils/reasoning-provider.ts) | 自定义 OpenAI Provider（reasoning_content 拦截） |
+| [server/utils/embedding.ts](../server/utils/embedding.ts)                   | BAAI/bge-m3 embedding 服务（1024 维）            |
+| [server/utils/reranker.ts](../server/utils/reranker.ts)                     | BAAI/bge-reranker-v2-m3 重排序服务               |
+| [server/utils/memory-archive.ts](../server/utils/memory-archive.ts)         | 重要度筛选入库（LLM 判断 + embedding 写库）      |
+| [server/tools/recall-memory.ts](../server/tools/recall-memory.ts)           | recall-memory 检索工具（Agentic RAG）            |
 | [docs/db-schema.md](./db-schema.md)                                   | 数据库表结构文档                                 |

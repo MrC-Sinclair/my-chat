@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    # pgvector 镜像基于 Debian，含 vector 扩展；与原 postgres:18-alpine 同为 PG 18，数据文件格式兼容
+    # Alpine→Debian 可能导致 locale/collation 差异，需先在 test-postgres 5433 验证后再切开发库
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_USER: sw_pad
       POSTGRES_PASSWORD: sw_pad_2026
@@ -16,7 +18,7 @@ services:
       retries: 5
 
   test-postgres:
-    image: postgres:18-alpine
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_USER: sw_pad_test
       POSTGRES_PASSWORD: sw_pad_test

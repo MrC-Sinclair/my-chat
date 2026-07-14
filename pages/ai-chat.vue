@@ -60,6 +60,8 @@ const chat = new Chat({
       model: currentModel.value,
       enable_web_search: enableWebSearch.value,
       enable_ocr: enableOcr.value,
+      // 上一个会话 ID — 供服务端 onFinish fire-and-forget 触发归档兜底
+      lastSessionId: lastSessionId.value || undefined,
       images:
         uploadedImages.value.length > 0 ? uploadedImages.value.map((img) => img.dataUrl) : undefined
     })
@@ -307,6 +309,7 @@ const isLastMessageLoading = computed(() => {
 const {
   sessionsList,
   currentSessionId,
+  lastSessionId,
   loadSessions,
   createNewSession,
   switchSession,

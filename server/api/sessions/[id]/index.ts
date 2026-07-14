@@ -1,14 +1,18 @@
 /**
  * @file 单个会话 API — /api/sessions/:id
  *
- * 本文件处理对指定会话的 GET 和 DELETE 请求：
+ * 本文件处理对指定会话的 GET、DELETE 和 PATCH 请求：
  *   - GET    /api/sessions/:id  → 获取该会话的所有历史消息
  *   - DELETE /api/sessions/:id  → 删除该会话（关联消息会级联删除）
+ *   - PATCH  /api/sessions/:id  → 修改会话标题
  *
  * Nuxt Server Route 的动态路由规则：
- *   文件名 [id].ts 中的 [id] 是动态参数，对应 URL 中的 :id 部分。
+ *   目录名 [id] 中的 [id] 是动态参数，对应 URL 中的 :id 部分。
  *   例如 /api/sessions/abc-123 中，id 的值为 "abc-123"。
  *   通过 getRouterParam(event, 'id') 获取该参数值。
+ *
+ * 注：原 [id].ts 已拆分为 [id]/index.ts（本文件）+ [id]/archive-memory.post.ts，
+ * 以支持 /api/sessions/:id/archive-memory 子路由（Windows 不允许同名文件与目录共存）。
  */
 
 import { eq } from 'drizzle-orm'
