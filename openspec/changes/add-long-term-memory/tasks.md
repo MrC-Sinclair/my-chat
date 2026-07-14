@@ -4,7 +4,7 @@
 - [x] 1.2 在 `server/db/index.ts` 中，数据库连接创建后立即执行 `CREATE EXTENSION IF NOT EXISTS vector` SQL 语句（使用 postgres 客户端的 tagged template 语法，幂等执行，已存在时跳过）；验证服务启动时扩展自动启用
 - [x] 1.3 修改 `server/db/schema.ts`：导入 Drizzle 原生 `vector`（from `drizzle-orm/pg-core`），新增 `memoryVectors` 表（字段：`id` 主键、`message_id` 外键→messages.id 级联删除、`session_id` 外键→sessions.id 级联删除、`content` text NOT NULL、`embedding` 使用 `vector({ dimensions: 1024 })` NOT NULL、`role` text NOT NULL、`created_at` timestamp NOT NULL **从 messages.created_at 复制（非 defaultNow）**、`archived_at` timestamp NOT NULL defaultNow()）
 - [x] 1.4 在 pgTable 第二个参数回调中创建 HNSW 向量索引（`index('memory_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops'))`），**使用 pgvector 默认参数（m=16, ef_construction=64），不通过环境变量覆盖**（Drizzle API 不支持 WITH 子句，详见 design.md 决策 13）
-- [ ] 1.5 运行 `pnpm db:push` 同步 schema 到开发数据库（端口 5434）和测试数据库（端口 5433）。测试库需临时切换 `DATABASE_URL`：PowerShell 下 `$env:DATABASE_URL='postgresql://sw_pad_test:sw_pad_test@localhost:5433/sw_pad_test'; pnpm db:push`，同步后恢复原值。验证表 + 索引创建成功
+- [x] 1.5 运行 `pnpm db:push` 同步 schema 到开发数据库（端口 5434）和测试数据库（端口 5433）。测试库需临时切换 `DATABASE_URL`：PowerShell 下 `$env:DATABASE_URL='postgresql://sw_pad_test:sw_pad_test@localhost:5433/sw_pad_test'; pnpm db:push`，同步后恢复原值。验证表 + 索引创建成功
 - [x] 1.6 同步更新 `docs/db-schema.md` 记录 `memory_vectors` 表结构（含 `archived_at` 字段）
 
 ## 2. 配置扩展
@@ -66,7 +66,7 @@
 - [x] 8.3 在 `onFinish` 回调中加入服务端归档兜底：若 `lastSessionId` 存在且不等于当前 `sessionId`，则**fire-and-forget** 触发该会话归档（启动 Promise 但**不 await 完成**，`.catch(console.error)` 兜底，不阻塞 `onFinish` 返回和流结束信号）；不引入全局会话缓存，保持服务端无状态
 - [x] 8.4 验证 `maxSteps` 动态计算正确（`hasActiveTools` 包含 recall-memory）
 - [x] 8.5 运行 `pnpm lint` + `pnpm typecheck` 验证
-- [ ] 8.6 验证 `onFinish` fire-and-forget 在 Nitro 请求生命周期结束后是否被截断：用 mock 10s 归档函数（`setTimeout(resolve, 10_000)`）替换真实归档逻辑，发起 `/api/chat` 请求，观察响应返回后 10s 内归档是否完整执行（日志确认）；若被截断，改用 `event.waitUntil` 或后台任务队列
+- [x] 8.6 验证 `onFinish` fire-and-forget 在 Nitro 请求生命周期结束后是否被截断：用 mock 10s 归档函数（`setTimeout(resolve, 10_000)`）替换真实归档逻辑，发起 `/api/chat` 请求，观察响应返回后 10s 内归档是否完整执行（日志确认）；若被截断，改用 `event.waitUntil` 或后台任务队列
 
 ## 9. 前端触发归档
 
@@ -97,6 +97,6 @@
 
 ## 12. 文档同步
 
-- [ ] 12.1 更新 `AGENTS.md`「Agent 架构设计规范 > 记忆系统」章节：当前内容「仅对话历史（DB `messages` 表）作为记忆」已过时，需新增 `memory_vectors` 表（长期记忆存储）和 `recall-memory` 工具（LLM 自主检索跨会话历史）说明；明确「会话切换时归档走 Workflow，检索走 Agent（LLM 自主调用 recall-memory）」的架构划分
-- [ ] 12.2 更新 `docs/db-schema.md` 记录 `memory_vectors` 表结构（含 `archived_at` 字段、HNSW 索引、外键级联关系）
-- [ ] 12.3 更新 `docs/API.md` 记录 `POST /api/sessions/:id/archive-memory` 接口（路径参数 UUID 校验、并发锁、消息级幂等）
+- [x] 12.1 更新 `AGENTS.md`「Agent 架构设计规范 > 记忆系统」章节：当前内容「仅对话历史（DB `messages` 表）作为记忆」已过时，需新增 `memory_vectors` 表（长期记忆存储）和 `recall-memory` 工具（LLM 自主检索跨会话历史）说明；明确「会话切换时归档走 Workflow，检索走 Agent（LLM 自主调用 recall-memory）」的架构划分
+- [x] 12.2 更新 `docs/db-schema.md` 记录 `memory_vectors` 表结构（含 `archived_at` 字段、HNSW 索引、外键级联关系）
+- [x] 12.3 更新 `docs/API.md` 记录 `POST /api/sessions/:id/archive-memory` 接口（路径参数 UUID 校验、并发锁、消息级幂等）

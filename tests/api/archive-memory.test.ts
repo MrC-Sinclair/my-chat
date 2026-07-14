@@ -198,7 +198,7 @@ describe('归档 API /api/sessions/:id/archive-memory', () => {
       const event1 = createEvent({ id: VALID_UUID })
       const event2 = createEvent({ id: VALID_UUID })
 
-      const [r1, r2] = await Promise.all([
+      await Promise.all([
         archiveMemoryHandler(event1),
         archiveMemoryHandler(event2)
       ])
