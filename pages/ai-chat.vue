@@ -611,6 +611,7 @@ function onDocumentClick(e: Event) {
         <button
           data-testid="toggle-sidebar"
           class="p-2 sm:p-2 text-semi-text-3 hover:text-semi-text-0 rounded-lg hover:bg-semi-fill-1 active:scale-95 transition-all"
+          :aria-label="showSidebar ? '收起侧边栏' : '展开侧边栏'"
           v-tooltip:bottom="showSidebar ? '收起侧边栏' : '展开侧边栏'"
           @click="toggleSidebar"
         >
@@ -657,6 +658,7 @@ function onDocumentClick(e: Event) {
         <div class="ml-auto flex items-center gap-1">
           <button
             class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all active:scale-95"
+            aria-label="新建会话"
             v-tooltip="'新建会话'"
             @click="createNewSession"
           >

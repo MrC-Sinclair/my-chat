@@ -60,13 +60,7 @@ function mountChatInput(
     ...overrides.props
   }
   return mount(ChatInput, {
-    props,
-    global: {
-      stubs: {
-        // v-tooltip 指令在测试环境未注册，用 stub 避免警告
-        tooltip: true
-      }
-    }
+    props
   })
 }
 
@@ -277,7 +271,7 @@ describe('ChatInput 组件', () => {
       const ocrBtn = buttons.find((btn) => btn.text().includes('OCR'))
       expect(ocrBtn).toBeTruthy()
       expect(ocrBtn!.classes()).toContain('bg-semi-primary-light')
-      expect(ocrBtn!.classes()).toContain('text-semi-primary')
+      expect(ocrBtn!.classes()).toContain('text-semi-primary-active')
     })
 
     it('OCR 关闭时按钮应为默认样式（bg-semi-fill-0）', () => {

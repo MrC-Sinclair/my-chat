@@ -1,9 +1,15 @@
 import { config } from '@vue/test-utils'
+import { tooltipDirective } from '~/composables/useTooltip'
 
 config.global.stubs = {
   NuxtLink: { template: '<a><slot /></a>' },
   NuxtLayout: { template: '<div><slot /></div>' },
   NuxtPage: { template: '<div />' }
+}
+
+// 全局注册 v-tooltip 指令，与 plugins/tooltip.ts 保持一致，消除测试环境警告
+config.global.directives = {
+  tooltip: tooltipDirective
 }
 
 // Nuxt auto-import 模拟（用于 API 路由测试）

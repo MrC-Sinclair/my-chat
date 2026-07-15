@@ -12,10 +12,18 @@
 -->
 <script setup lang="ts">
 useHead({
+  title: 'My Chat - AI 对话助手',
+  htmlAttrs: {
+    lang: 'zh-CN'
+  },
   meta: [
     {
       name: 'viewport',
-      content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'
+      content: 'width=device-width, initial-scale=1'
+    },
+    {
+      name: 'description',
+      content: '基于 Nuxt 3 与 Vercel AI SDK 的 AI 对话应用，支持 Markdown / LaTeX 安全渲染、图片多模态对话、工具调用与长期记忆。'
     }
   ]
 })

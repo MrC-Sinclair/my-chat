@@ -97,6 +97,7 @@ const groupedSessions = computed(() => {
       </button>
       <button
         class="sm:hidden p-2 text-semi-text-3 hover:text-semi-text-0 rounded-lg hover:bg-semi-fill-2 active:scale-95 transition-all min-w-[36px] min-h-[36px] flex items-center justify-center"
+        aria-label="关闭侧边栏"
         @click="$emit('close')"
         v-tooltip="'关闭侧边栏'"
       >
@@ -139,7 +140,7 @@ const groupedSessions = computed(() => {
             class="group flex items-center justify-between px-2 sm:px-3 py-2.5 mb-0.5 rounded-lg cursor-pointer transition-all duration-semi-fast"
             :class="
               session.id === currentSessionId
-                ? 'bg-semi-primary-light text-semi-primary'
+                ? 'bg-semi-primary-light text-semi-primary-active'
                 : 'hover:bg-semi-fill-1 text-semi-text-1'
             "
             @click="emit('switch', session.id)"
@@ -159,7 +160,7 @@ const groupedSessions = computed(() => {
                 <div class="text-sm font-medium truncate" @dblclick.stop="startRename(session)">
                   {{ session.title }}
                 </div>
-                <div class="text-xs mt-0.5 flex items-center gap-1.5" :class="session.id === currentSessionId ? 'text-semi-primary/70' : 'text-semi-text-3'">
+                <div class="text-xs mt-0.5 flex items-center gap-1.5" :class="session.id === currentSessionId ? 'text-semi-primary-active/80' : 'text-semi-text-3'">
                   <span>{{ session.messageCount || 0 }} 条消息</span>
                   <span>·</span>
                   <span>{{ formatRelativeTime(session.updatedAt) }}</span>
@@ -171,7 +172,8 @@ const groupedSessions = computed(() => {
             >
               <button
                 class="p-1.5 rounded-lg hover:bg-semi-fill-2 transition-all min-w-[32px] min-h-[32px] flex items-center justify-center"
-                :class="session.id === currentSessionId ? 'text-semi-primary hover:bg-semi-primary/10' : 'text-semi-text-3 hover:text-semi-primary'"
+                :class="session.id === currentSessionId ? 'text-semi-primary-active hover:bg-semi-primary/10' : 'text-semi-text-3 hover:text-semi-primary'"
+                aria-label="重命名会话"
                 v-tooltip="'重命名'"
                 @click.stop="startRename(session)"
               >
@@ -191,7 +193,8 @@ const groupedSessions = computed(() => {
               </button>
               <button
                 class="p-1.5 rounded-lg hover:bg-semi-danger-light transition-all min-w-[32px] min-h-[32px] flex items-center justify-center"
-                :class="session.id === currentSessionId ? 'text-semi-primary hover:text-semi-danger' : 'text-semi-text-3 hover:text-semi-danger'"
+                :class="session.id === currentSessionId ? 'text-semi-primary-active hover:text-semi-danger' : 'text-semi-text-3 hover:text-semi-danger'"
+                aria-label="删除会话"
                 v-tooltip="'删除会话'"
                 @click="handleDelete(session.id, $event)"
               >
@@ -227,6 +230,7 @@ const groupedSessions = computed(() => {
         </div>
         <button
           class="p-2 text-semi-text-3 hover:text-semi-text-1 hover:bg-semi-fill-1 rounded-lg transition-all"
+          aria-label="设置"
           v-tooltip="'设置'"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">

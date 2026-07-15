@@ -207,7 +207,7 @@ function toggleSpeechRecognition() {
           class="shrink-0 inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-full transition-all duration-semi-normal min-h-[28px] active:scale-95 whitespace-nowrap"
           :class="
             currentModel === opt.value
-              ? 'bg-semi-primary/10 text-semi-primary hover:bg-semi-primary/15'
+              ? 'bg-semi-primary/10 text-semi-primary-active hover:bg-semi-primary/15'
               : 'bg-transparent text-semi-text-3 hover:bg-semi-fill-0 hover:text-semi-text-2'
           "
           @click="emit('selectModel', opt.value)"
@@ -226,6 +226,7 @@ function toggleSpeechRecognition() {
               : 'text-semi-border cursor-not-allowed',
             images.length > 0 && canUploadImage ? 'text-semi-primary' : ''
           ]"
+          :aria-label="canUploadImage ? '添加图片' : '当前模型不支持图片，请先开启 OCR 工具'"
           v-tooltip="canUploadImage ? '添加图片' : '当前模型不支持图片，请先开启 OCR 工具'"
         >
           <svg
@@ -262,6 +263,7 @@ function toggleSpeechRecognition() {
               </div>
               <button
                 class="absolute -top-2 -right-2 w-5 h-5 bg-semi-text-3 text-white rounded-full flex items-center justify-center hover:bg-semi-text-1 active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover/img:opacity-100 shadow-semi-card"
+                aria-label="删除图片"
                 @click="removeImage(img.id)"
               >
                 <svg
@@ -301,6 +303,7 @@ function toggleSpeechRecognition() {
           v-if="speechSupported"
           type="button"
           :disabled="isLoading"
+          :aria-label="isRecording ? '点击停止录音' : '语音输入'"
           v-tooltip="isLoading ? '' : isRecording ? '点击停止录音' : '语音输入'"
           class="shrink-0 relative min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-semi-normal active:scale-95"
           :class="
@@ -337,6 +340,7 @@ function toggleSpeechRecognition() {
           type="submit"
           data-testid="send-btn"
           :disabled="!input.trim() || isOverLimit"
+          :aria-label="input.trim() && !isOverLimit ? '发送消息' : '发送按钮已禁用'"
           class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-semi-normal"
           :class="
             input.trim() && !isOverLimit
@@ -362,6 +366,7 @@ function toggleSpeechRecognition() {
           v-else
           type="button"
           data-testid="stop-btn"
+          aria-label="停止生成"
           class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl bg-semi-primary hover:bg-semi-primary-active text-white active:scale-95 transition-all shadow-semi-card"
           @click="emit('stop')"
         >
@@ -383,9 +388,9 @@ function toggleSpeechRecognition() {
           class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-semi-normal min-h-[32px]"
           :class="
             isForcedThinking
-              ? 'bg-semi-primary-light text-semi-primary cursor-not-allowed'
+              ? 'bg-semi-primary-light text-semi-primary-active cursor-not-allowed'
               : enableThinking
-                ? 'bg-semi-primary-light text-semi-primary hover:bg-semi-primary-light/80 active:scale-95'
+                ? 'bg-semi-primary-light text-semi-primary-active hover:bg-semi-primary-light/80 active:scale-95'
                 : 'bg-semi-fill-0 text-semi-text-2 hover:text-semi-text-1 hover:bg-semi-fill-1 active:scale-95'
           "
           v-tooltip="
@@ -423,7 +428,7 @@ function toggleSpeechRecognition() {
           class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-semi-normal min-h-[32px]"
           :class="
             enableWebSearch
-              ? 'bg-semi-primary-light text-semi-primary hover:bg-semi-primary-light/80'
+              ? 'bg-semi-primary-light text-semi-primary-active hover:bg-semi-primary-light/80'
               : 'bg-semi-fill-0 text-semi-text-2 hover:text-semi-text-1 hover:bg-semi-fill-1'
           "
           v-tooltip="enableWebSearch ? '联网搜索已开启' : '联网搜索已关闭'"
@@ -454,7 +459,7 @@ function toggleSpeechRecognition() {
           class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-semi-normal min-h-[32px]"
           :class="
             enableOcr
-              ? 'bg-semi-primary-light text-semi-primary hover:bg-semi-primary-light/80 active:scale-95'
+              ? 'bg-semi-primary-light text-semi-primary-active hover:bg-semi-primary-light/80 active:scale-95'
               : 'bg-semi-fill-0 text-semi-text-2 hover:text-semi-text-1 hover:bg-semi-fill-1 active:scale-95'
           "
           v-tooltip="enableOcr ? '智能 OCR 已开启' : '智能 OCR 已关闭'"
