@@ -33,16 +33,19 @@
 
 ### Requirement: 前端显式生图入口
 
-系统 SHALL 在 `ChatInput` 工具栏提供"生图"按钮，与 OCR 按钮并列。用户点击后弹出 prompt 输入面板，提交后调用 `POST /api/generate-image` 独立路由生成图片。按钮 MUST 遵循触摸设备适配规范。
+系统 SHALL 在 `ChatInput` 图标按钮区（图片上传之后、语音输入之前）提供"生图"按钮，作为动作触发型按钮（与图片上传、语音输入同类，非 toggle chip）。用户点击后弹出 prompt 输入面板，提交后调用 `POST /api/generate-image` 独立路由生成图片。按钮 MUST 遵循触摸设备适配规范。
 
 #### Scenario: 用户通过按钮触发生图
 
 - **WHEN** 用户点击"生图"按钮
-- **THEN** 显示 prompt 输入面板（textarea + 提交按钮 + 取消按钮）
+- **THEN** 显示 prompt 输入面板（textarea + imageSize 5 选 1 + 提交按钮 + 取消按钮）
 - **AND** 用户输入 prompt 并点击提交后
 - **THEN** 调用 `POST /api/generate-image`
 - **AND** 显示加载状态（spinner + "正在生成图片..."文案）
-- **AND** 收到响应后在聊天区显示生成的图片卡片
+- **AND** 收到响应后将返回的 `markdown` 字符串作为新消息内容追加到当前会话的 `messages` 数组
+- **AND** **消息归属**：`role: 'assistant'`（生图由 AI 服务生成，归属 AI 端）
+- **AND** **持久化路径**：通过 `useChatSession().saveMessage()` 落库（不内联写 db 调用，与 Agent 路径 onFinish 持久化一致）
+- **AND** 若响应中含 `warning` 字段，额外用 `useToast().warning()` 提示"图片链接 1 小时后失效，请及时保存"
 
 #### Scenario: 防重复提交
 
@@ -50,6 +53,13 @@
 - **THEN** 提交按钮处于 `disabled` 状态
 - **AND** 显示加载指示器
 - **AND** 不允许并发提交同一请求
+
+#### Scenario: 会话切换时取消进行中的生图请求
+
+- **WHEN** 生图请求进行中用户切换到其他会话（或组件卸载）
+- **THEN** 通过 `AbortController.abort()` 取消进行中的 fetch 请求
+- **AND** 不将未完成的生图结果写入新会话
+- **AND** 释放按钮 `disabled` 状态以便新会话可发起生图
 
 #### Scenario: 触摸设备适配（手机端 < 640px）
 
@@ -138,6 +148,11 @@
 - **THEN** 显示图片缩略图（`max-w-[200px]` 限制宽度）
 - **AND** 点击图片可放大查看（用 `<ClientOnly>` 包裹图片预览组件）
 - **AND** 显示生成耗时和 seed 值
+- **AND** 缩略图下方提供 4 个 icon 按钮（用 `v-tooltip` 提供文字提示）：
+  1. **放大查看**：点击在 modal 中查看原图（`max-w-[90vw] max-h-[90vh]`，保留宽高比）
+  2. **下载图片**：通过 `<a download>` 触发下载（`fetch(url).then(r => r.blob()).then(blob => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = \`kolors-\${seed}.png\`; a.click(); })`，避免直接跳转新标签）
+  3. **复制链接**：调用 `navigator.clipboard.writeText(image_url)` 复制图片公网 URL；复制成功后按钮文案切换为「已复制」1.5 秒后恢复（参考 OCR 复制按钮模式）
+  4. **重新生成**：仅 Workflow 路径显示，触发 `POST /api/generate-image` 重新生成（复用当前 prompt + imageSize，可选随机新 seed）
 
 #### Scenario: 失败状态
 

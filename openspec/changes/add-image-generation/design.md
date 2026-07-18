@@ -28,15 +28,19 @@
 
 ### 决策 1：采用混合模式（Agent 工具 + 前端按钮）
 
-**理由**：生图是重操作（耗时 10-30 秒、消耗 API 配额），既需要 AI 的语义理解能力（自然语言触发），也需要用户对重操作的精确控制（避免误触发浪费配额）。
+**理由**：生图是重操作（耗时 10-30 秒、消耗 API 配额、带水印），既需要 AI 的语义理解能力（自然语言触发），也需要用户对重操作的精确控制（避免误触发浪费配额、避免无意义的水印图片被永久保存到 ImgBB）。
 
 **Workflow 路径绕开 Agent 默认路径的理由**（满足 AGENTS.md「核心判定标准」红线要求）：
-- 用户对重操作的显式控制权优先于自动化，符合「安全/合规护栏允许 Workflow」的精神
-- 前端按钮路径是用户显式单次操作，不涉及工具组合编排，无控制流 if/else 写死工具调用步骤
-- Workflow 路径仅做编排（调 API → 转存 → 返回 URL），不决策「是否生图」（由用户点击决策）
+
+承认内部流程是「调 Kolors API → 转存 ImgBB → 返回 URL」的两步 Workflow 编排（`if/else` 写死在 `/api/generate-image.post.ts` 中），但**满足下列护栏条件**允许采用 Workflow：
+
+1. **用户显式触发**：每次生图都需用户主动点击按钮并填写 prompt，无 LLM 自主触发路径
+2. **不涉及工具组合决策**：调用顺序（生成 → 转存）是固定流水线，不存在 LLM 应自主决策的工具组合
+3. **重操作护栏**：生图耗时 10-30 秒 + 消耗 API 配额 + 占用 ImgBB 存储 + 生成带水印图片，这些副作用的"是否发起"必须由用户决策，不应由 LLM 自动判断
+4. **失败重试可由用户控制**：Workflow 路径可在 UI 提供"重试"按钮，Agent 路径则由 LLM 自主决定（详见 spec.md 7.2 失败状态分支）
 
 **替代方案**：
-- 纯 Agent 路径——缺点：用户无法精确控制何时生图，LLM 可能误触发
+- 纯 Agent 路径——缺点：用户无法精确控制何时生图，LLM 可能误触发消耗配额；且每次生图都会持久化到 ImgBB，浪费存储
 - 纯 Workflow——缺点：无法在自然对话中触发，丢失 LLM 的 prompt 优化能力
 
 ### 决策 2：复用 ImgBB 转存，不引入新存储
@@ -63,11 +67,24 @@
 
 **替代方案**：返回 base64——缺点：占用大量 token，破坏流式响应，无法在 SSE 中传输。
 
-### 决策 6：前端生图按钮放在 ChatInput 工具栏，与 OCR 按钮并列
+### 决策 6：生图按钮位置 — 输入框旁的图标按钮（非 toggle chip）
 
-**理由**：保持与现有工具入口的视觉一致性；OCR 按钮已是参考实现（含 `canUploadImage` 能力守卫模式）。
+**理由**：现有 `ChatInput.vue` 工具栏有两种交互模式：
+- **toggle chip 区**（思考 / 联网 / OCR）：状态切换型，按钮高亮表示"已开启"
+- **图标按钮区**（图片上传、语音输入、发送）：动作触发型，无"开启/关闭"状态
 
-**替代方案**：浮动操作按钮（FAB）——缺点：遮挡内容、不符合聊天应用惯例。
+生图属于**动作触发型**（点击展开输入面板、提交即触发），与图片上传、语音输入同类。放在 toggle chip 区会与 OCR 等状态切换型按钮混淆，破坏视觉一致性。
+
+**具体位置**：放在 `ChatInput.vue` 第 232 行的图片上传 `<label>` 之后，语音输入按钮（302 行）之前。按钮样式参照语音输入按钮（`min-w-[44px] min-h-[44px]` 手机端、`sm:min-w-[40px] sm:min-h-[40px]` 平板端、`active:scale-95` 反馈、v-tooltip 文字提示）。
+
+**为什么不放在 toggle chip 区**：
+- OCR 是 toggle（开启/关闭 OCR 能力），生图是动作（点击触发一次生图）
+- 混在一起会让用户误以为"点击生图会持续生成图片"，与 OCR toggle 行为不一致
+
+**替代方案**：
+- toggle chip 区追加生图 chip — 拒绝：交互模式不匹配，与 OCR/联网混淆
+- 浮动操作按钮（FAB）— 拒绝：遮挡内容，不符合聊天应用惯例
+- 独立工具栏（ChatInput 上方）— 拒绝：与现有"图片上传 + 语音输入 + 发送"图标列视觉断裂
 
 ### 决策 7：Workflow 路径单次请求返回，不做 `maxSteps` 循环
 
@@ -97,25 +114,41 @@
 | 参数校验失败 | N/A（LLM 传参） | HTTP 400 + `createError()` |
 | 未配置 API Key | `{ error, detail }` | HTTP 500 + `{ message: '图片生成服务不可用' }` |
 
-### 决策 10：SSR 水合防护
+### 决策 10：SSR 水合防护 + isMobile 传递路径
 
+**SSR 水合**：
 - 生图按钮使用 `v-tooltip` 指令（项目规范），禁用原生 `title` 属性
 - 加载状态 `ref(false)`，初始值 SSR 安全（SSR 与客户端均为 `false`，无水合不匹配）
 - 图片预览组件用 `<ClientOnly>` 包裹（依赖浏览器 `Image()` 对象检测加载状态）
 - 不在模板或 computed 中使用 `Date.now()`/`Math.random()` 等不确定值
-- `isMobile` 判断复用 `ai-chat.vue` 中现有逻辑（`window.innerWidth < 640`，在 `onMounted` 内初始化）
+
+**isMobile 传递路径**：
+
+`isMobile` 状态在 `pages/ai-chat.vue` 中持有（166 行：`const isMobile = ref(false)`，172 行 onMounted 初始化），不通过 composable 暴露。传递路径：
+
+1. `pages/ai-chat.vue` 的 `<ChatInput>` 标签新增 `:is-mobile="isMobile"` prop 绑定
+2. `components/chat/ChatInput.vue` 的 `defineProps` 新增 `isMobile: boolean` 字段
+3. 生图按钮的样式根据 `isMobile` 切换：手机端 `min-w-[44px] min-h-[44px]`，平板端 `sm:min-w-[40px] sm:min-h-[40px]`
+4. **不**在 ChatInput 内部 `onMounted` 监听 `window.resize` 重复持有 isMobile（与现有 `speechSupported` 模式不同：speechSupported 是浏览器能力检测，只读一次；isMobile 需响应窗口变化，单一来源更可靠）
+
+**为什么不抽 composable**：项目已有侧边栏响应式逻辑全部集中在 ai-chat.vue 中，isMobile 的窗口监听与 showSidebar 状态紧耦合（177-178 行：`if (!mobile && !showSidebar.value) showSidebar.value = true`），抽 composable 会破坏现有状态机。
 
 ## Risks / Trade-offs
 
 | 风险 | 缓解措施 |
-|---|---|
+| --- | --- |
 | 生图耗时 10-30 秒，用户等待焦虑 | 前端显示进度指示器（spinner + "正在生成图片..."文案），按钮 `disabled` 防重复提交 |
+| Nitro 默认 handler 超时较短，生图 30 秒可能被掐断 | `defineEventHandler` 显式声明 `maxDuration: 60_000`；`image-generation.ts` fetch 中用 `AbortController.timeout(60_000)`；nuxt.config.ts 不需要额外配置（`maxDuration` 是 handler 局部配置） |
 | Kolors 中文提示词理解偶尔偏差 | Agent 路径由 LLM 自动优化 prompt；Workflow 路径用户自行调整重试 |
 | ImgBB 转存失败导致 URL 1 小时后失效 | 降级返回临时 URL + `warning` 字段提示前端，前端显示"图片链接 1 小时后失效，请及时保存" |
-| 并发生图请求消耗 API 配额 | 前端按钮 `disabled` 防重复；Agent 路径受 `maxSteps=5` 限制；不做服务端限流（单用户场景） |
+| 并发生图请求消耗 API 配额 | 前端按钮 `disabled` 防重复；Agent 路径受 `maxSteps=5` 限制；多标签页并发接受为风险（单用户场景下 L4） |
 | 触摸设备按钮误触 | 按钮尺寸 ≥ 44px，加 `active:scale-95` 反馈 |
 | 历史会话中 ImgBB 链接失效 | 接受此取舍：图片链接失效时显示 alt 文本，对话文本仍在；不做本地备份（成本高、收益低） |
-| `maxSteps=5` 限制 Agent 多步生图+描述 | 单次生图场景足够；如需多步（如先生图再描述），LLM 可在 5 步内完成 |
+| `maxSteps=5` 限制 Agent 多步生图+描述 | 1 次生图（生成 + 返回）+ 1 步 LLM 引用 = 2 步；5 步上限充裕。如未来需多步（如先生图再描述再二次生图），需重新评估 `maxSteps` 上限 |
+| Kolors 生成图片带 AI 水印 | 接受为取舍：硅基流动在图片右下角添加半透明"AI 生成"水印，符合监管要求；不另行加水印；UI 上不专门提示（避免水印焦虑） |
+| 用户输入违规 prompt（NSFW/政治敏感） | 接受：硅基流动服务端自动 NSFW 过滤，超出范围的 prompt 会返回 4xx 错误；本项目不重复做内容审核（成本高、与 Kolors 默认行为重复） |
+| Agent 路径 LLM 误触发生图 | LLM 自主决策遵守工具 description 的「何时不调用」规则；如多次观察误触发，添加 rate-limit（5 分钟内最多 3 次）或 cost cap |
+| 多标签页同时触发 Workflow 生图 | 接受为取舍：服务端未做并发去重，理论可同时生成多张图。修复需引入内存级并发锁（进程内 Map），与单用户场景收益不匹配 |
 
 ## Migration Plan
 
@@ -132,6 +165,16 @@
 
 ## Open Questions
 
-1. Kolors 是否需要默认 `negative_prompt`（反向提示词）？硅基流动 API 支持，但默认不传。可在实施时根据生成质量决定是否暴露给用户。
-2. 是否需要为生图功能单独计费/限流？当前不做（单用户场景），如未来上线多用户需补。
-3. `imageSize` 默认值取 `1024x1024`（正方形）还是 `960x1280`（竖屏，更适合手机）？建议默认 `1024x1024`，前端可让用户选择。
+1. Kolors 的 `negative_prompt`（反向提示词）：**不暴露给用户和 LLM**。硅基流动 API 支持此参数，但默认不传（依赖 Kolors 内置 NSFW/低质量过滤）。Agent 路径 LLM 不传此参数；Workflow 路径前端 UI 不提供此输入框。如未来需要高级用户控制，可在 `/api/generate-image` 路由 body 增 `negativePrompt` 字段（zod 校验 0-500 字符），UI 在面板底部折叠展开「高级选项」。
+
+2. 多用户场景的生图限流：**当前不做**。单用户场景下前端按钮 `disabled` + Agent `maxSteps=5` 已够。如未来上线多用户，需引入：
+   - 服务端内存级并发锁（按 userId 限流）
+   - DB 计数（每日配额）
+   - 或对接 API 网关层限流
+
+3. `imageSize` 默认值：**`1024x1024`**（正方形，通用性最佳）。前端 UI 暴露 5 个预设可选（详见 tasks.md 6.2）：
+   - `1024x1024`（默认，通用）
+   - `960x1280`（3:4 竖屏，适合手机壁纸）
+   - `768x1024`（3:4 经典竖屏）
+   - `720x1440`（9:20 超长竖屏，手机壁纸）
+   - `720x1280`（9:16 竖屏）
