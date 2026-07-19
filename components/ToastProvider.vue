@@ -2,7 +2,7 @@
 export interface ToastItem {
   id: number
   message: string
-  type: 'success' | 'error' | 'info'
+  type: 'success' | 'error' | 'info' | 'warning'
 }
 
 const toasts = ref<ToastItem[]>([])
@@ -25,8 +25,11 @@ function error(message: string) {
 function info(message: string) {
   show(message, 'info')
 }
+function warning(message: string) {
+  show(message, 'warning', 4000)
+}
 
-provide('toast', { show, success, error, info })
+provide('toast', { show, success, error, info, warning })
 </script>
 
 <template>
@@ -43,11 +46,14 @@ provide('toast', { show, success, error, info })
               toast.type === 'success',
             'bg-semi-danger-light text-semi-danger border border-semi-danger/30':
               toast.type === 'error',
-            'bg-semi-info-light text-semi-info border border-semi-info/30': toast.type === 'info'
+            'bg-semi-info-light text-semi-info border border-semi-info/30': toast.type === 'info',
+            'bg-semi-warning-light text-semi-warning border border-semi-warning/30':
+              toast.type === 'warning'
           }"
         >
           <span v-if="toast.type === 'success'">✓</span>
           <span v-else-if="toast.type === 'error'">✕</span>
+          <span v-else-if="toast.type === 'warning'">⚠</span>
           <span v-else>ℹ</span>
           <span>{{ toast.message }}</span>
         </div>

@@ -251,12 +251,19 @@ describe('MCP Weather Server 集成测试', () => {
 
   /**
    * 启动 MCP Server 子进程并建立客户端连接
+   *
+   * 注入 MOCK_WEATHER_API 环境变量，使子进程在无网络环境下使用 mock 数据，
+   * 避免集成测试因外部 API 不可达而失败。
    */
   async function connectToServer() {
     transport = new StdioClientTransport({
       command: 'npx',
       args: ['tsx', 'server/mcp/weather-server.ts'],
-      stderr: 'pipe'
+      stderr: 'pipe',
+      env: {
+        ...process.env,
+        MOCK_WEATHER_API: 'true'
+      }
     })
 
     client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} })

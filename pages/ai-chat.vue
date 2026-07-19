@@ -33,6 +33,7 @@ const {
   enableThinking,
   enableWebSearch,
   enableOcr,
+  enableImageGeneration,
   currentModel,
   showSidebar,
   modelOptions,
@@ -60,6 +61,9 @@ const chat = new Chat({
       model: currentModel.value,
       enable_web_search: enableWebSearch.value,
       enable_ocr: enableOcr.value,
+      // Agent 生图工具开关：snake_case 与 enable_web_search/enable_ocr 一致
+      // false 时 chat.post.ts 不注册 generateImage 工具，LLM 无法主动调用
+      enable_image_generation: enableImageGeneration.value,
       // 上一个会话 ID — 供服务端 onFinish fire-and-forget 触发归档兜底
       lastSessionId: lastSessionId.value || undefined,
       images:
@@ -124,6 +128,46 @@ async function handleReload() {
 
 async function handleStop() {
   await chat.stop()
+}
+
+/**
+ * 处理 Workflow 路径生图成功事件
+ *
+ * 两件事必须都做（design.md 决策 11）：
+ *   1. 持久化到 DB：通过 saveMessage 走 /api/messages 插入
+ *   2. 同步到 useChat 状态机：直接 push 到 chat.messages，让前端立即显示
+ *
+ * 消息归属：role: 'assistant'（生图由 AI 服务生成，与 Agent 路径 LLM 调用工具行为一致）
+ * 消息格式：UIMessage v5 parts 数组（与 chat.post.ts onFinish 持久化的消息格式一致）
+ */
+async function handleImageGenerated(result: {
+  imageUrl: string
+  markdown: string
+  seed: number
+  inferenceTime: number
+  warning?: string
+}) {
+  // 1. 同步到 useChat 状态机（先做，确保 UI 立即显示图片）
+  // 注：messages 是 computed(() => chat.messages)，必须操作 chat.messages 本身
+  const newMsg: UIMessage = {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    parts: [{ type: 'text', text: result.markdown }]
+  }
+  chat.messages = [...chat.messages, newMsg]
+
+  // 2. 持久化到 DB（异步，失败不丢失前端图片，仅 toast 提示）
+  // 注：saveMessage 内部已有 toast.error，此处 catch 阻止抛出避免 unhandled rejection
+  if (currentSessionId.value) {
+    try {
+      await saveMessage(currentSessionId.value, 'assistant', result.markdown, {
+        model: 'Kwai-Kolors/Kolors'
+      })
+    } catch {
+      // saveMessage 已 toast.error('保存消息失败')，此处吞掉异常
+      // 前端仍保留已生成的图片消息（UX 优先，不丢失用户可见内容）
+    }
+  }
 }
 
 function getMessageImages(msgId: string, index: number): UploadedImage[] {
@@ -314,7 +358,8 @@ const {
   createNewSession,
   switchSession,
   deleteSession,
-  renameSession
+  renameSession,
+  saveMessage
 } = useChatSession(setMessages)
 
 onMounted(async () => {
@@ -349,6 +394,7 @@ function getToolInvocations(msg: UIMessage): any[] {
  * 根据前端开关状态过滤可见的工具调用
  * - enableWebSearch 关闭时，隐藏 webSearch 工具
  * - enableOcr 关闭时，隐藏 extractTextFromImage 工具
+ * - enableImageGeneration 关闭时，隐藏 generateImage 工具
  * - weather 等其他工具始终显示（无前端开关）
  */
 function getVisibleToolInvocations(msg: UIMessage): any[] {
@@ -357,6 +403,7 @@ function getVisibleToolInvocations(msg: UIMessage): any[] {
   return all.filter((inv: any) => {
     if (inv.toolName === 'webSearch' && !enableWebSearch.value) return false
     if (inv.toolName === 'extractTextFromImage' && !enableOcr.value) return false
+    if (inv.toolName === 'generateImage' && !enableImageGeneration.value) return false
     return true
   })
 }
@@ -1012,16 +1059,19 @@ function onDocumentClick(e: Event) {
         v-model:enable-thinking="enableThinking"
         v-model:enable-web-search="enableWebSearch"
         v-model:enable-ocr="enableOcr"
+        v-model:enable-image-generation="enableImageGeneration"
         v-model:images="uploadedImages"
         :supports-vision="supportsVision"
         :supports-ocr="currentSupportsOcr"
         :current-capabilities="currentCapabilities"
         :model-options="modelOptions"
         :current-model="currentModel"
+        :current-session-id="currentSessionId"
         @select-model="currentModel = $event"
         @submit="wrappedHandleSubmit"
         @stop="handleStop"
         @speech-error="(msg: string) => toast.error(msg)"
+        @image-generated="handleImageGenerated"
       />
     </div>
   </div>

@@ -76,6 +76,33 @@ interface RecallMemoryResult {
   detail?: string
 }
 
+/**
+ * generateImage 工具返回结构（与 server/utils/image-generation.ts GenerateImageResult 对齐）
+ *
+ * 成功：{ imageUrl, markdown, seed, inferenceTime, warning? }  error 为 never
+ * 失败：{ error, detail, query }  imageUrl 为 never
+ * 注：用 'detail' in result 做判别 narrowing（不要用 'error' in result，因 Success 也有可选 error?: never）
+ */
+interface GenerateImageSuccess {
+  imageUrl: string
+  markdown: string
+  seed: number
+  inferenceTime: number
+  warning?: string
+  error?: never
+}
+
+interface GenerateImageFailure {
+  error: string
+  detail: string
+  query: {
+    prompt: string
+    seed?: number
+    imageSize?: string
+  }
+  imageUrl?: never
+}
+
 interface ToolInvocation {
   toolCallId: string
   toolName: string
@@ -185,6 +212,15 @@ function getInputImageUrl(input: Record<string, unknown> | undefined | null): st
   }
 }
 
+/**
+ * 从 generateImage 工具输入中安全读取 prompt 字段
+ * 用于加载态展示「正在生成：{prompt}」
+ */
+function getInputImagePrompt(input: Record<string, unknown> | undefined | null): string {
+  if (!input) return ''
+  return (input as { prompt?: string }).prompt ?? ''
+}
+
 /** OCR 复制按钮状态：复制后切换文案 1.5s 后恢复 */
 const copiedOcr = ref(false)
 let copyOcrTimer: ReturnType<typeof setTimeout> | null = null
@@ -203,8 +239,76 @@ async function copyOcrText(text: string) {
   }
 }
 
+/**
+ * generateImage 工具结果类型守卫
+ * 注：用 'detail' in result 而非 'error' in result，因 GenerateImageSuccess.error 类型为 never（可选），
+ * TypeScript 仍允许 Success 对象拥有 error 字段（值为 undefined），用 'error' in 无法有效判别
+ */
+function isGenerateImageFailure(result: unknown): result is GenerateImageFailure {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    'detail' in result &&
+    typeof (result as GenerateImageFailure).detail === 'string'
+  )
+}
+
+/** generateImage 复制链接按钮状态：复制后切换文案 1.5s 后恢复 */
+const copiedImageLink = ref(false)
+let copyImageLinkTimer: ReturnType<typeof setTimeout> | null = null
+
+async function copyImageLink(url: string) {
+  if (!url) return
+  try {
+    await navigator.clipboard.writeText(url)
+    copiedImageLink.value = true
+    if (copyImageLinkTimer) clearTimeout(copyImageLinkTimer)
+    copyImageLinkTimer = setTimeout(() => {
+      copiedImageLink.value = false
+    }, 1500)
+  } catch {
+    // 剪贴板 API 不可用时静默失败
+  }
+}
+
+/** generateImage 图片放大模态框 */
+const showImageModal = ref(false)
+
+/**
+ * 下载图片（通过 fetch + blob 触发，避免直接跳转新标签）
+ * 失败时降级用 <a download href> 直接打开
+ */
+async function downloadImage(url: string, seed: number) {
+  if (!url) return
+  const filename = `kolors-${seed}.png`
+  try {
+    const response = await fetch(url)
+    const blob = await response.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    // 释放 blob URL，避免内存泄漏
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+  } catch {
+    // 降级：直接打开链接（浏览器会处理图片下载/查看）
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+}
+
 onUnmounted(() => {
   if (copyOcrTimer) clearTimeout(copyOcrTimer)
+  if (copyImageLinkTimer) clearTimeout(copyImageLinkTimer)
 })
 </script>
 
@@ -844,8 +948,323 @@ onUnmounted(() => {
     </div>
   </div>
 
+  <!-- generateImage 工具：AI 文生图（Agent 路径） -->
+  <div v-else-if="invocation.toolName === 'generateImage'">
+    <!-- 加载中状态 -->
+    <div
+      v-if="isCalling(invocation.state)"
+      class="flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-semi-primary-light/60 border border-semi-primary/30 rounded-xl text-sm text-semi-primary-active"
+    >
+      <span class="relative flex h-4 w-4">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-semi-primary opacity-60"
+        ></span>
+        <span class="relative inline-flex rounded-full h-4 w-4 bg-semi-primary"></span>
+      </span>
+      <span class="text-xs sm:text-sm">
+        正在生成图片
+        <span v-if="getInputImagePrompt(invocation.input)" class="text-semi-text-3 truncate">
+          ：{{ getInputImagePrompt(invocation.input) }}
+        </span>
+        ...
+      </span>
+    </div>
+
+    <!-- 结果展示 -->
+    <div
+      v-else-if="invocation.state === 'output-available' && invocation.output"
+      class="bg-semi-bg-0 border border-semi-border rounded-xl overflow-hidden shadow-semi-card"
+    >
+      <template v-if="!isGenerateImageFailure(invocation.output)">
+        <!-- 头部：标题 + 耗时 + seed -->
+        <div
+          class="px-4 py-2.5 sm:px-5 sm:py-3 bg-gradient-to-r from-semi-primary-light to-semi-primary-light border-b border-semi-divider"
+        >
+          <div class="flex items-center gap-2 flex-wrap">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-4 h-4 sm:w-5 sm:h-5 text-semi-primary shrink-0"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+            <span class="font-medium text-sm sm:text-base text-semi-text-0">AI 生成图片</span>
+            <span
+              v-if="(invocation.output as GenerateImageSuccess).inferenceTime > 0"
+              class="text-semi-micro sm:text-xs text-semi-text-3"
+            >
+              耗时 {{ ((invocation.output as GenerateImageSuccess).inferenceTime / 1000).toFixed(1) }} 秒
+            </span>
+            <span class="text-semi-micro sm:text-xs text-semi-text-3">
+              seed: {{ (invocation.output as GenerateImageSuccess).seed }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 图片缩略图 + 操作按钮 -->
+        <div class="px-4 py-3 sm:px-5 sm:py-4">
+          <div class="flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <!-- 缩略图：点击放大 -->
+            <button
+              type="button"
+              class="flex-shrink-0 rounded-lg overflow-hidden border border-semi-border hover:border-semi-primary transition-colors cursor-zoom-in active:scale-[0.98]"
+              :aria-label="`查看原图 seed ${(invocation.output as GenerateImageSuccess).seed}`"
+              v-tooltip="'点击放大查看'"
+              @click="showImageModal = true"
+            >
+              <img
+                :src="(invocation.output as GenerateImageSuccess).imageUrl"
+                :alt="`AI 生成图片 seed ${(invocation.output as GenerateImageSuccess).seed}`"
+                class="block max-w-[200px] w-full h-auto object-contain"
+                loading="lazy"
+              />
+            </button>
+
+            <!-- 操作按钮组 -->
+            <div class="flex sm:flex-col gap-1.5 sm:gap-1 flex-wrap">
+              <!-- 放大查看 -->
+              <button
+                type="button"
+                class="inline-flex items-center justify-center w-7 h-7 rounded-md border border-semi-border bg-semi-bg-0 hover:bg-semi-fill-1 active:scale-95 text-semi-text-2 hover:text-semi-primary transition-colors"
+                v-tooltip="'放大查看'"
+                aria-label="放大查看"
+                @click="showImageModal = true"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="w-3.5 h-3.5"
+                >
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              </button>
+
+              <!-- 下载图片 -->
+              <button
+                type="button"
+                class="inline-flex items-center justify-center w-7 h-7 rounded-md border border-semi-border bg-semi-bg-0 hover:bg-semi-fill-1 active:scale-95 text-semi-text-2 hover:text-semi-primary transition-colors"
+                v-tooltip="'下载图片'"
+                aria-label="下载图片"
+                @click="
+                  downloadImage(
+                    (invocation.output as GenerateImageSuccess).imageUrl,
+                    (invocation.output as GenerateImageSuccess).seed
+                  )
+                "
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="w-3.5 h-3.5"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </button>
+
+              <!-- 复制链接 -->
+              <button
+                type="button"
+                class="inline-flex items-center justify-center gap-1 px-2 h-7 rounded-md border border-semi-border bg-semi-bg-0 hover:bg-semi-fill-1 active:scale-95 text-semi-text-2 hover:text-semi-primary transition-colors text-semi-micro-md whitespace-nowrap"
+                v-tooltip="copiedImageLink ? '已复制' : '复制图片链接'"
+                :aria-label="copiedImageLink ? '已复制图片链接' : '复制图片链接'"
+                @click="
+                  copyImageLink((invocation.output as GenerateImageSuccess).imageUrl)
+                "
+              >
+                <svg
+                  v-if="!copiedImageLink"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="w-3.5 h-3.5"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                <svg
+                  v-else
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="w-3.5 h-3.5 text-semi-success"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span>{{ copiedImageLink ? '已复制' : '复制链接' }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- ImgBB 转存失败警告 -->
+          <div
+            v-if="(invocation.output as GenerateImageSuccess).warning"
+            class="mt-2.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-semi-warning-light text-semi-warning text-semi-micro-md"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-3 h-3 shrink-0"
+            >
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <span>{{ (invocation.output as GenerateImageSuccess).warning }}</span>
+          </div>
+        </div>
+      </template>
+
+      <!-- 失败状态：等待 AI 自主重试 -->
+      <div v-else class="px-4 py-3 bg-semi-danger-light">
+        <div class="flex items-center gap-2 mb-1">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="w-4 h-4 text-semi-danger shrink-0"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span class="text-xs sm:text-sm text-semi-danger font-medium">
+            {{ (invocation.output as GenerateImageFailure).error }}
+          </span>
+        </div>
+        <p class="text-semi-micro text-semi-text-3 ml-6">
+          {{ (invocation.output as GenerateImageFailure).detail }}
+        </p>
+        <p class="text-semi-micro text-semi-text-3 ml-6 mt-1.5 italic">
+          等待 AI 自主决定是否重试...
+        </p>
+      </div>
+    </div>
+
+    <!-- output-error 状态（output 不存在但 state 为 error） -->
+    <div
+      v-else-if="invocation.state === 'output-error'"
+      class="px-4 py-3 text-xs sm:text-sm text-semi-danger bg-semi-danger-light rounded-xl"
+    >
+      <div class="flex items-center gap-2 mb-1">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="w-4 h-4 shrink-0"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <span class="font-medium">图片生成失败</span>
+      </div>
+      <p class="text-semi-micro text-semi-text-3 ml-6">
+        {{ invocation.errorText || '未知错误' }}
+      </p>
+      <p class="text-semi-micro text-semi-text-3 ml-6 mt-1.5 italic">
+        等待 AI 自主决定是否重试...
+      </p>
+    </div>
+
+    <!-- 图片放大模态框（ClientOnly 避免水合不匹配，因 showImageModal 仅客户端交互） -->
+    <ClientOnly>
+      <Teleport to="body">
+        <Transition name="fade">
+          <div
+            v-if="showImageModal"
+            class="fixed inset-0 z-semi-modal bg-semi-overlay-dark flex items-center justify-center p-4"
+            @click="showImageModal = false"
+          >
+            <button
+              type="button"
+              class="absolute top-4 right-4 w-10 h-10 rounded-full bg-semi-bg-0/20 hover:bg-semi-bg-0/30 text-white flex items-center justify-center active:scale-95 transition-transform"
+              aria-label="关闭"
+              @click.stop="showImageModal = false"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="w-5 h-5"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+            <img
+              v-if="invocation.state === 'output-available' && invocation.output && !isGenerateImageFailure(invocation.output)"
+              :src="(invocation.output as GenerateImageSuccess).imageUrl"
+              :alt="`AI 生成图片原图 seed ${(invocation.output as GenerateImageSuccess).seed}`"
+              class="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-semi-lightbox"
+              @click.stop
+            />
+          </div>
+        </Transition>
+      </Teleport>
+    </ClientOnly>
+  </div>
+
   <!-- 兜底：未知工具类型，避免渲染错误 -->
   <div v-else class="px-3.5 py-2.5 text-xs sm:text-sm text-semi-text-3 bg-semi-bg-1 rounded-xl">
     工具调用: {{ invocation.toolName }}
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity theme('transitionDuration.semi-normal') ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

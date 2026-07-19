@@ -38,6 +38,11 @@ export function useChatConfig() {
 
   const enableOcr = ref(false)
 
+  // 生图 Agent 工具开关：默认开启，与 enableWebSearch 一致
+  // 由前端 toggle chip 控制，决定 LLM 是否能自主调用 generateImage 工具
+  // 注：Workflow 路径（生图按钮触发 /api/generate-image）不受此开关影响
+  const enableImageGeneration = ref(true)
+
   const currentModel = ref(config.public.defaultModel)
 
   const showSidebar = ref(false)
@@ -59,10 +64,15 @@ export function useChatConfig() {
   // 切换模型时重置开关：
   // - 思考开关：有思考能力的模型默认开启，无思考能力的模型关闭
   // - OCR 开关：切换到 toolCalling=false 的模型时自动关闭（避免 toggle 开启但工具不可用的不一致状态）
+  // - 生图开关：切换到 toolCalling=false 的模型时自动关闭，切回 toolCalling=true 时恢复为默认开启
+  //   （默认开启与 enableWebSearch 一致，让用户在新会话中能自然语言触发生图）
   watch(currentModel, () => {
     enableThinking.value = currentCapabilities.value.deepThinking
     if (!currentCapabilities.value.toolCalling) {
       enableOcr.value = false
+      enableImageGeneration.value = false
+    } else {
+      enableImageGeneration.value = true
     }
   })
 
@@ -85,6 +95,7 @@ export function useChatConfig() {
     enableThinking,
     enableWebSearch,
     enableOcr,
+    enableImageGeneration,
     currentModel,
     showSidebar,
     modelOptions,

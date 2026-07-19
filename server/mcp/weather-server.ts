@@ -19,8 +19,57 @@ import {
   fetchWeather,
   describeWeatherCode,
   describeWindDirection,
-  getCityByIp
+  getCityByIp,
+  type GeocodingResult,
+  type WeatherResponse
 } from '../tools/weather'
+
+/**
+ * 测试模式下 mock 天气 API 调用
+ *
+ * MCP Server 集成测试通过 stdio 启动真实子进程，无法直接 mock 子进程内的 fetch。
+ * 通过 MOCK_WEATHER_API 环境变量注入 mock 数据，使测试在无网络环境也能稳定运行。
+ */
+const USE_MOCK_WEATHER = process.env.MOCK_WEATHER_API === 'true'
+
+async function mockGeocodeCity(cityName: string): Promise<GeocodingResult | null> {
+  if (cityName === 'XyzNonexistentCity999') return null
+
+  const knownCities: Record<string, GeocodingResult> = {
+    深圳: { name: 'Shenzhen', latitude: 22.5431, longitude: 114.0579, country: 'China', admin1: 'Guangdong' },
+    Tokyo: { name: 'Tokyo', latitude: 35.6895, longitude: 139.6917, country: 'Japan', admin1: 'Tokyo' }
+  }
+
+  return knownCities[cityName] ?? {
+    name: cityName,
+    latitude: 0,
+    longitude: 0,
+    country: 'Unknown',
+    admin1: ''
+  }
+}
+
+async function mockFetchWeather(): Promise<WeatherResponse> {
+  return {
+    current: {
+      temperature_2m: 28.5,
+      relative_humidity_2m: 75,
+      apparent_temperature: 32.1,
+      weather_code: 3,
+      wind_speed_10m: 12.3,
+      wind_direction_10m: 180
+    },
+    daily: {
+      weather_code: [3, 1, 2],
+      temperature_2m_max: [30, 32, 31],
+      temperature_2m_min: [25, 26, 24],
+      precipitation_probability_max: [20, 10, 30]
+    }
+  }
+}
+
+const resolveGeocodeCity = USE_MOCK_WEATHER ? mockGeocodeCity : geocodeCity
+const resolveFetchWeather = USE_MOCK_WEATHER ? mockFetchWeather : fetchWeather
 
 const server = new McpServer({
   name: 'weather-mcp-server',
@@ -41,7 +90,7 @@ server.registerTool(
   async ({ city }) => {
     try {
       // 第一步：将城市名转为经纬度
-      const location = await geocodeCity(city)
+      const location = await resolveGeocodeCity(city)
 
       if (!location) {
         return {
@@ -56,7 +105,7 @@ server.registerTool(
       }
 
       // 第二步：根据经纬度获取天气数据
-      const weatherData = await fetchWeather(location.latitude, location.longitude)
+      const weatherData = await resolveFetchWeather(location.latitude, location.longitude)
 
       // 第三步：格式化当前天气
       const current = weatherData.current

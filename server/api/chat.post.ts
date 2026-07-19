@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm'
 import { webSearchTool } from '~/server/tools/web-search'
 import { ocrDocumentTool } from '~/server/tools/ocr-document'
 import { recallMemoryTool } from '~/server/tools/recall-memory'
+import { generateImageTool } from '~/server/tools/generate-image'
 import { archiveSessionMessages } from '~/server/utils/memory-archive'
 import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/models'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
@@ -192,6 +193,31 @@ const OCR_TOOL_RULES = `
 `.trim()
 
 /**
+ * generate-image 工具使用规则：追加到 system prompt 强化 LLM 调用判断
+ * - 正向场景：用户明确请求生成图片（"画"、"生成图片"、"绘制"等）
+ * - 负向场景：用户只要文字回答、用户上传图片要求识别（OCR 职责）
+ * - Prompt 撰写：英文对 Kolors 效果更好，包含主体+风格+场景+细节
+ * - 失败不重试：生图耗时长、消耗 API 配额，失败时解释原因不自动重试
+ *
+ * 注入条件：与工具注册条件严格一致（caps.toolCalling && enable_image_generation !== false）
+ * 避免出现"规则说可以调用但工具未注册"（LLM 幻觉调用）或反向不一致
+ */
+const GENERATE_IMAGE_TOOL_RULES = `
+【生图工具使用规则】
+1. 当且仅当用户明确请求生成图片时才调用 generateImage 工具。典型触发词：「画」「生成图片」「绘制」「画一张」「给我画」「能画吗」「帮我画」。
+2. 不要在以下场景调用：
+   - 用户只要文字回答、解释、描述
+   - 用户上传图片要求识别/分析（这是 OCR 工具的职责）
+   - 用户描述一个场景但未要求生成图片
+3. Prompt 撰写建议：
+   - 英文 prompt 对 Kolors 效果更佳；如用户用中文描述，先翻译为英文再调用
+   - 包含：主体（subject）+ 风格（style）+ 场景/背景（setting）+ 关键细节
+   - 例：用户说"画一只在月亮下的白猫" → 调用时 prompt = "A white cat under the moonlight, soft illustration style, starry night sky background, peaceful and dreamy atmosphere"
+4. 调用后基于工具返回的 imageUrl 在回答中用 markdown 图片语法 \`![描述](imageUrl)\` 嵌入，不要修改 URL。
+5. 工具失败时（返回 error 字段），向用户解释失败原因，**不要**自动重试（生成耗时高，避免浪费）。
+`.trim()
+
+/**
  * 从消息中提取纯文本内容。
  * AI SDK v5 的 UIMessage 格式将文本放在 parts 数组中（{ type: 'text', text: '...' }），
  * 而旧格式直接用 content 字符串。此处兼容两种格式。
@@ -247,11 +273,16 @@ export default defineEventHandler(async (event) => {
     images,
     enable_web_search,
     enable_ocr,
+    enable_image_generation,
     lastSessionId
   } = body ?? {}
 
   // 非严格 true 一律按 false 处理（默认关闭，与 enable_web_search 一致）
   const enableOcr = enable_ocr === true
+
+  // 生图工具开关：默认开启（与 enable_web_search 一致），非严格 false 一律按 true 处理
+  // 前端通过 toggle chip 控制是否允许 LLM 自主调用 generateImage 工具
+  const enableImageGeneration = enable_image_generation !== false
 
   if (!messages || !Array.isArray(messages)) {
     throw createError({
@@ -416,6 +447,12 @@ export default defineEventHandler(async (event) => {
     finalSystemPrompt += `\n\n${OCR_TOOL_RULES}`
   }
 
+  // generate-image 工具规则追加：注入条件必须与 toolsConfig 注册条件严格一致
+  // （caps.toolCalling && enableImageGeneration），避免模型幻觉调用或规则与工具不一致
+  if (enableImageGeneration && caps.toolCalling) {
+    finalSystemPrompt += `\n\n${GENERATE_IMAGE_TOOL_RULES}`
+  }
+
   // recall-memory 工具规则追加：模型支持工具调用时默认启用长期记忆检索
   // 注：工具本体在 toolsConfig 中注册（任务 8.1），此处仅注入使用规则指导 LLM 调用时机
   if (caps.toolCalling) {
@@ -467,7 +504,11 @@ export default defineEventHandler(async (event) => {
       ...(enableOcr && caps.toolCalling && { extractTextFromImage: ocrDocumentTool }),
       // recall-memory 工具：仅当 caps.toolCalling=true 时注册（默认启用，无前端开关）
       // LLM 自主决定调用时机（Agentic RAG），使用规则已注入 system prompt
-      ...(caps.toolCalling && { recallMemory: recallMemoryTool })
+      ...(caps.toolCalling && { recallMemory: recallMemoryTool }),
+      // generate-image 工具：仅当 enableImageGeneration=true 且 caps.toolCalling=true 时注册
+      // 注入条件与 GENERATE_IMAGE_TOOL_RULES 严格一致（见上方 system prompt 注入），
+      // 避免出现"规则说可以调用但工具未注册"或反向不一致
+      ...(enableImageGeneration && caps.toolCalling && { generateImage: generateImageTool })
     }
 
     // 重构 maxSteps 逻辑：基于「是否有工具实际注册」而非 caps.vision || caps.deepThinking

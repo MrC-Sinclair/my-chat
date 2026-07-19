@@ -51,12 +51,14 @@ function mountChatInput(
     enableThinking: false,
     enableWebSearch: false,
     enableOcr: false,
+    enableImageGeneration: true,
     images: [],
     supportsVision: false,
     supportsOcr: false,
     currentCapabilities: defaultCapabilities,
     modelOptions: defaultModelOptions,
     currentModel: 'Qwen/Qwen3-8B',
+    currentSessionId: 'test-session-id',
     ...overrides.props
   }
   return mount(ChatInput, {
@@ -88,7 +90,8 @@ describe('ChatInput 组件', () => {
 
     it('字数计数器在输入时显示', () => {
       const wrapper = mountChatInput({ props: { input: '测试' } })
-      const counter = wrapper.find('.text-semi-micro-md')
+      // 使用 .ml-auto 区分输入计数器与 prompt 计数器（后者无 ml-auto）
+      const counter = wrapper.find('.text-semi-micro-md.ml-auto')
       expect(counter.text()).toContain('2')
       expect(counter.text()).toContain('1000')
     })
@@ -97,7 +100,7 @@ describe('ChatInput 组件', () => {
       const wrapper = mountChatInput({
         props: { input: 'a'.repeat(850) }
       })
-      const counter = wrapper.find('.text-semi-micro-md')
+      const counter = wrapper.find('.text-semi-micro-md.ml-auto')
       expect(counter.classes()).toContain('text-semi-warning')
     })
 
@@ -105,7 +108,7 @@ describe('ChatInput 组件', () => {
       const wrapper = mountChatInput({
         props: { input: 'a'.repeat(1001) }
       })
-      const counter = wrapper.find('.text-semi-micro-md')
+      const counter = wrapper.find('.text-semi-micro-md.ml-auto')
       expect(counter.classes()).toContain('text-semi-danger')
     })
   })
@@ -195,11 +198,10 @@ describe('ChatInput 组件', () => {
           images
         }
       })
-      const removeButtons = wrapper.findAll('button')
-      // 找到图片删除按钮（带 X 图标的圆形按钮）
-      const removeBtn = removeButtons.find((btn) => btn.find('svg line').exists())
-      expect(removeBtn).toBeTruthy()
-      await removeBtn!.trigger('click')
+      // 用 aria-label 精确匹配删除按钮（避免与生图面板的关闭按钮冲突）
+      const removeBtn = wrapper.find('button[aria-label="删除图片"]')
+      expect(removeBtn.exists()).toBe(true)
+      await removeBtn.trigger('click')
       const emitted = wrapper.emitted('update:images')
       expect(emitted).toBeTruthy()
       expect(emitted![0][0]).toHaveLength(1)
