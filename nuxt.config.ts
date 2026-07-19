@@ -171,6 +171,8 @@ export default defineNuxtConfig({
     // 重排序模型：BAAI/bge-reranker-v2-m3，对 query-document 对做交叉编码精排
     rerankerModel: process.env.RERANKER_MODEL || 'BAAI/bge-reranker-v2-m3',
     // 重要度判断模型：默认 Qwen/Qwen3.5-4B（轻量、toggleableThinking），通过 createReasoningProvider 调用
-    memoryImportanceModel: process.env.MEMORY_IMPORTANCE_MODEL || 'Qwen/Qwen3.5-4B'
+    memoryImportanceModel: process.env.MEMORY_IMPORTANCE_MODEL || 'Qwen/Qwen3.5-4B',
+    // 文生图模型：默认 Kwai-Kolors/Kolors，供图片生成 API 使用
+    imageGenerationModel: process.env.IMAGE_GENERATION_MODEL || 'Kwai-Kolors/Kolors'
   }
 })

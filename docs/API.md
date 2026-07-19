@@ -7,6 +7,7 @@
 | 方法     | 路径                | 说明                           | 鉴权 |
 | -------- | ------------------- | ------------------------------ | ---- |
 | `POST`   | `/api/chat`         | AI 对话（流式 SSE）            | 无   |
+| `POST`   | `/api/generate-image` | 文生图（Workflow 路径）        | 无   |
 | `GET`    | `/api/sessions`     | 获取会话列表                   | 无   |
 | `POST`   | `/api/sessions`     | 创建新会话                     | 无   |
 | `GET`    | `/api/sessions/:id` | 获取会话历史消息               | 无   |
@@ -68,6 +69,7 @@ AI 对话核心接口，使用 Vercel AI SDK 的 `streamText` 流式生成回复
 | `images`            | `string[]`      | 否   | —                    | 图片数组，元素为 `data:image/...;base64,...` 或公网 URL                                               |
 | `enable_web_search` | `boolean`       | 否   | `true`               | 是否启用网页搜索工具                                                                                  |
 | `enable_ocr`        | `boolean`       | 否   | `false`              | 是否启用 OCR 工具（`extractTextFromImage`），仅 `toolCalling` 模型生效，默认关闭                      |
+| `enable_image_generation` | `boolean` | 否   | `true`               | 是否启用文生图 Agent 工具（`generateImage`），仅 `toolCalling` 模型生效，默认开启                     |
 
 **messages 元素结构**（AI SDK v5 UIMessage）
 
@@ -169,6 +171,74 @@ curl -N -X POST http://localhost:3000/api/chat \
 | `400`  | 启用图片但未配置 `IMGBB_API_KEY`               |
 | `429`  | 触发限流                                       |
 | `500`  | `streamText` 调用失败                          |
+
+---
+
+### POST /api/generate-image
+
+Workflow 路径文生图接口。前端点击"生图"按钮后调用，直接返回生成结果（非流式）。内部调用硅基流动 `Kwai-Kolors/Kolors` 生成图片，并立即转存到 ImgBB 获取持久化 URL。
+
+**请求体**
+
+| 字段        | 类型     | 必填 | 默认值        | 说明                                                         |
+| ----------- | -------- | ---- | ------------- | ------------------------------------------------------------ |
+| `prompt`    | `string` | 是   | —             | 生图提示词，1-2000 字符                                      |
+| `seed`      | `number` | 否   | 随机          | 随机种子，`0 < seed < 9999999999`                            |
+| `imageSize` | `string` | 否   | `1024x1024`   | 输出尺寸枚举，具体取值以硅基流动 API 实测接受值为准          |
+| `sessionId` | `string` | 否   | —             | 会话 ID，用于前端将生成结果持久化到当前会话                  |
+
+**响应**
+
+成功：`HTTP 200`
+
+```json
+{
+  "imageUrl": "https://i.ibb.co/xxx/kolors-xxx.png",
+  "markdown": "![A white cat under the moonlight](https://i.ibb.co/xxx/kolors-xxx.png)",
+  "seed": 123456789,
+  "inferenceTime": 8.5
+}
+```
+
+ImgBB 转存失败降级时，额外返回 `warning`：
+
+```json
+{
+  "imageUrl": "https://...siliconflow temporary url...",
+  "markdown": "![...](https://...siliconflow temporary url...)",
+  "seed": 123456789,
+  "inferenceTime": 8.5,
+  "warning": "图片链接 1 小时后失效，请及时保存"
+}
+```
+
+**错误码**
+
+| 状态码 | 触发条件                              |
+| ------ | ------------------------------------- |
+| `400`  | `prompt` 缺失/为空/超过 2000 字符     |
+| `400`  | `seed` 越界                           |
+| `400`  | `imageSize` 不在实测接受的枚举内      |
+| `429`  | 触发限流                              |
+| `500`  | 硅基流动 API 不可用或未配置 API Key   |
+
+**超时控制**
+
+- `image-generation.ts` 内部 `fetch` 使用 `AbortSignal.timeout(60_000)` 控制 60 秒主动超时
+- H3 `defineEventHandler` 不支持 `maxDuration` 选项
+- 部署到 Vercel 时需在 `vercel.json` 配置 `functions.maxDuration: 60`
+
+**示例**
+
+```bash
+curl -X POST http://localhost:3000/api/generate-image \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "A white cat under the moonlight, soft illustration style",
+    "imageSize": "1024x1024",
+    "seed": 123456789
+  }'
+```
 
 ---
 
@@ -607,6 +677,51 @@ interface ModelConfig {
 
 **实现**：[server/tools/ocr-document.ts](../server/tools/ocr-document.ts)
 
+### generateImage（文生图 Agent 工具）
+
+文生图工具，仅对支持 `toolCalling` 的模型注册，可通过 `enable_image_generation: false` 关闭（默认开启）。当用户明确请求生成图片、画图、绘制示意图、艺术创作时，系统提示词会引导 LLM 调用此工具。
+
+**输入**
+
+```ts
+{
+  prompt: string,     // 生图提示词，1-2000 字符
+  seed?: number,      // 随机种子，0 < seed < 9999999999
+  imageSize?: string  // 输出尺寸枚举，如 "1024x1024"
+}
+```
+
+**输出**（成功）
+
+```ts
+{
+  imageUrl: string,       // 持久化图片 URL（ImgBB 转存成功）或临时 URL（降级）
+  markdown: string,       // 可直接插入回答的 markdown 图片语法
+  seed: number,           // 实际使用的随机种子
+  inferenceTime: number,  // 生成耗时（秒）
+  warning?: string        // 降级提示，如 "图片链接 1 小时后失效，请及时保存"
+}
+```
+
+**输出**（失败，不抛异常，返回错误对象由 LLM 决定后续动作）
+
+```ts
+{
+  error: string,    // 错误概要：'图片生成失败' | '图片生成服务不可用'
+  detail: string,   // 错误详情
+  query: string     // 原始 prompt
+}
+```
+
+**调用约束**
+
+- 生成后图片 URL 仅 1 小时有效，工具内部会立即转存到 ImgBB；转存失败时降级返回原始 URL + `warning`
+- 工具不返回 base64，只返回 URL 和 markdown 语法，避免占用 LLM 上下文 token
+- 请求超时 60 秒（`AbortSignal.timeout(60_000)`）
+- 失败时不自动重试，由 LLM 根据错误信息决定是否向用户解释
+
+**实现**：[server/tools/generate-image.ts](../server/tools/generate-image.ts)
+
 ---
 
 ## 环境变量
@@ -615,8 +730,9 @@ interface ModelConfig {
 | ----------------- | ---- | ---------------------------------------------------- |
 | `OPENAI_API_KEY`  | 是   | LLM Provider API Key（硅基流动）                     |
 | `OPENAI_BASE_URL` | 否   | LLM API 基地址，默认 `https://api.siliconflow.cn/v1` |
-| `LLM_MODEL`       | 否   | 默认模型，默认 `Qwen/Qwen3-8B`                       |
-| `ENABLE_THINKING` | 否   | 默认是否启用思考，默认 `true`（设为 `false` 关闭）   |
+| `LLM_MODEL`             | 否   | 默认模型，默认 `Qwen/Qwen3-8B`                       |
+| `IMAGE_GENERATION_MODEL` | 否   | 文生图模型，默认 `Kwai-Kolors/Kolors`                |
+| `ENABLE_THINKING`       | 否   | 默认是否启用思考，默认 `true`（设为 `false` 关闭）   |
 | `SYSTEM_PROMPT`   | 否   | 自定义系统提示词                                     |
 | `IMGBB_API_KEY`   | 否   | ImgBB 图床 API Key，启用图片对话必填                 |
 | `TAVILY_API_KEY`  | 否   | Tavily 搜索 API Key，启用网页搜索必填                |
@@ -666,5 +782,8 @@ location / {
 | [server/utils/embedding.ts](../server/utils/embedding.ts)                   | BAAI/bge-m3 embedding 服务（1024 维）            |
 | [server/utils/reranker.ts](../server/utils/reranker.ts)                     | BAAI/bge-reranker-v2-m3 重排序服务               |
 | [server/utils/memory-archive.ts](../server/utils/memory-archive.ts)         | 重要度筛选入库（LLM 判断 + embedding 写库）      |
+| [server/utils/image-generation.ts](../server/utils/image-generation.ts)     | 硅基流动文生图 API 封装 + ImgBB 转存             |
 | [server/tools/recall-memory.ts](../server/tools/recall-memory.ts)           | recall-memory 检索工具（Agentic RAG）            |
+| [server/tools/generate-image.ts](../server/tools/generate-image.ts)         | 文生图 Agent 工具                                |
+| [server/api/generate-image.post.ts](../server/api/generate-image.post.ts)   | Workflow 路径文生图独立路由                      |
 | [docs/db-schema.md](./db-schema.md)                                   | 数据库表结构文档                                 |

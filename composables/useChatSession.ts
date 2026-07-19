@@ -154,6 +154,38 @@ export function useChatSession(setMessages: (msgs: UIMessage[]) => void) {
     }
   }
 
+  /**
+   * 保存单条消息到数据库（用于 Workflow 路径）
+   *
+   * 使用场景：
+   *   - 生图 Workflow：前端调用 /api/generate-image 后，将返回的 markdown 图片消息保存到数据库
+   *   - 其他 Workflow 路径需要保存 assistant 消息时
+   *
+   * @param sessionId - 会话 ID
+   * @param role - 消息角色（'user' | 'assistant' | 'system'）
+   * @param content - 消息内容
+   * @param metadata - 可选的元数据（如 { model: "xxx" }）
+   * @returns 消息 ID
+   */
+  async function saveMessage(
+    sessionId: string,
+    role: 'user' | 'assistant' | 'system',
+    content: string,
+    metadata?: Record<string, unknown>
+  ): Promise<string> {
+    try {
+      const res = await $fetch<{ success: boolean; messageId: string }>('/api/messages', {
+        method: 'POST',
+        body: { sessionId, role, content, metadata }
+      })
+      return res.messageId
+    } catch (err) {
+      console.error('保存消息失败:', err)
+      toast.error('保存消息失败')
+      throw err
+    }
+  }
+
   return {
     sessionsList,
     currentSessionId,
@@ -162,6 +194,7 @@ export function useChatSession(setMessages: (msgs: UIMessage[]) => void) {
     createNewSession,
     switchSession,
     deleteSession,
-    renameSession
+    renameSession,
+    saveMessage
   }
 }

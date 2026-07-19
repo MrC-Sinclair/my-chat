@@ -2,17 +2,18 @@
 
 ### Requirement: 文生图 Agent 工具
 
-系统 SHALL 提供 `generate-image` Agent 工具，让 LLM 在用户请求生成图片时自主调用硅基流动 `Kwai-Kolors/Kolors` 模型生成图片。工具 MUST 遵循项目工具规范：执行失败返回 `{ error, detail }` 结构化对象不抛异常，由 LLM 决定后续处理。
+系统 SHALL 提供 `generateImage` Agent 工具，让 LLM 在用户请求生成图片时自主调用硅基流动 `Kwai-Kolors/Kolors` 模型生成图片。工具 MUST 遵循项目工具规范：执行失败返回 `{ error, detail }` 结构化对象不抛异常，由 LLM 决定后续处理。
 
 工具 description MUST 明确说明「何时调用」（用户请求生成图片、画图、绘制示意图、艺术创作）和「何时不调用」（用户只要文字回答、用户只要描述现有图片）。
 
 #### Scenario: LLM 自主调用生图工具
 
 - **WHEN** 用户输入"画一只在月光下的猫"
-- **THEN** LLM 调用 `generate-image` 工具，传入优化后的英文/中文 prompt
+- **THEN** LLM 调用 `generateImage` 工具，传入优化后的英文/中文 prompt
 - **AND** 工具调用硅基流动 `POST /v1/images/generations` API
-- **AND** 工具返回 `{ image_url, markdown, seed }` 给 LLM（不含 base64）
-- **AND** LLM 在最终回答中用 markdown 图片语法 `![描述](image_url)` 嵌入生成的图片
+- **AND** 工具返回 `{ imageUrl, markdown, seed, inferenceTime }` 给 LLM（不含 base64）
+- **NOTE** 硅基流动 API 响应格式为 `{ images: [{ url }], timings: { inference }, seed }`，需从 `images[0].url` 提取图片 URL，从 `timings.inference` 提取耗时（秒）作为 `inferenceTime`
+- **AND** LLM 在最终回答中用 markdown 图片语法 `![描述](imageUrl)` 嵌入生成的图片
 
 #### Scenario: 工具调用失败降级
 
@@ -23,17 +24,21 @@
 #### Scenario: ImgBB 转存失败降级
 
 - **WHEN** 图片生成成功但 ImgBB 上传失败
-- **THEN** 工具返回硅基流动原始 URL + `warning: '图片链接 1 小时后失效，请及时保存'` 字段
+- **THEN** 工具返回硅基流动原始 URL + `warning: '图片链接 1 小时后失效，请及时保存'` 字段 + `inferenceTime`
 - **AND** 不阻塞主流程
 
 #### Scenario: 未配置 API Key
 
-- **WHEN** `runtimeConfig.openAiApiKey` 为空
+- **WHEN** `process.env.OPENAI_API_KEY` 为空
 - **THEN** 工具返回 `{ error: '图片生成服务不可用', detail: '未配置 OPENAI_API_KEY' }` 不抛异常
 
 ### Requirement: 前端显式生图入口
 
-系统 SHALL 在 `ChatInput` 图标按钮区（图片上传之后、语音输入之前）提供"生图"按钮，作为动作触发型按钮（与图片上传、语音输入同类，非 toggle chip）。用户点击后弹出 prompt 输入面板，提交后调用 `POST /api/generate-image` 独立路由生成图片。按钮 MUST 遵循触摸设备适配规范。
+系统 SHALL 在 `ChatInput` 提供两处生图相关交互：
+1. **图标按钮区**（图片上传之后、语音输入之前）提供"生图"按钮，作为动作触发型按钮（与图片上传、语音输入同类），供 Workflow 路径显式触发生图。用户点击后弹出 prompt 输入面板，提交后调用 `POST /api/generate-image` 独立路由生成图片。
+2. **toggle chip 区**（思考 / 联网 / OCR 之后）提供"自动生图"开关，作为状态切换型按钮，控制 Agent 路径是否允许 LLM 自主调用 `generateImage` 工具。默认开启，状态通过 `useChat` 的 `body`（snake_case 字段名 `enable_image_generation`，与 `enable_web_search`/`enable_ocr` 一致）传入 `/api/chat`。system prompt 中生图工具规则的注入条件必须与工具注册条件严格一致：仅在 `caps.toolCalling && body.enable_image_generation !== false` 时注入。在 `toolCalling: false` 的模型上隐藏此 chip。
+
+按钮和 chip MUST 遵循触摸设备适配规范。
 
 #### Scenario: 用户通过按钮触发生图
 
@@ -42,9 +47,13 @@
 - **AND** 用户输入 prompt 并点击提交后
 - **THEN** 调用 `POST /api/generate-image`
 - **AND** 显示加载状态（spinner + "正在生成图片..."文案）
-- **AND** 收到响应后将返回的 `markdown` 字符串作为新消息内容追加到当前会话的 `messages` 数组
+- **AND** 收到响应后必须执行**两个同步操作**（详见 design.md 决策 11）：
+  1. **持久化到 DB**：调用 `useChatSession().saveMessage(sessionId, 'assistant', markdown, { model: 'Kwai-Kolors/Kolors' })`，走 `/api/messages` 路由插入 DB
+  2. **同步到 Chat 状态机**：通过 `chat.messages = [...chat.messages, newMsg]` 将新消息加入 `chat.messages` 数组，让前端对话流立即显示图片消息（仅持久化不同步会导致"点了按钮但看不到图"，需刷新才显示）
+  - **消息格式**：须符合 AI SDK 5.0 `UIMessage` 格式，使用 `parts` 数组：`{ id: crypto.randomUUID(), role: 'assistant', parts: [{ type: 'text', text: markdown }] }`
+  - **注意**：`messages` 是 `computed(() => chat.messages)`，不可直接 push 到 computed；须操作 `chat.messages` 数组本身
 - **AND** **消息归属**：`role: 'assistant'`（生图由 AI 服务生成，归属 AI 端）
-- **AND** **持久化路径**：通过 `useChatSession().saveMessage()` 落库（不内联写 db 调用，与 Agent 路径 onFinish 持久化一致）
+- **AND** **渲染路径**：图片通过 MarkdownRenderer 自然渲染（API 返回的 markdown 字符串 `![描述](imageUrl)` 作为消息内容），**不走 ToolInvocation**（详见 design.md 决策 12）
 - **AND** 若响应中含 `warning` 字段，额外用 `useToast().warning()` 提示"图片链接 1 小时后失效，请及时保存"
 
 #### Scenario: 防重复提交
@@ -101,6 +110,8 @@
 
 系统 SHALL 提供 `POST /api/generate-image` 路由，接收 prompt 参数，调用 Kolors 生成图片并返回持久化 URL。路由 MUST 用 zod 做参数校验，失败返回 400 + `createError()`。
 
+**超时控制**：60 秒超时由 `image-generation.ts` 内的 `AbortSignal.timeout(60_000)` 在 fetch 层完成（**不**通过 H3 `defineEventHandler` 的 `maxDuration` 选项——该选项不存在，实测 `h3@1.15.11` `defineEventHandler.length === 1`）。部署到 Vercel 等平台时还需在 `vercel.json` 配 `functions.maxDuration: 60`（平台层硬超时）。
+
 #### Scenario: 参数校验 - prompt 缺失
 
 - **WHEN** 请求 body 缺少 `prompt` 字段或 `prompt` 为空字符串
@@ -120,11 +131,12 @@
 
 - **WHEN** `imageSize` 不在 `1024x1024`/`960x1280`/`768x1024`/`720x1440`/`720x1280` 枚举内
 - **THEN** 返回 HTTP 400 + `createError({ statusCode: 400, message: 'imageSize 取值非法' })`
+- **NOTE** 上述 5 个取值已通过 `scripts/verify-siliconflow-image-api.mjs` 实测被 `Kwai-Kolors/Kolors` 接受
 
 #### Scenario: 成功响应
 
 - **WHEN** 请求合法且生成成功
-- **THEN** 返回 HTTP 200 + `{ image_url, markdown, seed }`
+- **THEN** 返回 HTTP 200 + `{ imageUrl, markdown, seed, inferenceTime }`
 - **AND** 若 ImgBB 转存失败，额外返回 `warning` 字段
 
 #### Scenario: 服务端错误
@@ -132,34 +144,35 @@
 - **WHEN** 硅基流动 API 不可用或未配置 `OPENAI_API_KEY`
 - **THEN** 返回 HTTP 500 + `createError({ statusCode: 500, message: '图片生成服务不可用' })`
 
-### Requirement: 工具调用展示
+### Requirement: 工具调用展示（仅 Agent 路径）
 
-系统 SHALL 在 `ToolInvocation` 组件为 `generate-image` 工具类型提供专门的展示分支，含加载/预览/失败三种状态。MUST 为每个工具类型显式分支（项目硬约束）。
+系统 SHALL 在 `ToolInvocation` 组件为 `generateImage` 工具类型提供专门的展示分支，含加载/预览/失败三种状态。MUST 为每个工具类型显式分支（项目硬约束）。
+
+**适用范围**：本 Requirement 仅适用于 **Agent 路径**（LLM 自主调用工具）。**Workflow 路径**（用户点击按钮触发）**不走 ToolInvocation**——图片通过 MarkdownRenderer 自然渲染，失败时通过 `useToast().error()` 反馈（详见 design.md 决策 12）。
 
 #### Scenario: 加载中状态
 
-- **WHEN** 工具调用进行中（`state === 'call'`）
+- **WHEN** 工具调用进行中（`state === 'input-streaming'` 或 `state === 'input-available'`）
 - **THEN** 显示 spinner + "正在生成图片..."文案
 - **AND** 不显示空内容占位
 
 #### Scenario: 成功预览
 
-- **WHEN** 工具返回 `image_url`（`state === 'result'` 且无 `error`）
+- **WHEN** 工具返回 `imageUrl`（`state === 'output-available'` 且无 `error`）
 - **THEN** 显示图片缩略图（`max-w-[200px]` 限制宽度）
 - **AND** 点击图片可放大查看（用 `<ClientOnly>` 包裹图片预览组件）
-- **AND** 显示生成耗时和 seed 值
-- **AND** 缩略图下方提供 4 个 icon 按钮（用 `v-tooltip` 提供文字提示）：
+- **AND** 显示生成耗时（`inferenceTime`，秒）和 seed 值
+- **AND** 缩略图下方提供 3 个 icon 按钮（用 `v-tooltip` 提供文字提示）：
   1. **放大查看**：点击在 modal 中查看原图（`max-w-[90vw] max-h-[90vh]`，保留宽高比）
   2. **下载图片**：通过 `<a download>` 触发下载（`fetch(url).then(r => r.blob()).then(blob => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = \`kolors-\${seed}.png\`; a.click(); })`，避免直接跳转新标签）
-  3. **复制链接**：调用 `navigator.clipboard.writeText(image_url)` 复制图片公网 URL；复制成功后按钮文案切换为「已复制」1.5 秒后恢复（参考 OCR 复制按钮模式）
-  4. **重新生成**：仅 Workflow 路径显示，触发 `POST /api/generate-image` 重新生成（复用当前 prompt + imageSize，可选随机新 seed）
+  3. **复制链接**：调用 `navigator.clipboard.writeText(imageUrl)` 复制图片公网 URL；复制成功后按钮文案切换为「已复制」1.5 秒后恢复（参考 OCR 复制按钮模式）
+- **NOTE** 原设计的"重新生成"按钮在 Agent 路径下不暴露——Agent 路径的 prompt 是 LLM 生成的英文优化版，用户直接重试可能产生意外结果；若需重试应由 LLM 在对话中自主决定
 
 #### Scenario: 失败状态
 
-- **WHEN** 工具返回 `error` 字段
+- **WHEN** 工具返回 `error` 字段（`state === 'output-error'` 或 `state === 'output-available'` 且 `output` 含 `error`）
 - **THEN** 显示错误信息
-- **AND** Agent 路径显示"等待 AI 重试"提示（LLM 自主决定是否重试）
-- **AND** Workflow 路径显示"重试"按钮（用户手动重试）
+- **AND** 显示"等待 AI 重试"提示（Agent 路径下由 LLM 自主决定是否重试，不暴露手动重试按钮）
 
 ### Requirement: 配置项
 
