@@ -185,7 +185,7 @@ server/middleware/   → security.ts
 ### 动画与过渡
 
 - **侧边栏/面板切换**：详见「Responsive Design > 侧边栏」章节
-- **消息列表动画**：使用 `<TransitionGroup>` 包裹消息列表，入场动画 `translateY(12px)` + `opacity`，时长 300ms
+- **消息列表动画**：消息列表使用虚拟滚动（`@tanstack/vue-virtual`）渲染，虚拟项通过 `position: absolute` + `transform: translateY(start)` 定位，与 `<TransitionGroup>` 的 transform 过渡存在架构层面冲突（transform 互相覆盖、虚拟项卸载打断离场动画、流式输出期间 measureElement 重算加剧抖动），**禁止使用 `<TransitionGroup>` 包裹虚拟滚动列表**。「消息到达」的视觉反馈通过「自动滚动到底部 + overscan 预渲染 + 流式打字机效果」提供。如需新增入场动画，应使用不依赖 transform 的方案（如 opacity-only CSS animation）
 - **折叠/展开区域**：禁止用 `v-if` 直接切换，必须用 `max-height` + `overflow: hidden` + `transition` 实现平滑高度过渡
 - **自动滚动**：聊天消息区域必须在消息数量变化和 AI 流式输出时自动滚动到底部，使用 `scrollTo({ behavior: 'smooth' })`
 
