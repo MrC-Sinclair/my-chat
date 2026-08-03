@@ -4,7 +4,8 @@ import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { defineAsyncComponent } from 'vue'
 import MarkdownRenderer from '~/components/chat/MarkdownRenderer.vue'
-import ChatInput, { type UploadedImage } from '~/components/chat/ChatInput.vue'
+import ChatInput, { type UploadedImage, type VoiceTranscribedResult } from '~/components/chat/ChatInput.vue'
+import VoiceMessageBubble from '~/components/chat/VoiceMessageBubble.vue'
 import QuickPromptIcon from '~/components/chat/QuickPromptIcon.vue'
 import { useChatSession } from '~/composables/useChatSession'
 import { useChatConfig } from '~/composables/useChatConfig'
@@ -49,6 +50,22 @@ const pendingMessageImages = ref<UploadedImage[]>([])
 const messageImages = ref<Map<string, UploadedImage[]>>(new Map())
 const nextMessageIndex = ref<number>(0)
 
+// ===== 语音消息状态（与图片消息的 messageImages/pendingMessageImages 模式一致）=====
+/** 情感类型（与 chat.post.ts ALLOWED_EMOTIONS 白名单 + VoiceMessageBubble Emotion 一致） */
+type VoiceEmotion = 'happy' | 'sad' | 'angry' | 'neutral'
+
+/** 语音消息音频元信息（与 DB metadata.audio 结构一致） */
+interface VoiceMessageAudio {
+  url: string
+  emotion: VoiceEmotion | null
+  duration: number
+}
+
+/** 待提交的语音消息音频元信息（录音转写完成后 → 提交 /api/chat 前的临时存储） */
+const pendingVoiceMessage = ref<VoiceMessageAudio | null>(null)
+/** 已提交语音消息的音频元信息 Map（key 为 UIMessage.id，用于渲染语音气泡） */
+const messageAudio = ref<Map<string, VoiceMessageAudio>>(new Map())
+
 const input = ref('')
 
 const chat = new Chat({
@@ -67,7 +84,10 @@ const chat = new Chat({
       // 上一个会话 ID — 供服务端 onFinish fire-and-forget 触发归档兜底
       lastSessionId: lastSessionId.value || undefined,
       images:
-        uploadedImages.value.length > 0 ? uploadedImages.value.map((img) => img.dataUrl) : undefined
+        uploadedImages.value.length > 0 ? uploadedImages.value.map((img) => img.dataUrl) : undefined,
+      // 语音消息音频元信息（design.md 决策 3+5：转写文本已在 input，audio 字段供 chat.post.ts
+      // 注入情感 system prompt + saveMessagesToDb 落库 metadata.audio）
+      audio: pendingVoiceMessage.value || undefined
     })
   }),
   onFinish: ({ message }) => {
@@ -79,6 +99,18 @@ const chat = new Chat({
           messageImages.value.set(targetMsg.id, [...pendingMessageImages.value])
         }
         pendingMessageImages.value = []
+      })
+    }
+    // 语音消息：将 pendingVoiceMessage 关联到刚提交的 user 消息（供渲染语音气泡）
+    if (pendingVoiceMessage.value) {
+      // 在 nextTick 外捕获快照，避免回调内类型收窄丢失（ref.value 在异步回调中可能已变为 null）
+      const audioSnapshot: VoiceMessageAudio = { ...pendingVoiceMessage.value }
+      nextTick(() => {
+        const targetMsg = message
+        if (targetMsg && targetMsg.role === 'user') {
+          messageAudio.value.set(targetMsg.id, audioSnapshot)
+        }
+        pendingVoiceMessage.value = null
       })
     }
     // 刷新会话列表以更新消息数。
@@ -97,6 +129,15 @@ const chat = new Chat({
       }
     }
     pendingMessageImages.value = []
+    // 语音消息失败也需关联音频元信息（让用户能看到语音气泡 + 转文字，即使 AI 回复失败）
+    if (pendingVoiceMessage.value) {
+      const audioSnapshot: VoiceMessageAudio = { ...pendingVoiceMessage.value }
+      const targetMsg = chat.messages[nextMessageIndex.value]
+      if (targetMsg && targetMsg.role === 'user') {
+        messageAudio.value.set(targetMsg.id, audioSnapshot)
+      }
+      pendingVoiceMessage.value = null
+    }
     toast.error(`AI 回复失败：${err.message || '未知错误'}`)
   }
 })
@@ -182,6 +223,89 @@ function getMessageImages(msgId: string, index: number): UploadedImage[] {
   }
 
   return []
+}
+
+/**
+ * 处理语音消息转写成功事件（任务 6.1）
+ *
+ * 流程（design.md 决策 6）：
+ *   1. 转写文本填入 input（用户可在发送前编辑纠正）
+ *   2. 音频元信息暂存到 pendingVoiceMessage（提交 /api/chat 时 body 读取）
+ *   3. 自动触发提交（语音消息场景用户意图明确，无需手动点发送）
+ *
+ * auto-submit 理由：用户录制语音消息的意图是「发送」，而非「输入」。
+ * 若填入 input 不自动提交，用户需手动点发送，多一步操作。
+ * 用户若想编辑转写文本，可在 AI 回复期间或回复后通过「编辑消息」功能修改。
+ *
+ * emotion 白名单校验：与 chat.post.ts ALLOWED_EMOTIONS 一致（防 prompt 注入），
+ * 服务端转写 API 返回的 emotion 可能是任意字符串，前端二次校验确保仅白名单值进入流程。
+ */
+const ALLOWED_EMOTIONS_FRONTEND = new Set<VoiceEmotion>(['happy', 'sad', 'angry', 'neutral'])
+
+function handleVoiceTranscribed(result: VoiceTranscribedResult) {
+  // 1. 填充转写文本到 input
+  input.value = result.text
+
+  // 2. 暂存音频元信息（transport body 会在 sendMessage 时读取）
+  // emotion 白名单校验：非白名单值归为 null（与 chat.post.ts 一致）
+  const rawEmotion = result.emotion
+  const safeEmotion: VoiceEmotion | null =
+    typeof rawEmotion === 'string' && ALLOWED_EMOTIONS_FRONTEND.has(rawEmotion as VoiceEmotion)
+      ? (rawEmotion as VoiceEmotion)
+      : null
+
+  pendingVoiceMessage.value = {
+    url: result.audioUrl,
+    emotion: safeEmotion,
+    duration: result.duration
+  }
+
+  // 3. 自动提交（nextTick 确保 input 已更新，transport body 能读到 pendingVoiceMessage）
+  nextTick(() => {
+    wrappedHandleSubmit()
+  })
+}
+
+/**
+ * 获取指定消息的语音音频元信息（任务 6.2）
+ *
+ * 查找优先级（与 getMessageImages 模式一致）：
+ *   1. messageAudio Map（新消息 onFinish/onError 后关联）
+ *   2. UIMessage.metadata.audio（历史消息从 DB 加载）
+ *   3. pendingVoiceMessage（新消息提交后 onFinish 前的间隙）
+ *
+ * @returns 音频元信息，无音频时返回 null
+ */
+function getMessageAudio(msg: UIMessage, index: number): VoiceMessageAudio | null {
+  // 1. 从 messageAudio Map 查找（新消息 onFinish 后关联）
+  const fromMap = messageAudio.value.get(msg.id)
+  if (fromMap) return fromMap
+
+  // 2. 从 UIMessage.metadata.audio 查找（历史消息从 DB 加载）
+  const metaAudio = (msg.metadata as Record<string, unknown> | undefined)?.audio as
+    | { url?: unknown; emotion?: unknown; duration?: unknown }
+    | undefined
+  if (metaAudio && typeof metaAudio.url === 'string') {
+    const rawEmotion = metaAudio.emotion
+    const safeEmotion: VoiceEmotion | null =
+      typeof rawEmotion === 'string' && ALLOWED_EMOTIONS_FRONTEND.has(rawEmotion as VoiceEmotion)
+        ? (rawEmotion as VoiceEmotion)
+        : null
+    return {
+      url: metaAudio.url,
+      emotion: safeEmotion,
+      duration: Number(metaAudio.duration) || 0
+    }
+  }
+
+  // 3. 从 pendingVoiceMessage 查找（新消息提交后 onFinish 前的间隙）
+  const lastUserIndex = [...messages.value].reverse().findIndex((m) => m.role === 'user')
+  const actualLastUserIndex = messages.value.length - 1 - lastUserIndex
+  if (index === actualLastUserIndex && pendingVoiceMessage.value) {
+    return pendingVoiceMessage.value
+  }
+
+  return null
 }
 
 /** 从 UIMessage 的 parts 数组中提取文本内容 */
@@ -372,6 +496,9 @@ watch(currentSessionId, () => {
   }
   // 切换会话时清空高度记录：让新会话的虚拟项重新测量，避免旧会话的高度记录干扰
   lastMeasuredHeights.clear()
+  // 切换会话时清空语音消息状态：避免旧会话的音频元信息残留到新会话
+  messageAudio.value.clear()
+  pendingVoiceMessage.value = null
 })
 
 function getToolInvocations(msg: UIMessage): any[] {
@@ -466,7 +593,12 @@ const virtualizer = useVirtualizer(
     estimateSize: (index: number) => {
       const msg = messages.value[index]
       if (!msg) return 80
-      if (msg.role === 'user') return 80
+      if (msg.role === 'user') {
+        // 语音消息气泡比纯文本高（播放控件 + 情感标签 + 转文字面板）
+        const audio = getMessageAudio(msg, index)
+        if (audio) return 140
+        return 80
+      }
       const text = getMessageText(msg)
       const toolInvocations = getVisibleToolInvocations(msg)
       let est = 100
@@ -891,7 +1023,25 @@ function onDocumentClick(e: Event) {
                     </div>
                   </div>
                   <div v-else class="group">
-                    <div class="whitespace-pre-wrap break-words leading-relaxed text-[15px]">
+                    <!-- 语音消息：渲染 VoiceMessageBubble 替代纯文本（任务 6.2） -->
+                    <VoiceMessageBubble
+                      v-if="getMessageAudio(messages[virtualRow.index], virtualRow.index)"
+                      :audio-url="
+                        getMessageAudio(messages[virtualRow.index], virtualRow.index)?.url || ''
+                      "
+                      :emotion="
+                        getMessageAudio(messages[virtualRow.index], virtualRow.index)?.emotion ?? null
+                      "
+                      :duration="
+                        getMessageAudio(messages[virtualRow.index], virtualRow.index)?.duration || 0
+                      "
+                      :transcript="getMessageText(messages[virtualRow.index])"
+                    />
+                    <!-- 纯文本消息 -->
+                    <div
+                      v-else
+                      class="whitespace-pre-wrap break-words leading-relaxed text-[15px]"
+                    >
                       {{ getMessageText(messages[virtualRow.index]) }}
                     </div>
                     <div
@@ -1072,6 +1222,7 @@ function onDocumentClick(e: Event) {
         @stop="handleStop"
         @speech-error="(msg: string) => toast.error(msg)"
         @image-generated="handleImageGenerated"
+        @voice-transcribed="handleVoiceTranscribed"
       />
     </div>
   </div>

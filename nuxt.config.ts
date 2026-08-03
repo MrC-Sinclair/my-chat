@@ -173,6 +173,10 @@ export default defineNuxtConfig({
     // 重要度判断模型：默认 Qwen/Qwen3.5-4B（轻量、toggleableThinking），通过 createReasoningProvider 调用
     memoryImportanceModel: process.env.MEMORY_IMPORTANCE_MODEL || 'Qwen/Qwen3.5-4B',
     // 文生图模型：默认 Kwai-Kolors/Kolors，供图片生成 API 使用
-    imageGenerationModel: process.env.IMAGE_GENERATION_MODEL || 'Kwai-Kolors/Kolors'
+    imageGenerationModel: process.env.IMAGE_GENERATION_MODEL || 'Kwai-Kolors/Kolors',
+    // 语音消息 ASR 配置（可选，有默认值）
+    // 方言触发降级语种标签集合（逗号分隔），命中此集合的语种会触发 TeleSpeechASR 方言补强转写
+    // SenseVoice 官方语种标签仅 zh/en/yue/ja/ko/nospeech 6 种，默认仅 yue（粤语）
+    dialectLanguageTags: process.env.DIALECT_LANGUAGE_TAGS || 'yue'
   }
 })

@@ -8,6 +8,8 @@
 | -------- | ------------------- | ------------------------------ | ---- |
 | `POST`   | `/api/chat`         | AI 对话（流式 SSE）            | 无   |
 | `POST`   | `/api/generate-image` | 文生图（Workflow 路径）        | 无   |
+| `POST`   | `/api/audio/transcribe` | 语音消息 ASR 转写（Workflow 路径） | 无   |
+| `GET`    | `/api/audio/:id`    | 获取音频文件（TTL 7 天过期）   | 无   |
 | `GET`    | `/api/sessions`     | 获取会话列表                   | 无   |
 | `POST`   | `/api/sessions`     | 创建新会话                     | 无   |
 | `GET`    | `/api/sessions/:id` | 获取会话历史消息               | 无   |
@@ -70,6 +72,7 @@ AI 对话核心接口，使用 Vercel AI SDK 的 `streamText` 流式生成回复
 | `enable_web_search` | `boolean`       | 否   | `true`               | 是否启用网页搜索工具                                                                                  |
 | `enable_ocr`        | `boolean`       | 否   | `false`              | 是否启用 OCR 工具（`extractTextFromImage`），仅 `toolCalling` 模型生效，默认关闭                      |
 | `enable_image_generation` | `boolean` | 否   | `true`               | 是否启用文生图 Agent 工具（`generateImage`），仅 `toolCalling` 模型生效，默认开启                     |
+| `audio`             | `object`        | 否   | —                    | 语音消息音频元信息，含 `url`/`emotion`/`duration`。`emotion` 经白名单校验后注入 system prompt，`url`/`emotion`/`duration` 落库到 `messages.metadata.audio` |
 
 **messages 元素结构**（AI SDK v5 UIMessage）
 
@@ -239,6 +242,118 @@ curl -X POST http://localhost:3000/api/generate-image \
     "seed": 123456789
   }'
 ```
+
+---
+
+### POST /api/audio/transcribe
+
+语音消息 ASR 转写接口（Workflow 路径）。前端录制 WebM 音频后上传，服务端 ffmpeg 转码为 WAV，调用 SenseVoiceSmall 转写，方言场景（默认粤语 `yue`）触发 TeleSpeechASR 补强。返回转写文本 + 情感标签 + 持久化音频 URL。
+
+**请求体**：`multipart/form-data`
+
+| 字段   | 类型     | 必填 | 限制             | 说明                       |
+| ------ | -------- | ---- | ---------------- | -------------------------- |
+| `file` | `Blob`   | 是   | ≤ 10MB，`audio/*` | WebM/Opus 音频文件         |
+
+**响应**
+
+成功：`HTTP 200`
+
+```json
+{
+  "text": "你好，今天天气怎么样？",
+  "emotion": "happy",
+  "audioUrl": "/api/audio/1722300000000-a1b2c3d4-e5f6-7890-abcd-ef1234567890.webm",
+  "duration": 5.32
+}
+```
+
+| 字段      | 类型     | 说明                                                                                              |
+| --------- | -------- | ------------------------------------------------------------------------------------------------- |
+| `text`    | `string` | 转写文本（方言场景优先 TeleSpeechASR 结果，否则 SenseVoiceSmall 结果）                            |
+| `emotion` | `string \| null` | 情感标签（`happy`/`sad`/`angry`/`neutral` 之一，未识别为 `null`）                          |
+| `audioUrl`| `string` | 持久化音频 URL（`/api/audio/<filename>`，TTL 7 天过期）                                            |
+| `duration`| `number` | 音频时长（秒，服务端 ffprobe 实测，不信任前端上报）                                                |
+
+**Workflow 路径说明**
+
+本接口走代码预编排（Workflow），不走 Agent（LLM 决策）。流程：
+
+1. ffmpeg 可用性探测（模块级缓存）
+2. multipart/form-data 解析 + zod 校验（文件大小 ≤ 10MB，MIME `audio/*`）
+3. 生成每请求独立 UUID 文件名（防并发串扰）
+4. ffmpeg 转码 WebM → WAV（16kHz/16bit/mono/PCM + 清除元数据）
+5. ffmpeg 重新封装原始 WebM 落盘 `server/uploads/audio/<timestamp>-<uuid>.webm`
+6. ffprobe 实测音频时长
+7. 调用 SenseVoiceSmall 转写，解析 `<|EMOTION|>`/`<|LANG|>`/`<|EVENT|>` 标签
+8. 检测语种标签命中 `DIALECT_LANGUAGE_TAGS`（默认 `yue`）时调 TeleSpeechASR 补强
+9. TeleSpeechASR 端点首次调用前探测可用性（缓存结果），不可用时降级为仅 SenseVoiceSmall
+10. 返回 `{ text, emotion, audioUrl, duration }`
+
+**ffmpeg 依赖要求**
+
+- 服务端必须安装 ffmpeg + ffprobe（同源安装）并加入系统 PATH
+- 本地开发：`winget install ffmpeg`（Windows）/ `brew install ffmpeg`（macOS）/ `apt-get install ffmpeg`（Linux）
+- Docker 部署：Dockerfile 中 `RUN apt-get update && apt-get install -y ffmpeg`
+- 未安装时返回 `500 服务端未安装 ffmpeg，请联系管理员`
+
+**部署限制**
+
+- 本接口依赖可写文件系统（`server/uploads/audio/`），**仅适用本地/Docker 部署**
+- 部署到 Vercel/Serverless 平台时返回 `501 语音消息功能在 Serverless 平台不可用`
+
+**错误码**
+
+| 状态码 | 触发条件                                                    |
+| ------ | ----------------------------------------------------------- |
+| `400`  | 未收到音频文件 / 缺少 `file` 字段 / 文件大小超限 / MIME 类型非 `audio/*` |
+| `500`  | ffmpeg 未安装 / ffmpeg 转码失败 / SenseVoiceSmall 转写失败  |
+| `501`  | Serverless 平台（`VERCEL` 环境变量存在）                    |
+| `429`  | 触发限流                                                    |
+
+**示例**
+
+```bash
+curl -X POST http://localhost:3000/api/audio/transcribe \
+  -F "file=@voice.webm;type=audio/webm"
+```
+
+---
+
+### GET /api/audio/:id
+
+获取语音消息音频文件。文件名编码时间戳（`<timestamp>-<uuid>.webm`），TTL 7 天自动清理。
+
+**路径参数**
+
+| 字段 | 类型     | 说明                                              |
+| ---- | -------- | ------------------------------------------------- |
+| `id` | `string` | 文件名（格式 `<timestamp>-<uuid>.webm`，正则校验） |
+
+**响应**
+
+成功：`HTTP 200` + 音频文件流
+
+| 响应头         | 值                              |
+| -------------- | ------------------------------- |
+| `Content-Type` | `audio/webm`                    |
+| `Cache-Control`| `private, max-age=604800`       |
+| `Accept-Ranges`| `bytes`                         |
+
+**错误码**
+
+| 状态码 | 触发条件                              |
+| ------ | ------------------------------------- |
+| `400`  | 文件名格式无效 / 路径逃逸              |
+| `404`  | 文件不存在或已过期（TTL 7 天清理）     |
+| `501`  | Serverless 平台                       |
+| `429`  | 触发限流                              |
+
+**安全说明**
+
+- 文件名经正则校验（`/^\d+-[0-9a-f-]+\.webm$/`）+ 路径解析后二次校验仍在 `AUDIO_UPLOAD_DIR` 内
+- 不暴露 `server/uploads/audio/` 目录结构
+- 音频回放 404 时前端静默降级为纯文字气泡（隐藏播放控件 + 自动展开转文字面板）
 
 ---
 

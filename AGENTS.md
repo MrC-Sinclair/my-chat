@@ -217,6 +217,12 @@ server/middleware/   → security.ts
 - **会话重命名**：支持双击标题或点击编辑图标进入编辑模式，Enter 确认、Escape 取消、blur 自动确认
 - **删除确认**：必须通过 `useConfirmDialog()` 弹窗确认，禁止无确认直接删除
 
+### 组件职责与布局分离
+
+- **设计稿转码必须 H5 实测**：从设计稿（Figma/截图等）映射出的页面，必须 `pnpm dev` 启动后逐页在浏览器核对（间距、滚动条、溢出、对齐、断点切换），不能仅凭「已按设计稿映射」判定完成；硬件能力（相机、传感器等）才需真机验证
+- **替换元素显式尺寸**：`<img>`/`<video>`/`<iframe>` 等替换元素必须显式声明 `width`/`height` 或用 `aspect-ratio`，避免加载完成后引发 CLS（累积布局偏移）。流式 Markdown 渲染场景尤其关键——图片加载完会推动已渲染内容，破坏打字机效果体验；`<img>` 默认 `display:inline` + `vertical-align:baseline` 会产生下方间隙，需 `display:block` 或 `vertical-align:middle` 消除
+- **默认不可信原则**：替换元素与表单控件（`<input>`/`<select>`/`<textarea>`）的默认样式在 Android WebView 与桌面浏览器存在差异（input 圆角、placeholder 颜色、select 下拉箭头等），不要依赖引擎默认值，需显式声明关键属性。`box-sizing` 已被 Tailwind Preflight 全局兜底，无需重复声明
+
 ## 响应式设计与移动兼容性
 
 本项目同时支持 **Android 平板横屏**和**手机竖屏**，断点为 `sm:640px`，手机端无前缀，平板端加 `sm:` 前缀。
