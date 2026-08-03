@@ -7,7 +7,7 @@ my-chat — 基于 Nuxt 3 + Vercel AI SDK 的 AI 对话应用，支持 Markdown 
 ```bash
 docker compose up -d    # 启动 PostgreSQL
 pnpm install            # 安装依赖
-cp .env.example .env    # 复制环境变量（需填入 OPENAI_API_KEY）
+cp .env.example .env    # 复制环境变量（默认 LLM Provider 为硅基流动 SiliconFlow，需填入 OPENAI_API_KEY，见 .env.example）
 pnpm db:push            # 同步数据库 Schema
 pnpm dev                # 启动开发服务器 localhost:3000
 ```
@@ -71,14 +71,14 @@ pnpm db:studio        # Drizzle Studio 可视化数据库
 
 | 库 | Context7 ID | 触发场景 |
 |---|---|---|
-| Vercel AI SDK | `/vercel/ai` | `streamText` / `tool()` / `maxSteps` / `stopWhen` / `onFinish` / `onStepFinish` / 多模态 content parts / provider 配置 / `stepCountIs` |
-| Nuxt 3 | `/websites/nuxt_3_x` | `useFetch` / `useAsyncData` / `defineEventHandler` / `runtimeConfig` / SSR 相关 API / 路由约定 / `useChat` |
+| Vercel AI SDK | `/vercel/ai` | `streamText` / `tool()` / `stopWhen` / `stepCountIs`（v5 已取代 `maxSteps`）/ `onFinish` / `onStepFinish` / 多模态 content parts / provider 配置 |
+| Nuxt 3 | `/websites/nuxt_3_x` | `useFetch` / `useAsyncData` / `defineEventHandler` / `runtimeConfig` / SSR 相关 API / 路由约定 |
 | Drizzle ORM | `/drizzle-team/drizzle-orm-docs` | `schema` 定义 / `db.select/insert/update/delete` / 关联查询 / `drizzle-kit` 配置 / 迁移 |
 
 ### 调用流程
 
 1. 先用 `resolve-library-id` 拿库 ID（上表已知 ID 可跳过此步，直接进入第 2 步）
-2. 再用 `query-docs` 查具体 API，`query` 参数必须聚焦单一概念（如 "streamText tool calling maxSteps"），不要一次问多个不相关主题
+2. 再用 `query-docs` 查具体 API，`query` 参数必须聚焦单一概念（如 "streamText tool calling stopWhen stepCountIs"），不要一次问多个不相关主题
 3. 每个工具每个问题最多调用 3 次；若 3 次仍查不到所需信息，回退到内置知识 + WebSearch 兜底
 4. 调用结果须与项目现有代码（`server/api/chat.post.ts`、`server/db/schema.ts` 等）交叉对照，避免引入与项目版本不兼容的 API
 
@@ -98,20 +98,20 @@ pnpm db:studio        # Drizzle Studio 可视化数据库
 
 ```
 pages/              → ai-chat.vue, index.vue
-components/chat/    → ChatInput, MarkdownRenderer, CodeBlock, MermaidBlock, SessionSidebar, ThinkingProcess, ToolInvocation
+components/chat/    → ChatInput, MarkdownRenderer, CodeBlock, MermaidBlock, SessionSidebar, ThinkingProcess, ToolInvocation, QuickPromptIcon
 components/         → ToastProvider, ConfirmDialogProvider
 composables/        → useChatConfig, useChatSession, useToast, useConfirmDialog, useTooltip
-utils/              → markdown.ts, katex.ts, highlight.ts, mermaid.ts
-server/api/         → chat.post.ts, sessions.ts, sessions/[id].ts, models.ts
-server/tools/       → web-search.ts, weather.ts（供 MCP Server 复用）
-server/mcp/         → weather-server.ts（MCP stdio 传输）
-server/utils/       → imgbb.ts, reasoning-provider.ts
+utils/              → markdown.ts, katex.ts, highlight.ts, mermaid.ts, image-sizes.ts
+server/api/         → chat.post.ts, sessions.ts, sessions/[id]/index.ts, sessions/[id]/archive-memory.post.ts, messages.post.ts, generate-image.post.ts, models.ts
+server/tools/       → web-search.ts, ocr-document.ts, generate-image.ts, recall-memory.ts（chat.post.ts 中注册）+ weather.ts（getCityByIp 等函数，供 server/mcp/weather-server.ts 复用）
+server/mcp/         → weather-server.ts（MCP stdio 传输，天气工具经 MCP 提供）
+server/utils/       → imgbb.ts, reasoning-provider.ts, embedding.ts, reranker.ts, image-generation.ts, memory-archive.ts
 server/db/          → schema.ts, index.ts
 server/config/      → models.ts
 server/middleware/   → security.ts
 ```
 
-**数据流**：`useChat() → POST /api/chat → streamText() → onFinish 持久化`（图片多一步 `uploadToImgBb()`；推理通过 `reasoning-provider` 标记 → `chat.post` 转 reasoning 事件 → 前端 `ThinkingProcess` 展示）
+**数据流**：前端 `Chat`（@ai-sdk/vue）→ `POST /api/chat` → `streamText()` → `onFinish` 持久化（图片多一步 `uploadToImgBb()`；推理通过 `reasoning-provider` 标记 → `chat.post` 转 reasoning 事件 → 前端 `ThinkingProcess` 展示）
 
 **渲染管线**：围栏代码块提取 → 公式提取(占位符) → `marked.parse()` → `DOMPurify.sanitize()` → 还原公式标签 → KaTeX 渲染
 
@@ -135,11 +135,11 @@ server/middleware/   → security.ts
 
 ### 工具系统
 
-一个工具只做一件事，组合交给 LLM。调用与否、顺序、次数全由 LLM 自主决定，禁止代码硬编码（`TIME_KEYWORDS` 是历史护栏，新功能不得复制）。执行失败返回 `{ error, detail }` 不 throw，由 LLM 决定重试/换工具。大对象通过 URL/ID 传递，不进 LLM 上下文。`description` 须说明"何时调用"和"何时不调用"。新增工具在 `server/tools/` 用 `tool()` 定义、`chat.post.ts` 注册；需独立进程才用 MCP。
+一个工具只做一件事，组合交给 LLM。调用与否、顺序、次数全由 LLM 自主决定，禁止用 if/else 在代码里写死工具调用步骤（`TIME_KEYWORDS` 仅用于在 system prompt 中**提示** LLM 时效性问题时调用 webSearch，并非硬编码工具调用；新功能不要复制这种关键词硬编码模式，工具调用与否仍应交由 LLM 决定）。执行失败返回 `{ error, detail }` 不 throw，由 LLM 决定重试/换工具。大对象通过 URL/ID 传递，不进 LLM 上下文。`description` 须说明"何时调用"和"何时不调用"。新增工具在 `server/tools/` 用 `tool()` 定义、`chat.post.ts` 注册；需独立进程才用 MCP。
 
 ### 执行循环
 
-有工具时 `maxSteps=5`，无工具时 `maxSteps=1`。`stopWhen(stepCountIs(maxSteps))` 为硬上限，LLM 自主提前停止。复杂任务由 LLM 自主规划多次调用，代码不预编排。工具失败、Provider 失败（返回 500 + toast）不中断流，让 LLM 基于错误继续。消息通过 `onFinish` 异步落库，不阻塞主循环。
+实际代码基于「是否有工具实际注册」动态决定循环上限：有工具时 `stopWhen: stepCountIs(5)`，无工具时 `stepCountIs(1)`（AI SDK v5 已用 `stopWhen`/`stepCountIs` 取代 `maxSteps`）。`stopWhen` 是硬上限，LLM 可自主提前停止。复杂任务由 LLM 自主规划多次调用，代码不预编排。工具失败、Provider 失败（返回 500 + toast）不中断流，让 LLM 基于错误继续。消息通过 `onFinish` 异步落库，不阻塞主循环。
 
 ### 记忆系统
 
@@ -248,7 +248,7 @@ server/middleware/   → security.ts
 - 密钥只能放在 `runtimeConfig` 的非 public 字段或 `.env` 文件中，禁止暴露到前端
 - 修改 `server/db/schema.ts` 后必须运行 `pnpm db:push`
 - 修改 Markdown 渲染相关代码后，运行 `pnpm vitest run tests/unit/markdown.test.ts` 验证
-- 新增 AI 工具时，在 `server/tools/` 创建文件，用 `tool()` 定义，并在 `chat.post.ts` 的 `toolsConfig` 注册；须遵守「Agent 架构设计规范 > 工具系统设计原则」（职责单一、LLM 自主决策、错误返回不抛异常）
+- 新增 AI 工具时，在 `server/tools/` 创建文件，用 `tool()` 定义，并在 `chat.post.ts` 的 `toolsConfig` 注册；须遵守「Agent 架构设计规范 > 工具系统设计原则」（职责单一、LLM 自主决策、错误返回不抛异常）。同时追加到 system prompt 的「工具使用规则」注入条件必须与 `toolsConfig` 注册条件（`caps.toolCalling` + 各 toggle 开关）严格一致，避免 LLM 幻觉调用或未注册却引导调用
 - 新增 API 路由时必须包含参数校验和 `createError()` 错误处理
 - 修改涉及 `res.write`/`res.end` 的代码后**必须验证流式输出（打字机效果）** → 详见「注意事项」章节
 - **修改代码后必须运行 `pnpm lint` 检查 lint 错误**（详见「AI Agent 执行纪律」章节的硬性禁令）。特别是模板中的 HTML 结构变更（如添加/删除标签），每次编辑后都要手动校验对应的起始/闭合标签是否完整
@@ -284,13 +284,13 @@ Nuxt 3 使用 SSR，服务端和客户端必须渲染出相同的 HTML，否则�
 
 - `nuxt.config.ts` 中的 `fix-windows-path-urls` Vite 中间件会拦截所有 HTTP 响应并缓冲 body。修改此中间件时**必须确保非 HTML 响应（特别是** **`/api/chat`** **的 SSE 流式响应）直接透传**，否则会破坏打字机效果。任何涉及 `res.write`/`res.end` 的修改都必须测试流式输出是否正常
 - `MarkdownRenderer.vue` 中代码块通过 `createApp(CodeBlock).mount()` 动态挂载，不是声明式组件，修改时注意 Vue 实例生命周期
-- `useChat` 的 `body` 参数必须用 `computed()` 包裹，否则 sessionId 等动态值不会随请求更新
+- 前端通过 `@ai-sdk/vue` 的 `new Chat({ transport: new DefaultChatTransport({ api: '/api/chat', body: () => ({...}) }) })` 发起对话。`body` 必须是**函数** `() => ({...})`（不是静态对象字面量，也不是 `computed()`），每次发送时重新求值，从而正确捕获 `sessionId`、`model`、`enable_web_search` 等动态值；若写成静态对象会发送过期值
 - 数据库开发端口是 **5434**（非默认 5432），测试端口是 **5433**
 - `saveMessagesToDb` 只保存最后一条用户消息（反向查找），避免重复插入历史消息
 - `dompurify`、`highlight.js`、`katex`、`marked` 在 devDependencies 中但运行时使用，不要误删
-- 模型白名单在 `server/config/models.ts`，`chat.post.ts` 通过 `ALLOWED_MODEL_VALUES` 校验，新增模型需同步两处
+- 模型白名单在 `server/config/models.ts`（`AVAILABLE_MODELS` 数组）。`chat.post.ts` 通过 `ALLOWED_MODEL_VALUES`（由 `AVAILABLE_MODELS` 自动派生）校验，**前端模型列表由 `GET /api/models` 返回 `AVAILABLE_MODELS`**。新增模型只需在 `AVAILABLE_MODELS` 中添加一条，校验与前端列表自动同步，无需手动维护多处
 - **图片对话使用 ImgBB 图床**：硅基流动不支持 base64 图片，需先上传到 ImgBB 获取公网 URL。在 `.env` 中配置 `IMGBB_API_KEY`，免费注册 <https://api.imgbb.com/> 获取
-- **视觉/推理模型不支持 enable_thinking 参数**：通过 `getModelCapabilities()` 能力系统判断，`!caps.vision && !caps.deepThinking` 时才启用 thinking，新增模型需在 `server/config/models.ts` 中正确配置 capabilities
+- **`enable_thinking` 参数的注入由 `getModelCapabilities()` 的 `toggleableThinking` 能力决定**：`caps.toggleableThinking === true` 时才在请求体注入 `enable_thinking`（经 `reasoning-provider` 的 customFetch 注入）。强制思考模型（如 R1 / GLM-Z1，`toggleableThinking: false`）与不可思考模型**不传**该参数，否则 GLM-Z1 会返回 400。注意：**视觉模型 Qwen3.5-4B 因 `toggleableThinking: true` 同样支持 `enable_thinking`**，并非"视觉/推理模型不支持"。新增模型需在 `server/config/models.ts` 正确配置四个能力标志：`vision` / `deepThinking` / `toggleableThinking` / `toolCalling`
 - **图片对话统一使用 streamText()**：纯文本和图片均通过 `streamText()` 处理，图片先上传 ImgBB 获取公网 URL 后作为多模态 content parts 传入
 
 ## 问题排查规范
@@ -300,4 +300,4 @@ Nuxt 3 使用 SSR，服务端和客户端必须渲染出相同的 HTML，否则�
 | 数据库连接失败    | `docker compose ps` → 端口 5434 占用 → `.env` 中 `DATABASE_URL`                                                                              |
 | AI 回复报错       | `.env` 中 `OPENAI_API_KEY` 有效 → 网络可达 LLM Provider → 换 `LLM_MODEL`                                                                     |
 | Markdown 渲染异常 | DOMPurify 白名单是否包含所需标签 → KaTeX 公式语法 → 浏览器控制台                                                                             |
-| 打字机效果消失    | `nuxt.config.ts` 中间件是否缓冲了非 HTML 响应 → `security.ts` 中间件是否拦截了流 → 浏览器 Network 面板检查 `/api/chat` 响应是否逐 chunk 到达 |
+| 打字机效果消失    | 先查 `nuxt.config.ts` 的 `fix-windows-path-urls` Vite 中间件是否缓冲了非 HTML（SSE）响应（需确保透传）；`security.ts` 中间件只设置响应头与限流、不缓冲 body，一般不会拦截流；最后用浏览器 Network 面板确认 `/api/chat` 是否逐 chunk 到达 |
