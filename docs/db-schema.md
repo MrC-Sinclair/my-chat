@@ -39,8 +39,60 @@ sessions (1) ──── (N) messages (1) ──── (N) feedbacks
 | `session_id` | `text`      | FK → `sessions.id`, ON DELETE CASCADE | 所属会话 ID                                   |
 | `role`       | `text`      | NOT NULL                              | 消息角色：`user` / `assistant` / `system`     |
 | `content`    | `text`      | NOT NULL                              | 消息文本内容                                  |
-| `metadata`   | `jsonb`     | —                                     | 额外元数据，如 `{ "model": "Qwen/Qwen3-8B" }` |
+| `metadata`   | `jsonb`     | —                                     | 额外元数据，结构见下文                          |
 | `created_at` | `timestamp` | NOT NULL, DEFAULT NOW()               | 创建时间                                      |
+
+#### `messages.metadata` JSONB 结构
+
+`metadata` 为可空 JSONB 字段，按需写入以下子键（未设置的字段不出现）：
+
+| 子键      | 类型     | 写入时机                          | 说明                                                                                  |
+| --------- | -------- | --------------------------------- | ------------------------------------------------------------------------------------- |
+| `model`   | `string` | `onFinish` 落库 assistant 消息时  | AI 回复使用的模型标识，如 `"Qwen/Qwen3-8B"`、`"Kwai-Kolors/Kolors"`                   |
+| `images`  | `array`  | 用户消息含图片时                  | `[{ index: number, url: string }]`，ImgBB 持久化后的公网 URL                          |
+| `audio`   | `object` | 用户消息为语音消息时              | 语音消息音频元信息，结构见下表                                                        |
+
+**`metadata.audio` 子结构**
+
+| 字段        | 类型              | 说明                                                                                              |
+| ----------- | ----------------- | ------------------------------------------------------------------------------------------------- |
+| `url`       | `string`          | 持久化音频 URL（`/api/audio/<filename>`，TTL 7 天过期）                                           |
+| `emotion`   | `string \| null`  | 情感标签，经 `ALLOWED_EMOTIONS` 白名单校验（`happy`/`sad`/`angry`/`neutral`），未通过校验落库为 `null` |
+| `duration`  | `number`          | 音频时长（秒，服务端 ffprobe 实测，不信任前端上报）                                               |
+| `createdAt` | `string` (ISO 时间) | 音频落库时间戳，用于 TTL 清理插件判定过期（虽文件名已含时间戳，此处冗余存储便于排查）             |
+
+**示例**
+
+```jsonc
+// 纯文本 AI 回复
+{ "model": "Qwen/Qwen3-8B" }
+
+// 用户图片消息
+{ "images": [{ "index": 0, "url": "https://i.ibb.co/xxx/img.png" }] }
+
+// 用户语音消息
+{
+  "audio": {
+    "url": "/api/audio/1722300000000-a1b2c3d4-e5f6-7890-abcd-ef1234567890.webm",
+    "emotion": "happy",
+    "duration": 5.32,
+    "createdAt": "2026-07-30T10:00:00.000Z"
+  }
+}
+
+// 语音 + 图片组合（理论可共存，当前前端未触发该组合）
+{
+  "images": [{ "index": 0, "url": "https://i.ibb.co/xxx/img.png" }],
+  "audio": {
+    "url": "/api/audio/1722300000000-xxx.webm",
+    "emotion": "neutral",
+    "duration": 3.10,
+    "createdAt": "2026-07-30T10:00:00.000Z"
+  }
+}
+```
+
+> 注：`audio.emotion` 在前端 `ai-chat.vue` 和服务端 `chat.post.ts` 两处均经白名单校验，防止 prompt 注入。`url` 字段用于前端 `VoiceMessageBubble` 渲染音频播放控件，TTL 过期后接口返回 404，前端降级为「音频已过期」提示并保留转文字内容。
 
 ---
 

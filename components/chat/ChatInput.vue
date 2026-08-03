@@ -17,6 +17,14 @@ export interface ImageGeneratedResult {
   warning?: string
 }
 
+/** 语音消息转写结果（emit 给父组件用于填充 input + 提交 /api/chat audio 字段） */
+export interface VoiceTranscribedResult {
+  text: string
+  emotion: string | null
+  audioUrl: string
+  duration: number
+}
+
 const props = defineProps<{
   input: string
   isLoading: boolean
@@ -47,6 +55,8 @@ const emit = defineEmits<{
   selectModel: [value: string]
   /** 生图成功 — 父组件负责持久化 DB + 同步 chat.messages */
   'image-generated': [result: ImageGeneratedResult]
+  /** 语音消息转写成功 — 父组件负责填充 input + 提交时附带 audio 字段 */
+  'voice-transcribed': [result: VoiceTranscribedResult]
 }>()
 
 const inputValue = computed({
@@ -146,33 +156,69 @@ function removeImage(id: string) {
   )
 }
 
-// ===== 语音识别 =====
-const speechSupported = ref(false)
-const isRecording = ref(false)
+// ===== 语音入口（合并 Web Speech API 语音输入 + MediaRecorder 语音消息，决策 12）=====
+// SSR 安全初始值：所有 ref 初始值不依赖浏览器 API
+const speechSupported = ref(false) // 浏览器支持 SpeechRecognition
+const mediaRecorderSupported = ref(false) // 浏览器支持 MediaRecorder
+const showVoiceMenu = ref(false) // 语音入口菜单展开状态
+
+// Web Speech API 语音输入状态
+const isSpeechRecording = ref(false)
 const recognitionRef = ref<any>(null)
+
+// MediaRecorder 语音消息状态（决策 7、8、9）
+const MAX_RECORDING_DURATION = 60 // 录音最大时长 60 秒（决策 8）
+const isVoiceRecording = ref(false) // 录音中
+const isStartingRecording = ref(false) // getUserMedia 异步等待期守卫（决策 9）
+const isUploadingVoice = ref(false) // 上传转写中
+const recordingDuration = ref(0) // 已录制秒数（用于 UI 计时）
+const mediaRecorderRef = ref<MediaRecorder | null>(null)
+const voiceChunksRef = ref<Blob[]>([]) // 录音分片缓存
+const recordingTimerRef = ref<ReturnType<typeof setInterval> | null>(null)
 
 onMounted(() => {
   const SpeechRecognitionAPI =
     (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   speechSupported.value = !!SpeechRecognitionAPI
+  // MediaRecorder + getUserMedia 双重检测（决策 7）
+  mediaRecorderSupported.value =
+    typeof window !== 'undefined' &&
+    typeof window.MediaRecorder !== 'undefined' &&
+    !!navigator.mediaDevices?.getUserMedia
 })
 
 onUnmounted(() => {
   recognitionRef.value?.abort()
   recognitionRef.value = null
+  // 清理语音消息录音资源
+  stopRecordingTimer()
+  if (mediaRecorderRef.value && mediaRecorderRef.value.state !== 'inactive') {
+    try {
+      mediaRecorderRef.value.stop()
+    } catch {
+      // 忽略已停止的 recorder 错误
+    }
+  }
+  mediaRecorderRef.value = null
   // 清理进行中的生图请求（避免组件卸载后请求继续 set 状态）
   abortControllerRef.value?.abort()
   // 清理 Esc 键监听
   if (import.meta.client) {
     document.removeEventListener('keydown', handleEscKey)
+    document.removeEventListener('click', handleVoiceMenuOutsideClick)
   }
 })
 
+/**
+ * Web Speech API 语音输入：实时转写填入输入框（非语音消息）
+ *
+ * 通过浏览器原生 SpeechRecognition 实现，无需服务端 ASR。
+ * 与语音消息（MediaRecorder）互斥，但共用麦克风入口按钮。
+ */
 function toggleSpeechRecognition() {
   if (props.isLoading) return
 
-  if (isRecording.value && recognitionRef.value) {
-    // 手动停止录音
+  if (isSpeechRecording.value && recognitionRef.value) {
     recognitionRef.value.stop()
     return
   }
@@ -199,7 +245,7 @@ function toggleSpeechRecognition() {
   }
 
   recognition.onerror = (event: any) => {
-    isRecording.value = false
+    isSpeechRecording.value = false
     recognitionRef.value = null
     if (event.error === 'not-allowed') {
       emit('speechError', '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问')
@@ -209,14 +255,281 @@ function toggleSpeechRecognition() {
   }
 
   recognition.onend = () => {
-    isRecording.value = false
+    isSpeechRecording.value = false
     recognitionRef.value = null
   }
 
   recognitionRef.value = recognition
-  isRecording.value = true
+  isSpeechRecording.value = true
   recognition.start()
+  showVoiceMenu.value = false // 选择后关闭菜单
 }
+
+// ===== MediaRecorder 语音消息录音（决策 7、8、9、11）=====
+
+/**
+ * 录音计时器启动：每秒更新 recordingDuration，到 MAX_RECORDING_DURATION 自动停止
+ */
+function startRecordingTimer() {
+  recordingDuration.value = 0
+  recordingTimerRef.value = setInterval(() => {
+    recordingDuration.value++
+    if (recordingDuration.value >= MAX_RECORDING_DURATION) {
+      // 超时自动停止（决策 8）
+      stopVoiceRecording()
+      toast.info(`录音已超过 ${MAX_RECORDING_DURATION} 秒，已自动停止`)
+    }
+  }, 1000)
+}
+
+/**
+ * 录音计时器停止
+ */
+function stopRecordingTimer() {
+  if (recordingTimerRef.value) {
+    clearInterval(recordingTimerRef.value)
+    recordingTimerRef.value = null
+  }
+}
+
+/**
+ * 格式化秒数为 mm:ss
+ */
+function formatDuration(seconds: number): string {
+  const mm = Math.floor(seconds / 60).toString().padStart(2, '0')
+  const ss = (seconds % 60).toString().padStart(2, '0')
+  return `${mm}:${ss}`
+}
+
+/**
+ * 开始语音消息录音（决策 7、9）
+ *
+ * 流程：
+ *   1. isStartingRecording 守卫防并发点击（getUserMedia 异步等待期）
+ *   2. getUserMedia 获取麦克风流
+ *   3. 创建 MediaRecorder，收集分片到 voiceChunksRef
+ *   4. onstop 时生成 WebM Blob，触发上传
+ *   5. 启动计时器，60 秒自动停止
+ *
+ * 错误处理：
+ *   - NotAllowedError：麦克风权限拒绝 → toast 提示
+ *   - NotFoundError：无麦克风设备 → toast 提示
+ *   - 其他异常 → toast 提示
+ */
+async function startVoiceRecording() {
+  // 决策 9：并发守卫，阻止 getUserMedia 异步等待期的重复点击
+  if (isStartingRecording.value || isVoiceRecording.value || isUploadingVoice.value) return
+  if (props.isLoading) return
+
+  // 关闭菜单
+  showVoiceMenu.value = false
+
+  // 运行时检测（决策 7：不依赖 onMounted 的检测结果，事件处理函数内再次校验）
+  if (
+    typeof window === 'undefined' ||
+    typeof window.MediaRecorder === 'undefined' ||
+    !navigator.mediaDevices?.getUserMedia
+  ) {
+    toast.error('当前环境不支持语音录制')
+    return
+  }
+
+  isStartingRecording.value = true
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const recorder = new MediaRecorder(stream)
+    voiceChunksRef.value = []
+
+    recorder.ondataavailable = (e: BlobEvent) => {
+      if (e.data && e.data.size > 0) {
+        voiceChunksRef.value.push(e.data)
+      }
+    }
+
+    recorder.onstop = () => {
+      // 生成 WebM Blob（决策 11：MediaRecorder 原生支持 WebM/Opus）
+      const blob = new Blob(voiceChunksRef.value, { type: 'audio/webm' })
+      voiceChunksRef.value = []
+
+      // 停止所有音轨（释放麦克风指示）
+      stream.getTracks().forEach((track) => track.stop())
+
+      // 上传转写
+      uploadVoiceForTranscription(blob)
+
+      // 清理计时器
+      stopRecordingTimer()
+    }
+
+    recorder.onerror = () => {
+      isVoiceRecording.value = false
+      stopRecordingTimer()
+      stream.getTracks().forEach((track) => track.stop())
+      toast.error('录音出错，请重试')
+    }
+
+    mediaRecorderRef.value = recorder
+    isVoiceRecording.value = true
+    isStartingRecording.value = false
+    recorder.start()
+    startRecordingTimer()
+  } catch (err) {
+    isStartingRecording.value = false
+    isVoiceRecording.value = false
+
+    if (err instanceof DOMException) {
+      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
+        toast.error('麦克风权限被拒绝，请在浏览器设置中允许麦克风访问')
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        toast.error('未检测到麦克风设备')
+      } else {
+        toast.error(`录音启动失败：${err.message}`)
+      }
+    } else {
+      const msg = err instanceof Error ? err.message : '未知错误'
+      toast.error(`录音启动失败：${msg}`)
+    }
+  }
+}
+
+/**
+ * 停止语音消息录音（手动点击停止或 60 秒超时自动触发）
+ */
+function stopVoiceRecording() {
+  if (!isVoiceRecording.value || !mediaRecorderRef.value) return
+
+  if (mediaRecorderRef.value.state !== 'inactive') {
+    mediaRecorderRef.value.stop() // 触发 onstop 回调
+  }
+  isVoiceRecording.value = false
+}
+
+/**
+ * 上传 WebM 音频到 /api/audio/transcribe 转写（决策 6 + 任务 4.4）
+ *
+ * 上传中显示 loading + 禁用按钮，转写成功 emit 结果给父组件。
+ * 失败 toast 提示，不阻塞主流程（用户可手动输入）。
+ */
+async function uploadVoiceForTranscription(blob: Blob) {
+  if (blob.size === 0) {
+    toast.error('录音文件为空，请重试')
+    return
+  }
+
+  isUploadingVoice.value = true
+
+  try {
+    const formData = new FormData()
+    formData.append('file', blob, `voice-${Date.now()}.webm`)
+
+    const result = await $fetch<VoiceTranscribedResult>('/api/audio/transcribe', {
+      method: 'POST',
+      body: formData
+    })
+
+    // 成功：emit 给父组件填充 input + 提交时附带 audio 字段
+    emit('voice-transcribed', {
+      text: result.text,
+      emotion: result.emotion,
+      audioUrl: result.audioUrl,
+      duration: result.duration
+    })
+
+    toast.success('语音转写成功')
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '未知错误'
+    toast.error(`语音转写失败：${message}`)
+  } finally {
+    isUploadingVoice.value = false
+  }
+}
+
+/**
+ * 语音入口按钮点击：展开/收起菜单
+ *
+ * 录音中点击直接停止录音（不再展开菜单）。
+ */
+function toggleVoiceMenu() {
+  if (props.isLoading) return
+
+  // 录音中点击 → 停止录音
+  if (isVoiceRecording.value) {
+    stopVoiceRecording()
+    return
+  }
+
+  // 上传中或启动中 → 不响应
+  if (isUploadingVoice.value || isStartingRecording.value) return
+
+  showVoiceMenu.value = !showVoiceMenu.value
+
+  if (showVoiceMenu.value) {
+    // 注册点击外部关闭菜单
+    nextTick(() => {
+      if (import.meta.client) {
+        document.addEventListener('click', handleVoiceMenuOutsideClick)
+      }
+    })
+  } else {
+    if (import.meta.client) {
+      document.removeEventListener('click', handleVoiceMenuOutsideClick)
+    }
+  }
+}
+
+/**
+ * 点击菜单外部时关闭菜单
+ */
+function handleVoiceMenuOutsideClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  // 点击非语音入口按钮/菜单内时关闭
+  if (!target.closest('[data-voice-menu-trigger]') && !target.closest('[data-voice-menu]')) {
+    showVoiceMenu.value = false
+    if (import.meta.client) {
+      document.removeEventListener('click', handleVoiceMenuOutsideClick)
+    }
+  }
+}
+
+/**
+ * 菜单选项点击：语音消息 / 语音输入
+ */
+function handleVoiceMenuSelect(option: 'message' | 'input') {
+  showVoiceMenu.value = false
+  if (import.meta.client) {
+    document.removeEventListener('click', handleVoiceMenuOutsideClick)
+  }
+
+  if (option === 'message') {
+    startVoiceRecording()
+  } else {
+    toggleSpeechRecognition()
+  }
+}
+
+/**
+ * 语音入口按钮可见性：至少支持一种能力时显示（决策 12）
+ */
+const voiceEntryVisible = computed(() => speechSupported.value || mediaRecorderSupported.value)
+
+/**
+ * 语音入口按钮禁用条件：AI 回复中、上传中、启动录音中
+ */
+const voiceEntryDisabled = computed(
+  () => props.isLoading || isUploadingVoice.value || isStartingRecording.value
+)
+
+/**
+ * 语音入口按钮 tooltip 文案
+ */
+const voiceEntryTooltip = computed(() => {
+  if (props.isLoading) return ''
+  if (isUploadingVoice.value) return '语音转写中...'
+  if (isStartingRecording.value) return '正在启动录音...'
+  if (isVoiceRecording.value) return `录音中 ${formatDuration(recordingDuration.value)}，点击停止`
+  return '语音输入'
+})
 
 // ===== 文生图 Workflow =====
 // 状态均为 SSR 安全初始值（false / '' / 默认尺寸），不依赖浏览器 API
@@ -665,42 +978,157 @@ watch(
           />
         </div>
 
-        <!-- 语音输入按钮 -->
-        <button
-          v-if="speechSupported"
-          type="button"
-          :disabled="isLoading"
-          :aria-label="isRecording ? '点击停止录音' : '语音输入'"
-          v-tooltip="isLoading ? '' : isRecording ? '点击停止录音' : '语音输入'"
-          class="shrink-0 relative min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-semi-normal active:scale-95"
-          :class="
-            isRecording
-              ? 'text-semi-danger bg-semi-danger-light hover:bg-semi-danger-light'
-              : isLoading
-                ? 'text-semi-border cursor-not-allowed'
-                : 'text-semi-text-3 hover:text-semi-text-2 hover:bg-semi-fill-1'
-          "
-          @click="toggleSpeechRecognition"
-        >
-          <span
-            v-if="isRecording"
-            class="absolute inset-1 rounded-full border-2 border-semi-danger animate-ping opacity-30"
-          />
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="w-5 h-5 sm:w-4 sm:h-4 relative z-10"
+        <!-- 语音入口按钮（决策 12：合并 Web Speech API 语音输入 + MediaRecorder 语音消息） -->
+        <div v-if="voiceEntryVisible" class="relative shrink-0">
+          <button
+            type="button"
+            data-voice-menu-trigger
+            :disabled="voiceEntryDisabled"
+            :aria-label="
+              isVoiceRecording
+                ? `录音中 ${formatDuration(recordingDuration)}，点击停止`
+                : isUploadingVoice
+                  ? '语音转写中'
+                  : isStartingRecording
+                    ? '正在启动录音'
+                    : '语音输入'
+            "
+            v-tooltip="voiceEntryTooltip"
+            class="shrink-0 relative min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-semi-normal active:scale-95"
+            :class="
+              isVoiceRecording
+                ? 'text-semi-danger bg-semi-danger-light hover:bg-semi-danger-light'
+                : isSpeechRecording
+                  ? 'text-semi-danger bg-semi-danger-light hover:bg-semi-danger-light'
+                  : isUploadingVoice || isStartingRecording
+                    ? 'text-semi-primary bg-semi-primary-light cursor-not-allowed'
+                    : voiceEntryDisabled
+                      ? 'text-semi-border cursor-not-allowed'
+                      : 'text-semi-text-3 hover:text-semi-text-2 hover:bg-semi-fill-1'
+            "
+            @click="toggleVoiceMenu"
           >
-            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-            <line x1="12" y1="19" x2="12" y2="22" />
-          </svg>
-        </button>
+            <!-- 录音中脉冲动画 -->
+            <span
+              v-if="isVoiceRecording || isSpeechRecording"
+              class="absolute inset-1 rounded-full border-2 border-semi-danger animate-ping opacity-30"
+            />
+            <!-- 上传/启动中 spinner -->
+            <svg
+              v-if="isUploadingVoice || isStartingRecording"
+              class="animate-spin w-4 h-4 relative z-10"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              />
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+            <!-- 麦克风图标 -->
+            <svg
+              v-else
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-5 h-5 sm:w-4 sm:h-4 relative z-10"
+            >
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="22" />
+            </svg>
+            <!-- 录音中时长计时（决策 8：mm:ss 视觉反馈） -->
+            <span
+              v-if="isVoiceRecording"
+              class="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] font-mono font-medium text-semi-danger bg-semi-bg-0 px-1 rounded-full shadow-sm whitespace-nowrap"
+            >
+              {{ formatDuration(recordingDuration) }}
+            </span>
+          </button>
+
+          <!-- 语音入口菜单（决策 12：根据浏览器支持情况显示选项） -->
+          <Transition
+            enter-active-class="transition duration-150 ease-out"
+            enter-from-class="opacity-0 scale-95 translate-y-1"
+            enter-to-class="opacity-100 scale-100 translate-y-0"
+            leave-active-class="transition duration-100 ease-in"
+            leave-from-class="opacity-100 scale-100 translate-y-0"
+            leave-to-class="opacity-0 scale-95 translate-y-1"
+          >
+            <div
+              v-if="showVoiceMenu"
+              data-voice-menu
+              class="absolute bottom-full right-0 mb-2 min-w-[160px] bg-semi-bg-1 rounded-xl border border-semi-border shadow-semi-elevated py-1 z-20"
+            >
+              <!-- 语音消息选项（仅 MediaRecorder 支持时显示） -->
+              <button
+                v-if="mediaRecorderSupported"
+                type="button"
+                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-semi-text-1 hover:bg-semi-fill-0 active:scale-[0.98] transition-all text-left"
+                @click="handleVoiceMenuSelect('message')"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="w-4 h-4 shrink-0 text-semi-primary"
+                >
+                  <rect x="9" y="2" width="6" height="11" rx="3" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium">语音消息</div>
+                  <div class="text-xs text-semi-text-3">录制并发送语音气泡</div>
+                </div>
+              </button>
+              <!-- 语音输入选项（仅 SpeechRecognition 支持时显示） -->
+              <button
+                v-if="speechSupported"
+                type="button"
+                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-semi-text-1 hover:bg-semi-fill-0 active:scale-[0.98] transition-all text-left"
+                @click="handleVoiceMenuSelect('input')"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="w-4 h-4 shrink-0 text-semi-text-2"
+                >
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium">语音输入</div>
+                  <div class="text-xs text-semi-text-3">实时转写填入输入框</div>
+                </div>
+              </button>
+            </div>
+          </Transition>
+        </div>
 
         <button
           v-if="!isLoading"

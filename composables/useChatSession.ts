@@ -15,6 +15,8 @@ export interface MessageRecord {
   sessionId: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  /** DB metadata JSONB 字段（含 images / audio / model 等元信息） */
+  metadata?: Record<string, unknown> | null
   createdAt: string
 }
 
@@ -106,7 +108,9 @@ export function useChatSession(setMessages: (msgs: UIMessage[]) => void) {
           historyMessages.map((msg) => ({
             id: msg.id,
             role: msg.role as 'user' | 'assistant',
-            parts: [{ type: 'text' as const, text: msg.content }]
+            parts: [{ type: 'text' as const, text: msg.content }],
+            // 保留 DB metadata（含 audio/images/model 等元信息，供前端渲染语音气泡等）
+            metadata: msg.metadata ?? undefined
           }))
         )
       } else {

@@ -57,6 +57,27 @@ const MAX_IMAGES_PER_MESSAGE = 5
 const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads')
 
 /**
+ * 情感白名单（防 prompt 注入，详见 add-voice-message-asr/design.md 决策 3）
+ *
+ * SenseVoiceSmall 仅 HAPPY/SAD/ANGRY/NEUTRAL 映射到白名单值，其他情感标签归为 null。
+ * chat.post.ts 收到 body.audio.emotion 时必须用此集合校验，未通过校验的值
+ * （含 null、空串、"unknown"、任意攻击字符串）一律忽略不注入 system prompt、不落库。
+ */
+const ALLOWED_EMOTIONS = new Set(['happy', 'sad', 'angry', 'neutral'])
+
+/**
+ * 中文情感映射（用于 system prompt 注入时的中文表述）
+ *
+ * key 为白名单英文值，value 为中文情感词，用于「用户当前情绪可能为<X>」提示语。
+ */
+const EMOTION_CN_MAP: Record<'happy' | 'sad' | 'angry' | 'neutral', string> = {
+  happy: '开心',
+  sad: '悲伤',
+  angry: '愤怒',
+  neutral: '平静'
+}
+
+/**
  * 内网/保留 IP 判断（内联实现，不依赖 weather.ts 的 isPrivateIp）
  *
  * 用于过滤 x-forwarded-for 链路中的内网代理 IP，提取真实客户端公网 IP。
@@ -284,6 +305,22 @@ export default defineEventHandler(async (event) => {
   // 前端通过 toggle chip 控制是否允许 LLM 自主调用 generateImage 工具
   const enableImageGeneration = enable_image_generation !== false
 
+  // 语音消息 audio 字段提取（决策 3 + 5）
+  // emotion 必须经 ALLOWED_EMOTIONS 白名单校验（防 prompt 注入），未通过校验落库为 null
+  // audio 对象同时供 saveMessagesToDb 落库 metadata.audio + finalSystemPrompt 注入情感提示
+  const audio: { url: string; emotion: string | null; duration: number } | undefined =
+    body?.audio?.url
+      ? {
+          url: String(body.audio.url),
+          emotion:
+            typeof body.audio.emotion === 'string' &&
+            ALLOWED_EMOTIONS.has(body.audio.emotion)
+              ? body.audio.emotion
+              : null,
+          duration: Number(body.audio.duration) || 0
+        }
+      : undefined
+
   if (!messages || !Array.isArray(messages)) {
     throw createError({
       statusCode: 400,
@@ -468,6 +505,17 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // 情感提示注入（决策 3 硬约束：必须位于 finalSystemPrompt 拼接的最末位）
+  // 注入位置在所有工具规则、位置上下文之后，确保情感提示不被后续任何工具规则冲淡
+  // emotion 已在 body 解析阶段经 ALLOWED_EMOTIONS 白名单校验，未通过校验为 null（不注入）
+  // 仅注入本次 streamText 调用，不写入 messages 表（情感是瞬时信号，跨会话保留意义不大）
+  if (audio?.emotion) {
+    // audio.emotion 类型已通过 ALLOWED_EMOTIONS 白名单校验为 'happy'|'sad'|'angry'|'neutral'，
+    // 但 TS 静态推断仍为 string，此处断言以访问 EMOTION_CN_MAP 的字面量 key
+    const emotionCn = EMOTION_CN_MAP[audio.emotion as 'happy' | 'sad' | 'angry' | 'neutral']
+    finalSystemPrompt += `\n\n【用户情绪】用户当前情绪可能为<${emotionCn}>，请适当贴合该情绪回复。`
+  }
+
   try {
     // 创建 MCP 客户端连接 Weather Server（stdio 传输）
     let mcpClient: Awaited<ReturnType<typeof createMCPClient>> | null = null
@@ -552,7 +600,8 @@ export default defineEventHandler(async (event) => {
             messages,
             cleanText,
             useModel,
-            hasImages ? imageUrls : undefined
+            hasImages ? imageUrls : undefined,
+            audio
           )
         } catch (err) {
           console.error('保存消息到数据库失败:', err)
@@ -858,7 +907,8 @@ async function saveMessagesToDb(
   chatMessages: Array<{ role: string; content: unknown }>,
   assistantText: string,
   modelName: string,
-  imageUrls?: string[]
+  imageUrls?: string[],
+  audio?: { url: string; emotion: string | null; duration: number }
 ) {
   if (chatMessages.length === 0) return
   const lastUserMessage = [...chatMessages].reverse().find((msg) => msg.role === 'user')
@@ -866,6 +916,16 @@ async function saveMessagesToDb(
     const meta: Record<string, unknown> = {}
     if (imageUrls && imageUrls.length > 0) {
       meta.images = imageUrls.map((url, i) => ({ index: i, url }))
+    }
+    // 语音消息元信息落库（决策 5）：audio.emotion 已在 body 解析阶段经 ALLOWED_EMOTIONS 白名单校验
+    // audio 是单条语音消息的元信息快照（供 UI 展示情感标签），与「情感不作为长期状态注入」不矛盾
+    if (audio && audio.url) {
+      meta.audio = {
+        url: audio.url,
+        emotion: audio.emotion,
+        duration: audio.duration,
+        createdAt: new Date().toISOString()
+      }
     }
     // 兼容 AI SDK v5 的 parts 格式和旧 content 字符串格式
     const userText = extractTextFromMessage(lastUserMessage)
