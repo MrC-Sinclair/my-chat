@@ -47,3 +47,7 @@ g.createError = (opts: { statusCode: number; statusMessage: string }) => {
   err.statusMessage = opts.statusMessage
   return err
 }
+// h3 setHeader：测试环境仅记录调用，供断言响应头使用（真实运行时由 Nuxt 提供）
+g.setHeader = (event: any, name: string, value: string) => {
+  event.node?.res?.setHeader?.(name, value)
+}
