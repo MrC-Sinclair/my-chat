@@ -163,6 +163,8 @@ export default defineNuxtConfig({
     },
     openAiApiKey: process.env.OPENAI_API_KEY,
     openAiBaseUrl: process.env.OPENAI_BASE_URL,
+    // 会话 Cookie 签名密钥（生产必须配置强随机串；开发用默认值兜底）
+    authSecret: process.env.AUTH_SECRET || 'dev-only-insecure-secret-change-me',
     systemPrompt: process.env.SYSTEM_PROMPT || '',
     databaseUrl: process.env.DATABASE_URL,
     // 长期记忆系统模型配置（可选，有默认值）

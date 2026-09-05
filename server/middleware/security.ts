@@ -8,6 +8,9 @@ const CSP_DIRECTIVES = [
   "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
   "font-src 'self' https://cdn.jsdelivr.net",
   "img-src 'self' data: blob: https:",
+  // media-src 允许 blob:：TTS 朗读用 URL.createObjectURL 生成的 blob 音频，
+  // 仅 default-src 'self' 会被 CSP 拦截导致「音频播放失败」
+  "media-src 'self' blob:",
   "connect-src 'self' https://api.siliconflow.cn",
   "frame-ancestors 'none'",
   "base-uri 'self'",
@@ -49,7 +52,10 @@ export default defineEventHandler(async (event) => {
   res.setHeader('X-Frame-Options', 'DENY')
   res.setHeader('X-XSS-Protection', '0')
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  // 麦克风对同源放行：语音消息录音（MediaRecorder）与 Web Speech 语音输入依赖 getUserMedia，
+  // 设为 () 会导致 Permissions policy violation、录音在任何浏览器中都无法启动
+  // camera / geolocation 项目未使用，保持禁用
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()')
 
   const origin = getRequestHeader(event, 'origin') || ''
   const allowedOrigins = ['http://localhost:3000']

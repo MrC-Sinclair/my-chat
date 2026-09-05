@@ -15,9 +15,10 @@
  * 以支持 /api/sessions/:id/archive-memory 子路由（Windows 不允许同名文件与目录共存）。
  */
 
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/db'
 import { sessions, messages } from '~/server/db/schema'
+import { getAuthUser } from '~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   /** 从 URL 中提取动态参数 id */
@@ -25,6 +26,21 @@ export default defineEventHandler(async (event) => {
 
   if (!sessionId) {
     throw createError({ statusCode: 400, statusMessage: '缺少会话ID' })
+  }
+
+  const user = getAuthUser(event)
+  if (!user) {
+    throw createError({ statusCode: 503, statusMessage: '服务暂时不可用，请稍后重试' })
+  }
+
+  // 归属校验（design.md 决策 4）：非本人会话一律 404，不泄露会话存在性
+  const owned = await db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, user.id)))
+    .limit(1)
+  if (owned.length === 0) {
+    throw createError({ statusCode: 404, statusMessage: '会话不存在' })
   }
 
   const method = getMethod(event)

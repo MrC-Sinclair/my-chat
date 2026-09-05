@@ -150,6 +150,22 @@ function setMessages(msgs: UIMessage[]) {
 }
 
 async function wrappedHandleSubmit() {
+  // 首条消息发送前确保会话存在：currentSessionId 为空时 body.sessionId 为 undefined，
+  // 服务端 onFinish 因无 sessionId 静默跳过持久化，整段对话刷新即丢（含语音气泡的音频元信息）
+  if (!currentSessionId.value) {
+    // createNewSession 会触发 watch(currentSessionId) 清空 pending 语音状态（防切换残留），
+    // 先快照发送所需的音频元信息，创建成功后恢复
+    const audioSnapshot = pendingVoiceMessage.value ? { ...pendingVoiceMessage.value } : null
+    await createNewSession()
+    // 创建失败时 currentSessionId 仍为空：中止发送（输入框内容未清空），避免用户以为已发出实则全丢
+    if (!currentSessionId.value) {
+      toast.error('创建会话失败，请重试')
+      return
+    }
+    if (audioSnapshot) {
+      pendingVoiceMessage.value = audioSnapshot
+    }
+  }
   if (uploadedImages.value.length > 0) {
     pendingMessageImages.value = [...uploadedImages.value]
   }
@@ -490,6 +506,38 @@ onMounted(async () => {
   await loadSessions()
 })
 
+// ===== 用户身份（openspec/changes/add-user-auth）=====
+const { user: authUser, fetchMe } = useAuth()
+const authDialogOpen = ref(false)
+const authDialogMode = ref<'login' | 'register'>('login')
+
+function openAuthDialog(mode: 'login' | 'register') {
+  authDialogMode.value = mode
+  authDialogOpen.value = true
+}
+
+onMounted(() => {
+  // 身份拉取与水合无关（Cookie 为 HttpOnly，SSR/客户端首帧一致渲染游客占位）
+  fetchMe()
+})
+
+// 身份变化（登录/注册/退出）→ 重载会话列表；当前会话不属于新身份时切换到新身份的最近会话。
+// 注：切换身份瞬间 switchSession 可能触发上一会话的归档兜底（fire-and-forget），
+// 该请求在新身份下会 404，仅产生一条无害日志，不影响数据
+watch(authUser, async (u, old) => {
+  if (old === undefined || !u) return
+  await loadSessions()
+  const exists = sessionsList.value.some((s) => s.id === currentSessionId.value)
+  if (!exists) {
+    const first = sessionsList.value[0]
+    if (first) {
+      await switchSession(first.id)
+    } else {
+      await createNewSession()
+    }
+  }
+})
+
 watch(currentSessionId, () => {
   if (isMobile.value) {
     showSidebar.value = false
@@ -682,12 +730,101 @@ async function copyMessage(content: string, msgId: string) {
   }
 }
 
+// ===== TTS 语音朗读（Workflow：用户点击朗读按钮触发，确定性路径，非 LLM 决策）=====
+/** messageId → 已合成的播放地址缓存（同一消息同文本免重复合成） */
+const ttsAudioCache = new Map<string, { url: string; text: string }>()
+/** 正在合成语音的消息 id（全局单飞：同一时刻只允许一个合成请求，防重复提交） */
+const synthesizingTtsId = ref('')
+/** 正在播放语音的消息 id */
+const playingTtsId = ref('')
+/** 当前播放实例（切换/停止时暂停释放） */
+let currentTtsAudio: HTMLAudioElement | null = null
+
+function stopTtsPlayback() {
+  if (currentTtsAudio) {
+    currentTtsAudio.pause()
+    currentTtsAudio = null
+  }
+  playingTtsId.value = ''
+}
+
+function playTtsAudio(msgId: string, url: string) {
+  stopTtsPlayback()
+  const audio = new Audio(url)
+  currentTtsAudio = audio
+  // onended/onerror 里校验 currentTtsAudio === audio，避免已被后续播放抢占时误清状态
+  audio.onended = () => {
+    if (currentTtsAudio === audio) {
+      currentTtsAudio = null
+      playingTtsId.value = ''
+    }
+  }
+  audio.onerror = () => {
+    if (currentTtsAudio === audio) {
+      currentTtsAudio = null
+      playingTtsId.value = ''
+    }
+    toast.error('音频播放失败')
+  }
+  playingTtsId.value = msgId
+  audio.play().catch(() => {
+    if (currentTtsAudio === audio) {
+      currentTtsAudio = null
+      playingTtsId.value = ''
+    }
+  })
+}
+
+async function toggleSpeakMessage(msgId: string, text: string) {
+  // 防重复提交：合成期间禁止再次触发（含其他消息的朗读）
+  if (synthesizingTtsId.value) return
+  // 播放中再次点击 → 停止
+  if (playingTtsId.value === msgId) {
+    stopTtsPlayback()
+    return
+  }
+  const trimmed = text.trim()
+  if (!trimmed) return
+
+  // 命中缓存（同消息同文本）直接播放
+  const cached = ttsAudioCache.get(msgId)
+  if (cached && cached.text === trimmed) {
+    playTtsAudio(msgId, cached.url)
+    return
+  }
+
+  synthesizingTtsId.value = msgId
+  try {
+    const blob = await $fetch<Blob>('/api/audio/tts', {
+      method: 'POST',
+      body: { text: trimmed },
+      responseType: 'blob'
+    })
+    const url = URL.createObjectURL(blob)
+    // 文本已变化时释放旧 URL，防止内存泄漏
+    const old = ttsAudioCache.get(msgId)
+    if (old) URL.revokeObjectURL(old.url)
+    ttsAudioCache.set(msgId, { url, text: trimmed })
+    playTtsAudio(msgId, url)
+  } catch {
+    toast.error('语音合成失败，请重试')
+  } finally {
+    synthesizingTtsId.value = ''
+  }
+}
+
+onUnmounted(() => {
+  stopTtsPlayback()
+  ttsAudioCache.forEach((v) => URL.revokeObjectURL(v.url))
+  ttsAudioCache.clear()
+})
+
 type PromptIconType = 'sun' | 'image' | 'flow' | 'palette' | 'globe' | 'mail'
 
 const quickPrompts: Array<{ icon: PromptIconType; title: string; prompt: string }> = [
   {
-    icon: 'sun',
-    title: '通过MCP查询，今天天气怎么样？',
+      icon: 'sun',
+      title: '通过 MCP 查询，今天天气怎么样？',
     prompt:
       '请调用 weather 工具查询我所在城市的实时天气，并简要告诉我：当前温度、体感温度、天气状况、以及是否需要带伞'
   },
@@ -762,6 +899,7 @@ function onDocumentClick(e: Event) {
             @delete="deleteSession"
             @rename="renameSession"
             @close="closeSidebar"
+            @open-auth="openAuthDialog"
           />
         </div>
       </div>
@@ -778,6 +916,7 @@ function onDocumentClick(e: Event) {
           @switch="switchSession"
           @delete="deleteSession"
           @rename="renameSession"
+          @open-auth="openAuthDialog"
         />
       </Transition>
     </div>
@@ -1175,6 +1314,75 @@ function onDocumentClick(e: Event) {
                     </button>
                     <button
                       class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+                      v-tooltip="
+                        playingTtsId === messages[virtualRow.index].id ? '停止朗读' : '朗读'
+                      "
+                      :aria-label="
+                        playingTtsId === messages[virtualRow.index].id ? '停止朗读' : '朗读'
+                      "
+                      :disabled="
+                        synthesizingTtsId !== '' &&
+                        synthesizingTtsId !== messages[virtualRow.index].id
+                      "
+                      @click="
+                        toggleSpeakMessage(
+                          messages[virtualRow.index].id,
+                          getMessageText(messages[virtualRow.index])
+                        )
+                      "
+                    >
+                      <svg
+                        v-if="synthesizingTtsId === messages[virtualRow.index].id"
+                        class="animate-spin w-4 h-4"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          class="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          stroke-width="4"
+                        />
+                        <path
+                          class="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                        />
+                      </svg>
+                      <svg
+                        v-else-if="playingTtsId === messages[virtualRow.index].id"
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="w-4 h-4"
+                      >
+                        <rect x="6" y="6" width="12" height="12" rx="2" />
+                      </svg>
+                      <svg
+                        v-else
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="w-4 h-4"
+                      >
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                      </svg>
+                    </button>
+                    <button
+                      class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                       v-tooltip="'重新生成'"
                       :disabled="isLoading"
                       @click="handleReload"
@@ -1225,6 +1433,9 @@ function onDocumentClick(e: Event) {
         @voice-transcribed="handleVoiceTranscribed"
       />
     </div>
+
+    <!-- 登录/注册对话框（全局唯一实例，SessionSidebar 双实例共用） -->
+    <AuthDialog v-model:open="authDialogOpen" :initial-mode="authDialogMode" />
   </div>
 </template>
 

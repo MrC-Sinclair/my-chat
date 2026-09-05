@@ -13,6 +13,10 @@
  */
 import { existsSync, createReadStream, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { and, eq, sql } from 'drizzle-orm'
+import { db } from '~/server/db'
+import { messages, sessions } from '~/server/db/schema'
+import { getAuthUser } from '~/server/utils/auth'
 
 /** 音频文件存放目录（与 transcribe.post.ts 保持一致） */
 const AUDIO_UPLOAD_DIR = join(process.cwd(), 'server', 'uploads', 'audio')
@@ -28,7 +32,7 @@ const AUDIO_UPLOAD_DIR = join(process.cwd(), 'server', 'uploads', 'audio')
  */
 const FILENAME_REGEX = /^\d{13}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webm$/i
 
-export default defineEventHandler((event) => {
+export default defineEventHandler(async (event) => {
   if (process.env.VERCEL) {
     throw createError({
       statusCode: 501,
@@ -42,6 +46,28 @@ export default defineEventHandler((event) => {
       statusCode: 400,
       statusMessage: '无效的音频文件标识'
     })
+  }
+
+  // 归属校验（add-user-auth design.md 决策 6）：文件名不携带归属信息，
+  // 通过 DB 反查「当前用户名下是否存在消息引用了该音频 URL」，否则 404
+  const user = getAuthUser(event)
+  if (!user) {
+    throw createError({ statusCode: 503, statusMessage: '服务暂时不可用，请稍后重试' })
+  }
+  const audioUrlPath = `/api/audio/${id}`
+  const owned = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .innerJoin(sessions, eq(messages.sessionId, sessions.id))
+    .where(
+      and(
+        eq(sessions.userId, user.id),
+        sql`(${messages.metadata} -> 'audio' ->> 'url') = ${audioUrlPath}`
+      )
+    )
+    .limit(1)
+  if (owned.length === 0) {
+    throw createError({ statusCode: 404, statusMessage: '音频文件不存在或已过期' })
   }
 
   // 二次防御：解析后的路径必须仍在 AUDIO_UPLOAD_DIR 内（防符号链接绕过）

@@ -12,7 +12,42 @@ const emit = defineEmits<{
   delete: [sessionId: string]
   rename: [sessionId: string, newTitle: string]
   close: []
+  'open-auth': [mode: 'login' | 'register']
 }>()
+
+const { user: authUser, logout } = useAuth()
+const confirmDialog = useConfirmDialog()
+
+/** 头像字母：正式用户取邮箱首字母，游客固定「游」 */
+const avatarLetter = computed(() => {
+  if (authUser.value && !authUser.value.isGuest && authUser.value.email) {
+    return authUser.value.email.charAt(0).toUpperCase()
+  }
+  return '游'
+})
+
+const displayName = computed(() => {
+  if (authUser.value && !authUser.value.isGuest && authUser.value.email) {
+    return authUser.value.email
+  }
+  return '游客'
+})
+
+const identityHint = computed(() => {
+  if (authUser.value && !authUser.value.isGuest) return '已登录'
+  return '本地模式 · 数据仅本浏览器可见'
+})
+
+/** 退出登录：确认后调用 useAuth（会重新拉取并签发新游客身份） */
+async function handleLogout() {
+  const ok = await confirmDialog.open({
+    title: '退出登录',
+    message: '确定要退出当前账号吗？',
+    confirmText: '确认退出'
+  })
+  if (!ok) return
+  await logout()
+}
 
 const renamingId = ref<string>('')
 const renamingText = ref('')
@@ -222,22 +257,41 @@ const groupedSessions = computed(() => {
     <div class="border-t border-semi-border p-3">
       <div class="flex items-center gap-2.5 px-2 py-1.5">
         <div class="w-8 h-8 rounded-full bg-gradient-to-br from-semi-primary to-blue-400 flex items-center justify-center text-white text-sm font-medium shrink-0">
-          U
+          {{ avatarLetter }}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-medium text-semi-text-0 truncate">My Chat 用户</div>
-          <div class="text-xs text-semi-text-3 truncate">本地模式</div>
+          <div class="text-sm font-medium text-semi-text-0 truncate">{{ displayName }}</div>
+          <div class="text-xs text-semi-text-3 truncate">{{ identityHint }}</div>
         </div>
-        <button
-          class="p-2 text-semi-text-3 hover:text-semi-text-1 hover:bg-semi-fill-1 rounded-lg transition-all"
-          aria-label="设置"
-          v-tooltip="'设置'"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
-            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-        </button>
+        <!-- 游客：登录/注册入口（触摸目标 ≥ 36px，手机端可点）；正式用户：退出 -->
+        <template v-if="authUser && !authUser.isGuest">
+          <button
+            class="p-2 text-semi-text-3 hover:text-semi-text-1 hover:bg-semi-fill-1 rounded-lg transition-all active:scale-95 min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+            aria-label="退出登录"
+            v-tooltip="'退出登录'"
+            @click="handleLogout"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </button>
+        </template>
+        <template v-else>
+          <button
+            class="text-xs px-2 min-h-[36px] sm:min-h-0 rounded-lg text-semi-primary hover:bg-semi-primary-light transition-all active:scale-95"
+            @click="emit('open-auth', 'login')"
+          >
+            登录
+          </button>
+          <button
+            class="text-xs px-2 min-h-[36px] sm:min-h-0 rounded-lg bg-semi-primary text-white hover:bg-semi-primary-hover transition-all active:scale-95"
+            @click="emit('open-auth', 'register')"
+          >
+            注册
+          </button>
+        </template>
       </div>
     </div>
   </aside>

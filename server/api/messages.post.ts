@@ -17,7 +17,8 @@
 
 import { db } from '~/server/db'
 import { messages, sessions } from '~/server/db/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
+import { getAuthUser } from '~/server/utils/auth'
 import { z } from 'zod'
 
 const messageSchema = z.object({
@@ -41,9 +42,14 @@ export default defineEventHandler(async (event) => {
 
   const { sessionId, role, content, metadata } = validation.data
 
-  // 验证会话是否存在
+  const user = getAuthUser(event)
+  if (!user) {
+    throw createError({ statusCode: 503, statusMessage: '服务暂时不可用，请稍后重试' })
+  }
+
+  // 验证会话存在且属于当前用户（归属不一致按 404，不泄露存在性）
   const session = await db.query.sessions.findFirst({
-    where: eq(sessions.id, sessionId)
+    where: and(eq(sessions.id, sessionId), eq(sessions.userId, user.id))
   })
 
   if (!session) {

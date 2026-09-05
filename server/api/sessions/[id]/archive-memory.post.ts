@@ -20,10 +20,11 @@
  *     API 仍返回 202（归档是异步增强操作，失败不影响对话主流程）
  */
 
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/db'
 import { sessions } from '~/server/db/schema'
 import { archiveSessionMessages } from '~/server/utils/memory-archive'
+import { getAuthUser } from '~/server/utils/auth'
 
 /**
  * 标准 UUID v4 严格校验正则
@@ -47,8 +48,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: '会话ID格式无效（要求标准 UUID v4）' })
   }
 
-  // 3. 会话存在性校验
-  const [session] = await db.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, sessionId))
+  // 3. 会话存在性 + 归属校验（非本人会话按 404，不泄露存在性）
+  const user = getAuthUser(event)
+  if (!user) {
+    throw createError({ statusCode: 503, statusMessage: '服务暂时不可用，请稍后重试' })
+  }
+  const [session] = await db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, user.id)))
 
   if (!session) {
     throw createError({ statusCode: 404, statusMessage: '会话不存在' })

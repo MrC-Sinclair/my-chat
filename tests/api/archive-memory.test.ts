@@ -45,7 +45,7 @@ const archiveMemoryHandler = (await import('~/server/api/sessions/[id]/archive-m
 function createEvent(params: Record<string, string> = {}): any {
   return {
     node: { req: { method: 'POST' }, res: {} },
-    context: { params },
+    context: { params, authUser: { id: "test-user", isGuest: false, email: null } },
     _method: 'POST',
     _params: params
   }

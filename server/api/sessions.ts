@@ -13,15 +13,17 @@
 import { eq, desc, count } from 'drizzle-orm'
 import { db } from '~/server/db'
 import { sessions, messages } from '~/server/db/schema'
+import { getAuthUser } from '~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   const method = getMethod(event)
+  const user = getAuthUser(event)
 
   /**
-   * GET /api/sessions — 获取会话列表
+   * GET /api/sessions — 获取当前用户的会话列表
    *
    * 查询逻辑：
-   *   1. 从 sessions 表查询所有会话
+   *   1. 从 sessions 表查询当前用户（含游客）的会话
    *   2. LEFT JOIN messages 表，统计每个会话的消息数量
    *   3. 按 updatedAt 降序排列（最近活跃的会话排在前面）
    *
@@ -29,6 +31,10 @@ export default defineEventHandler(async (event) => {
    *   [{ id, title, createdAt, updatedAt, messageCount }, ...]
    */
   if (method === 'GET') {
+    if (!user) {
+      // DB 异常降级（auth 中间件未能注入身份）：返回空列表而非全量泄露
+      return []
+    }
     const sessionList = await db
       .select({
         id: sessions.id,
@@ -39,6 +45,7 @@ export default defineEventHandler(async (event) => {
       })
       .from(sessions)
       .leftJoin(messages, eq(sessions.id, messages.sessionId))
+      .where(eq(sessions.userId, user.id))
       .groupBy(sessions.id)
       .orderBy(desc(sessions.updatedAt))
 
@@ -54,14 +61,20 @@ export default defineEventHandler(async (event) => {
    * 创建流程：
    *   1. 生成 UUID 作为会话 ID
    *   2. 使用请求中的标题或自动生成默认标题
-   *   3. 插入数据库并返回新创建的会话记录
+   *   3. 插入数据库（归属当前用户/游客）并返回新创建的会话记录
    */
   if (method === 'POST') {
-    const body = await readBody(event)
+    if (!user) {
+      throw createError({ statusCode: 503, statusMessage: '服务暂时不可用，请稍后重试' })
+    }
+    const body = await readBody(event).catch(() => null)
     const id = crypto.randomUUID()
     const title = (body?.title as string) || `新对话 ${new Date().toLocaleString('zh-CN')}`
 
-    const [session] = await db.insert(sessions).values({ id, title }).returning()
+    const [session] = await db
+      .insert(sessions)
+      .values({ id, title, userId: user.id })
+      .returning()
 
     return session
   }

@@ -3,13 +3,20 @@ import { createMCPClient } from '@ai-sdk/mcp'
 import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio'
 import { db } from '~/server/db'
 import { messages as messagesTable, sessions } from '~/server/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import { webSearchTool } from '~/server/tools/web-search'
 import { ocrDocumentTool } from '~/server/tools/ocr-document'
 import { recallMemoryTool } from '~/server/tools/recall-memory'
 import { generateImageTool } from '~/server/tools/generate-image'
+import { githubFileTool } from '~/server/tools/github-file'
+import {
+  createPlanTool,
+  createUpdateTaskStepTool,
+  getActiveTaskContext
+} from '~/server/tools/agent-task'
 import { archiveSessionMessages } from '~/server/utils/memory-archive'
 import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/models'
+import { getAuthUser } from '~/server/utils/auth'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { uploadToImgBb } from '~/server/utils/imgbb'
@@ -239,6 +246,58 @@ const GENERATE_IMAGE_TOOL_RULES = `
 `.trim()
 
 /**
+ * github-file 工具使用规则：追加到 system prompt 强化 LLM 调用判断
+ * - 正向场景：用户要求查看/分析/引用 GitHub 仓库文件（源码、配置、文档）
+ * - 负向场景：目录浏览/搜索、非 GitHub 托管、无法确定路径
+ * - 调用后行为：基于返回内容回答；截断或二进制时如实告知，不编造
+ *
+ * 注入条件：与工具注册条件严格一致（caps.toolCalling）
+ * 避免出现"规则说可以调用但工具未注册"（LLM 幻觉调用）或反向不一致
+ */
+const GITHUB_FILE_TOOL_RULES = `
+【GitHub 文件读取工具使用规则】
+当用户要求查看、分析或引用 GitHub 仓库中的文件时，调用 githubFile 工具实时拉取文件内容：
+- 用户给出 GitHub 链接（github.com/owner/repo/blob/...）或明确说明仓库名和文件路径
+- 需要基于仓库最新代码回答问题（实现原理、版本差异、配置示例等）
+- 从链接解析参数：github.com/owner/repo/blob/<branch>/<path> → owner、repo、branch、path
+
+调用后行为：
+- 基于返回的 content 回答，可引用具体片段
+- 返回 truncated: true 时如实告知「内容已截断，完整文件见 rawUrl」，不要基于残缺内容编造结论
+- 返回 error 字段时向用户说明原因（路径错误/限流/私有仓库），必要时请用户补充文件路径
+
+不要在以下场景调用此工具：
+- 无法从对话中确定 owner/repo/path 时（先向用户确认，不要猜测）
+- 需要浏览仓库目录结构或搜索文件（工具只支持精确文件路径，可提示用户给出路径）
+- 非 GitHub 托管的代码链接（GitLab、Gitee 等）
+`.trim()
+
+/**
+ * agent-task 工具使用规则：追加到 system prompt 强化 LLM 调用判断
+ * - 正向场景：用户请求是明确的多步骤任务（需按顺序执行多项操作）
+ * - 负向场景：简单问答/单步任务/闲聊
+ * - 生命周期：plan 创建计划 → 逐步执行并 updateTaskStep 推进 → 全部步骤终态后任务收敛
+ *
+ * 注入条件：与工具注册条件严格一致（caps.toolCalling 且 sessionId 有效）
+ */
+const AGENT_TASK_TOOL_RULES = `
+【任务规划工具使用规则】
+当用户请求是明确的多步骤任务（需要按顺序执行多项操作、调研/对比多个对象、产出多份结果）时：
+1. 先调用 plan 工具创建结构化计划（标题 + 有序步骤，每步一句可验证的描述）
+2. 逐步执行各步骤；每步开始时用 updateTaskStep 置 in_progress，完成/失败后更新为 completed/failed 并附结果摘要
+3. 全部步骤终态后，基于各步骤结果给出总结
+
+不要在以下场景调用：
+- 简单问答、单步可完成的请求、闲聊（直接回答即可，规划是额外负担）
+- 用户只是让你「给个计划看看」还没让你执行（此时直接文字回答计划即可，不建任务）
+
+注意：
+- updateTaskStep 必须使用 plan 返回的 taskId，遵循状态机（pending → in_progress → completed/failed）
+- 步骤失败可置 failed 后重试（failed → in_progress）
+- 超长结果会自动存为工件（返回 artifactId），如实告知用户结果已存档
+`.trim()
+
+/**
  * 从消息中提取纯文本内容。
  * AI SDK v5 的 UIMessage 格式将文本放在 parts 数组中（{ type: 'text', text: '...' }），
  * 而旧格式直接用 content 字符串。此处兼容两种格式。
@@ -297,6 +356,23 @@ export default defineEventHandler(async (event) => {
     enable_image_generation,
     lastSessionId
   } = body ?? {}
+
+  // 会话归属校验（add-user-auth design.md 决策 4）：客户端传入 sessionId 时必须是本人会话，
+  // 否则 404（不泄露存在性）。无 sessionId 时走「新会话」流程，onFinish 持久化同样归属发起用户
+  const authUser = getAuthUser(event)
+  if (typeof sessionId === 'string' && sessionId) {
+    if (!authUser) {
+      throw createError({ statusCode: 503, statusMessage: '服务暂时不可用，请稍后重试' })
+    }
+    const owned = await db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(and(eq(sessions.id, sessionId), eq(sessions.userId, authUser.id)))
+      .limit(1)
+    if (owned.length === 0) {
+      throw createError({ statusCode: 404, statusMessage: '会话不存在' })
+    }
+  }
 
   // 非严格 true 一律按 false 处理（默认关闭，与 enable_web_search 一致）
   const enableOcr = enable_ocr === true
@@ -462,6 +538,9 @@ export default defineEventHandler(async (event) => {
 
   const webSearchEnabled = enable_web_search !== false
 
+  // Agent 任务工具的启用前提：模型支持工具调用且会话 ID 有效（工具工厂需绑定已校验归属的 sessionId）
+  const hasValidSessionId = typeof sessionId === 'string' && sessionId.length > 0
+
   let finalSystemPrompt = DEFAULT_SYSTEM_PROMPT
 
   // webSearch prompt 注入条件：视觉模型启用工具后也允许 web 搜索提示词注入
@@ -490,6 +569,17 @@ export default defineEventHandler(async (event) => {
     finalSystemPrompt += `\n\n${GENERATE_IMAGE_TOOL_RULES}`
   }
 
+  // github-file 工具规则追加：注入条件必须与 toolsConfig 注册条件严格一致（caps.toolCalling），
+  // 避免出现"规则说可以调用但工具未注册"（LLM 幻觉调用）或反向不一致
+  if (caps.toolCalling) {
+    finalSystemPrompt += `\n\n${GITHUB_FILE_TOOL_RULES}`
+  }
+
+  // agent-task 工具规则追加：注入条件与注册条件严格一致（caps.toolCalling 且 sessionId 有效）
+  if (caps.toolCalling && hasValidSessionId) {
+    finalSystemPrompt += `\n\n${AGENT_TASK_TOOL_RULES}`
+  }
+
   // recall-memory 工具规则追加：模型支持工具调用时默认启用长期记忆检索
   // 注：工具本体在 toolsConfig 中注册（任务 8.1），此处仅注入使用规则指导 LLM 调用时机
   if (caps.toolCalling) {
@@ -502,6 +592,16 @@ export default defineEventHandler(async (event) => {
     const clientIp = getClientIp(event)
     if (clientIp) {
       finalSystemPrompt += `\n\n【用户位置上下文】用户当前请求 IP: ${clientIp}，如需定位用户所在城市请调用 getCityByIp 工具传入该 IP。`
+    }
+  }
+
+  // 检查点恢复注入（add-agent-task-system design.md 决策 6）：会话存在进行中的规划任务时，
+  // 将任务状态注入 prompt，LLM 基于结构化状态自主续作（对话内恢复，非进程级断点续跑）。
+  // 必须位于情感注入之前（决策 3 硬约束：情感提示保持 finalSystemPrompt 最末位）
+  if (hasValidSessionId && caps.toolCalling) {
+    const taskContext = await getActiveTaskContext(sessionId)
+    if (taskContext) {
+      finalSystemPrompt += `\n\n【进行中的任务检查点】当前会话存在未完成的规划任务：\n${taskContext}\n请基于以上状态继续推进（先 updateTaskStep 汇报步骤状态，再执行后续步骤），或按用户新指令调整计划。`
     }
   }
 
@@ -556,7 +656,17 @@ export default defineEventHandler(async (event) => {
       // generate-image 工具：仅当 enableImageGeneration=true 且 caps.toolCalling=true 时注册
       // 注入条件与 GENERATE_IMAGE_TOOL_RULES 严格一致（见上方 system prompt 注入），
       // 避免出现"规则说可以调用但工具未注册"或反向不一致
-      ...(enableImageGeneration && caps.toolCalling && { generateImage: generateImageTool })
+      ...(enableImageGeneration && caps.toolCalling && { generateImage: generateImageTool }),
+      // github-file 工具：仅当 caps.toolCalling=true 时注册（默认启用，无前端开关，与 recall-memory 一致）
+      // LLM 自主决定调用时机（实时拉取 GitHub 文件），使用规则已注入 system prompt
+      ...(caps.toolCalling && { githubFile: githubFileTool }),
+      // agent-task 工具：仅当 caps.toolCalling 且 sessionId 有效时注册（工厂实例按请求绑定 sessionId，
+      // 归属已在上方校验）。注入条件与 AGENT_TASK_TOOL_RULES 严格一致
+      ...(caps.toolCalling &&
+        hasValidSessionId && {
+          plan: createPlanTool(sessionId),
+          updateTaskStep: createUpdateTaskStepTool(sessionId)
+        })
     }
 
     // 重构 maxSteps 逻辑：基于「是否有工具实际注册」而非 caps.vision || caps.deepThinking

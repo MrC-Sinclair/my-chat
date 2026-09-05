@@ -53,7 +53,7 @@ import sessionByIdHandler from '~/server/api/sessions/[id]'
 function createEvent(method: string, params: Record<string, string> = {}, body: any = undefined) {
   return {
     node: { req: { method }, res: {} },
-    context: { params },
+    context: { params, authUser: { id: "test-user", isGuest: false, email: null } },
     _method: method,
     _path: '/',
     _params: params,
@@ -137,6 +137,11 @@ describe('会话 API', () => {
   })
 })
 
+function mockOwnedSession() {
+  // 归属校验查询命中本人会话（vi.clearAllMocks 不清实现，越权用例的 stale mock 会泄漏，需逐用例重设）
+  mockDb.select.mockReturnValue(createChainableQuery([{ id: 's1' }]))
+}
+
 describe('单个会话 API /api/sessions/:id', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -184,8 +189,19 @@ describe('单个会话 API /api/sessions/:id', () => {
     })
   })
 
+  it('非本人会话应抛出 404（归属校验，不泄露存在性）', async () => {
+      const query = createChainableQuery([], [])
+      mockDb.select.mockReturnValue(query)
+
+      const event = createEvent('GET', { id: 's1' })
+      await expect(sessionByIdHandler(event)).rejects.toMatchObject({
+        statusCode: 404
+      })
+    })
+
   describe('DELETE /api/sessions/:id - 删除会话', () => {
     it('应删除指定会话并返回 success: true', async () => {
+      mockOwnedSession()
       const query = createChainableQuery()
       mockDb.delete.mockReturnValue(query)
 
@@ -200,6 +216,7 @@ describe('单个会话 API /api/sessions/:id', () => {
 
   describe('PATCH /api/sessions/:id - 重命名会话', () => {
     it('有效标题应更新成功', async () => {
+      mockOwnedSession()
       const query = createChainableQuery()
       mockDb.update.mockReturnValue(query)
 
@@ -212,6 +229,7 @@ describe('单个会话 API /api/sessions/:id', () => {
     })
 
     it('空标题应抛出 400 错误', async () => {
+      mockOwnedSession()
       const event = createEvent('PATCH', { id: 's1' }, { title: '' })
       await expect(sessionByIdHandler(event)).rejects.toMatchObject({
         statusCode: 400
@@ -219,6 +237,7 @@ describe('单个会话 API /api/sessions/:id', () => {
     })
 
     it('非字符串标题应抛出 400 错误', async () => {
+      mockOwnedSession()
       const event = createEvent('PATCH', { id: 's1' }, { title: 123 })
       await expect(sessionByIdHandler(event)).rejects.toMatchObject({
         statusCode: 400
@@ -226,6 +245,7 @@ describe('单个会话 API /api/sessions/:id', () => {
     })
 
     it('仅含空格的标题应抛出 400 错误', async () => {
+      mockOwnedSession()
       const event = createEvent('PATCH', { id: 's1' }, { title: '   ' })
       await expect(sessionByIdHandler(event)).rejects.toMatchObject({
         statusCode: 400
@@ -242,7 +262,7 @@ describe('单个会话 API /api/sessions/:id', () => {
 })
 
 // 链式调用辅助函数：构建 mock 查询构建器
-function createChainableQuery(finalResult: any = undefined) {
+function createChainableQuery(finalResult: any = undefined, ownershipResult: any = [{ id: "s1", userId: "test-user" }]) {
   const result = {
     from: vi.fn().mockReturnThis(),
     leftJoin: vi.fn().mockReturnThis(),
@@ -251,6 +271,8 @@ function createChainableQuery(finalResult: any = undefined) {
     orderBy: vi.fn().mockReturnThis(),
     values: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
+    // 归属校验查询（.limit(1)）的返回值：默认命中本人会话，越权用例传入空数组
+    limit: vi.fn().mockResolvedValue(ownershipResult),
     returning: vi.fn().mockResolvedValue(finalResult || []),
     then: undefined as any
   }
