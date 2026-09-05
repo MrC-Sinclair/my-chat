@@ -18,24 +18,78 @@
  *   TypeScript 中的属性名可以和数据库列名不同（如 createdAt ↔ created_at）。
  */
 
-import { pgTable, text, timestamp, jsonb, vector, index } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  text,
+  timestamp,
+  jsonb,
+  vector,
+  index,
+  boolean,
+  uniqueIndex,
+  integer
+} from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+
+/**
+ * 用户表 — 承载认证身份与游客身份
+ *
+ * 设计要点（详见 openspec/changes/add-user-auth/design.md 决策 1、3）：
+ *   - 游客也是一行 users（is_guest=true，email/password_hash 为空），保证「不登录也能用」
+ *     且数据隔离逻辑对所有身份统一
+ *   - 游客注册 = 就地升级本行（写入 email/password_hash + is_guest=false），数据无感保留
+ *   - email 唯一约束只对正式用户有意义（游客行为 NULL，PostgreSQL 唯一索引不约束 NULL）
+ */
+export const users = pgTable(
+  'users',
+  {
+    /** 用户唯一标识，crypto.randomUUID() 生成 */
+    id: text('id').primaryKey(),
+    /** 邮箱（正式用户唯一标识；游客为 NULL） */
+    email: text('email'),
+    /** scrypt 密码哈希（格式 scrypt$N$r$p$salt$hash；游客为 NULL） */
+    passwordHash: text('password_hash'),
+    /** 是否游客（未注册的免登录身份） */
+    isGuest: boolean('is_guest').notNull().default(true),
+    /** 创建时间 */
+    createdAt: timestamp('created_at').notNull().defaultNow()
+  },
+  (table) => [
+    // 部分唯一索引：仅约束非空 email（游客行 email 为 NULL 不参与唯一性）
+    // where 子句必须用 sql 模板（drizzle-kit 序列化不支持原始字符串）
+    uniqueIndex('users_email_unique_idx')
+      .on(table.email)
+      .where(sql`email IS NOT NULL`)
+  ]
+)
 
 /**
  * 会话表 — 存储每个聊天会话的基本信息
  *
  * 每次用户点击"新建会话"时创建一条记录。
  * updatedAt 字段在每次新消息保存时更新，用于按最近活跃时间排序会话列表。
+ * userId 关联所属用户（含游客），数据隔离的单点外键（messages/feedbacks/memory_vectors
+ * 均经 session_id 级联归属，无需各自冗余 user_id）。
  */
-export const sessions = pgTable('sessions', {
-  /** 会话唯一标识，使用 crypto.randomUUID() 生成 */
-  id: text('id').primaryKey(),
-  /** 会话标题，如"新对话 2026/4/8 10:30:00" */
-  title: text('title'),
-  /** 创建时间，自动填充当前时间 */
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  /** 最后更新时间，每次保存消息时手动更新 */
-  updatedAt: timestamp('updated_at').notNull().defaultNow()
-})
+export const sessions = pgTable(
+  'sessions',
+  {
+    /** 会话唯一标识，使用 crypto.randomUUID() 生成 */
+    id: text('id').primaryKey(),
+    /** 会话标题，如"新对话 2026/4/8 10:30:00" */
+    title: text('title'),
+    /** 所属用户（含游客）；存量数据迁移后不为 NULL */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    /** 创建时间，自动填充当前时间 */
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    /** 最后更新时间，每次保存消息时手动更新 */
+    updatedAt: timestamp('updated_at').notNull().defaultNow()
+  },
+  (table) => [
+    // 会话列表按用户过滤 + 按 updatedAt 排序的高频查询路径
+    index('sessions_user_id_idx').on(table.userId)
+  ]
+)
 
 /**
  * 消息表 — 存储每条聊天消息
@@ -118,4 +172,86 @@ export const memoryVectors = pgTable(
     // Drizzle ORM 不支持 WITH 子句，如需调优需在 db/index.ts 启动时用原始 SQL 重建索引
     index('memory_embedding_idx').using('hnsw', table.embedding.op('vector_cosine_ops'))
   ]
+)
+
+/**
+ * Agent 任务表 — LLM 显式规划的长程任务（openspec/changes/add-agent-task-system）
+ *
+ * 任务状态独立于 messages 表（不混入对话历史）。归属 = session 归属（用户已在
+ * chat.post.ts 校验），不冗余 user_id。status 语义：
+ *   - in_progress：进行中（检查点恢复的注入对象）
+ *   - completed / failed：终态
+ */
+export const agentTasks = pgTable(
+  'agent_tasks',
+  {
+    id: text('id').primaryKey(),
+    /** 所属会话，级联删除 */
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    /** 任务标题（LLM 规划产出） */
+    title: text('title').notNull(),
+    /** 任务状态：in_progress | completed | failed */
+    status: text('status').notNull().default('in_progress'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow()
+  },
+  (table) => [
+    // 检查点注入高频查询：按会话取进行中任务
+    index('agent_tasks_session_status_idx').on(table.sessionId, table.status)
+  ]
+)
+
+/**
+ * Agent 任务步骤表 — 任务的执行步骤（检查点的最小粒度）
+ *
+ * status 状态机：pending → in_progress → completed | failed（failed → in_progress 允许重试），
+ * 非法迁移由工具层返回 error 交 LLM 纠正。
+ * result 存结果摘要；超长完整内容落 artifacts 表（大对象按引用传递）。
+ */
+export const agentTaskSteps = pgTable(
+  'agent_task_steps',
+  {
+    id: text('id').primaryKey(),
+    /** 所属任务，级联删除 */
+    taskId: text('task_id')
+      .notNull()
+      .references(() => agentTasks.id, { onDelete: 'cascade' }),
+    /** 步骤顺序（从 1 开始，LLM 规划产出） */
+    idx: integer('idx').notNull(),
+    /** 步骤内容描述 */
+    content: text('content').notNull(),
+    /** 步骤状态：pending | in_progress | completed | failed */
+    status: text('status').notNull().default('pending'),
+    /** 执行结果摘要（超 200 字符截断，完整内容见 artifacts） */
+    result: text('result'),
+    updatedAt: timestamp('updated_at').notNull().defaultNow()
+  },
+  (table) => [index('agent_task_steps_task_id_idx').on(table.taskId)]
+)
+
+/**
+ * 工件表 — 步骤执行产出的超长内容（工件持久化）
+ *
+ * 大对象按引用传递：步骤 result 只存摘要 + artifactId，完整内容单独存储，
+ * 避免 LLM 上下文与对话历史被大文本撑爆。
+ */
+export const artifacts = pgTable(
+  'artifacts',
+  {
+    id: text('id').primaryKey(),
+    /** 所属任务，级联删除 */
+    taskId: text('task_id')
+      .notNull()
+      .references(() => agentTasks.id, { onDelete: 'cascade' }),
+    /** 产出该工件的步骤 */
+    stepId: text('step_id')
+      .notNull()
+      .references(() => agentTaskSteps.id, { onDelete: 'cascade' }),
+    /** 完整内容 */
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow()
+  },
+  (table) => [index('artifacts_task_id_idx').on(table.taskId)]
 )
