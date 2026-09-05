@@ -1,4 +1,5 @@
 node_modules
+node_modules.bak/
 .nuxt
 .output
 *.log
@@ -14,6 +15,7 @@ auto-imports.d.ts
 # 项目 e2e 测试代码在 tests/e2e/，不在 tests-e2e/
 screenshots/
 test-screenshots/
+gui-test-screenshots/
 tests-e2e/
 
 # 测试辅助脚本与人工测试产物（一次性使用，不进仓库）

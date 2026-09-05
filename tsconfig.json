@@ -1,1 +1,7 @@
-{ "extends": "./.nuxt/tsconfig.json", "compilerOptions": { "strict": true, "noEmit": true } }
+{
+  "extends": "./.nuxt/tsconfig.json",
+  "compilerOptions": { "strict": true, "noEmit": true },
+  // 排除本地 node_modules 备份目录：默认排除规则只匹配 node_modules，
+  // 不排除会把备份里的包源码纳入类型检查（海量无关报错 + vue-tsc 内存溢出）
+  "exclude": ["node_modules", "node_modules.bak", "dist", ".output"]
+}

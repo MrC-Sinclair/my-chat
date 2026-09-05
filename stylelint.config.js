@@ -7,6 +7,8 @@ export default {
     'stylelint-config-tailwindcss',
     'stylelint-config-recess-order'
   ],
+  // 本地 node_modules 备份目录不参与扫描（备份里的 .vue/.css 会产生大量噪音错误）
+  ignoreFiles: ['node_modules.bak/**'],
   rules: {
     // ── 与项目现状对齐的放宽规则 ───────────────────────────
     // 项目中大量使用 Tailwind 的 @apply 和 @tailwind 指令

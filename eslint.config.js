@@ -9,6 +9,8 @@ export default [
       '.nuxt/**',
       '.output/**',
       'node_modules/**',
+      // 本地 node_modules 备份目录：pnpm 软链结构会被 ESLint 误当文件读取（EISDIR）
+      'node_modules.bak/**',
       'dist/**',
       '.docs/**',
       'playwright-report/**',
