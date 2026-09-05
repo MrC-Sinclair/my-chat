@@ -2,11 +2,14 @@
 const visible = ref(false)
 const title = ref('')
 const message = ref('')
+const confirmText = ref('确认删除')
 let _resolve: (value: boolean) => void = () => {}
 
-function open(opts: { title?: string; message: string }): Promise<boolean> {
+function open(opts: { title?: string; message: string; confirmText?: string }): Promise<boolean> {
   title.value = opts.title || '确认'
   message.value = opts.message
+  // 确认按钮文案按场景定制（默认「确认删除」供删除类操作使用，退出等场景需显式传入）
+  confirmText.value = opts.confirmText || '确认删除'
   visible.value = true
   return new Promise((resolve) => {
     _resolve = resolve
@@ -53,7 +56,7 @@ provide('confirmDialog', { open })
                 class="px-4 py-2 text-sm font-medium text-white bg-semi-danger rounded-lg hover:bg-semi-danger active:scale-95 transition-all"
                 @click="confirm"
               >
-                确认删除
+                {{ confirmText }}
               </button>
             </div>
           </div>
