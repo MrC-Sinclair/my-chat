@@ -8,7 +8,9 @@
 | -------- | ------------------- | ------------------------------ | ---- |
 | `POST`   | `/api/chat`         | AI 对话（流式 SSE）            | 无   |
 | `POST`   | `/api/generate-image` | 文生图（Workflow 路径）        | 无   |
+| `POST`   | `/api/messages`     | 消息保存（Workflow 独立落库）  | 无   |
 | `POST`   | `/api/audio/transcribe` | 语音消息 ASR 转写（Workflow 路径） | 无   |
+| `POST`   | `/api/audio/tts`    | TTS 语音合成（朗读按钮触发）   | 无   |
 | `GET`    | `/api/audio/:id`    | 获取音频文件（TTL 7 天过期）   | 无   |
 | `GET`    | `/api/sessions`     | 获取会话列表                   | 无   |
 | `POST`   | `/api/sessions`     | 创建新会话                     | 无   |
@@ -16,7 +18,15 @@
 | `PATCH`  | `/api/sessions/:id` | 重命名会话                     | 无   |
 | `DELETE` | `/api/sessions/:id` | 删除会话（级联删除消息和反馈） | 无   |
 | `POST`   | `/api/sessions/:id/archive-memory` | 触发会话归档（长期记忆入库）   | 无   |
+| `POST`   | `/api/auth/register` | 注册（游客态就地升级）       | Cookie |
+| `POST`   | `/api/auth/login`    | 登录                         | 无   |
+| `POST`   | `/api/auth/logout`   | 退出登录                     | Cookie |
+| `GET`    | `/api/auth/me`       | 当前身份                     | Cookie |
 | `GET`    | `/api/models`       | 获取可用模型列表               | 无   |
+
+> **身份模型**（openspec/changes/add-user-auth）：未登录访问自动创建游客（HttpOnly 签名 Cookie 绑定），
+> 数据按游客隔离；游客注册 = 就地升级当前游客行（数据无感保留）。数据 API 均做归属校验，
+> 非本人资源一律 404。详见「接口详情 > 认证」。
 
 ## 通用约定
 
@@ -357,6 +367,44 @@ curl -X POST http://localhost:3000/api/audio/transcribe \
 
 ---
 
+### POST /api/audio/tts
+
+TTS 语音合成（AI 消息「朗读」按钮触发）。Workflow 路径：用户显式点击才合成，非 LLM 决策。
+
+**请求体**（`application/json`）
+
+| 字段   | 类型     | 必填 | 说明                                   |
+| ------ | -------- | ---- | -------------------------------------- |
+| `text` | `string` | 是   | 待合成文本，非空且 ≤ 1000 字           |
+
+**响应**
+
+成功：`HTTP 200` + 音频二进制流（前端 Blob + `URL.createObjectURL` 播放，不落库不落盘）
+
+| 响应头           | 值            |
+| ---------------- | ------------- |
+| `Content-Type`   | `audio/mpeg`  |
+| `Content-Length` | 音频字节数    |
+
+**错误码**
+
+| 状态码 | 触发条件                                     |
+| ------ | -------------------------------------------- |
+| `400`  | `text` 缺失/为空/超过 1000 字                |
+| `500`  | 未配置 `OPENAI_API_KEY` 或上游合成失败       |
+| `504`  | 上游合成超时（30 秒）                        |
+| `429`  | 触发限流                                     |
+
+**实现说明**
+
+- 模型固定 `FunAudioLLM/CosyVoice2-0.5B`，音色固定 `anna`（服务端常量，不接受客户端指定）
+- 复用 `OPENAI_API_KEY`（硅基流动），无新增环境变量
+- 前端按消息缓存合成结果（同文本免重复合成），切换播放时自动停止上一条
+
+**实现**：[server/api/audio/tts.post.ts](../server/api/audio/tts.post.ts)
+
+---
+
 ### GET /api/sessions
 
 获取所有会话列表，按 `updatedAt` 降序排列，附带每个会话的消息数量。
@@ -610,6 +658,40 @@ interface ModelConfig {
 
 ---
 
+## 认证
+
+### 身份机制
+
+- 全局中间件解析 `mychat_session` Cookie（HMAC 签名 `<userId>.<expiresAt>.<sig>`，HttpOnly、SameSite=Lax、30 天）
+- 无有效 Cookie 时自动创建游客用户并下发 Cookie——**不登录也能完整使用**
+- 数据 API（sessions/messages/audio/chat/archive-memory）统一归属校验，非本人资源返回 404（不泄露存在性）
+- 密码哈希：node:crypto scrypt；登录失败统一 401「邮箱或密码错误」（防账号枚举）
+
+### POST /api/auth/register
+
+| 字段       | 类型     | 必填 | 说明           |
+| ---------- | -------- | ---- | -------------- |
+| `email`    | `string` | 是   | 合法邮箱       |
+| `password` | `string` | 是   | 至少 8 位      |
+
+- 游客态注册：就地升级当前游客行（会话/消息/记忆全部保留）
+- 已登录正式用户：409；邮箱已注册：409；参数不合法：400
+- 成功：200 + `{ id, email, isGuest: false }`（无需重发 Cookie）
+
+### POST /api/auth/login
+
+请求体同上（密码无最小长度限制）。成功 200 + `{ id, email, isGuest: false }` 并重发 Cookie；失败 401。登录不会合并此前游客数据（游客数据留在游客行）。
+
+### POST /api/auth/logout
+
+清除 Cookie，返回 `{ ok: true }`。后续请求将自动创建新游客身份。
+
+### GET /api/auth/me
+
+返回 `{ user: { id, email, isGuest } | null }`；`user` 为 null 仅在 DB 异常时出现，前端按游客占位。
+
+---
+
 ## AI 工具
 
 `/api/chat` 在调用 LLM 时会根据模型能力和请求参数注册以下工具。工具调用通过 `tool-*` 事件推送到前端，由 `ToolInvocation.vue` 组件展示。
@@ -839,6 +921,66 @@ interface ModelConfig {
 
 ---
 
+### githubFile（GitHub 文件读取 Agent 工具）
+
+实时读取 GitHub 仓库指定文件内容（`GET /repos/{owner}/{repo}/contents/{path}`，raw 媒体类型），LLM 自主决策调用。
+
+**何时调用**
+
+- 用户给出 GitHub 链接或明确说明仓库与文件路径，要求查看/分析/引用文件内容
+- 需要基于仓库最新代码回答问题（仓库更新立即生效，无缓存）
+
+**何时不调用**
+
+- 无法确定 `owner`/`repo`/`path`（先向用户确认）
+- 需要浏览目录结构或搜索文件（仅支持精确文件路径）
+- 非 GitHub 托管的代码链接（GitLab、Gitee 等）
+
+**入参**（zod 校验）
+
+| 字段     | 类型     | 必填 | 说明                                    |
+| -------- | -------- | ---- | --------------------------------------- |
+| `owner`  | `string` | 是   | 仓库所有者                              |
+| `repo`   | `string` | 是   | 仓库名                                  |
+| `path`   | `string` | 是   | 仓库内文件路径（不含仓库根前缀/分支名） |
+| `branch` | `string` | 否   | 分支/tag/commit SHA，默认仓库默认分支   |
+
+**返回**
+
+- 成功：`{ repo, path, branch, size, content, truncated, rawUrl, notice? }`
+- `content` 超过 50000 字符时截断（`truncated: true` + `notice` 提示完整内容见 `rawUrl`），大对象不进 LLM 上下文
+- 失败：`{ error, detail }`，不抛异常（404 路径错误 / 403 限流或私有仓库 / 二进制文件拒绝 / 网络异常）
+
+**注册条件**：`caps.toolCalling`（默认启用，无前端开关，与 recall-memory 一致）
+
+**实现**：[server/tools/github-file.ts](../server/tools/github-file.ts)
+
+---
+
+### plan（Agent 任务规划工具）
+
+创建结构化执行计划（plan→execute→reflect 的 plan 阶段），LLM 自主决策调用。
+
+**何时调用**：用户请求是明确的多步骤任务（按顺序执行多项操作、调研对比多对象、产出多份结果）。**何时不调用**：简单问答、单步任务、闲聊；用户只是要「文字版计划」还没让执行。
+
+**入参**：`title`（≤200 字）+ `steps`（1..20 条有序步骤）。
+
+**返回**：`{ taskId, title, status: 'in_progress', steps[], notice }`；失败 `{ error, detail }`。
+
+### updateTaskStep（Agent 任务步骤推进工具）
+
+推进步骤状态并记录结果（execute/reflect 阶段）。状态机：`pending → in_progress → completed | failed`（`failed → in_progress` 允许重试），非法迁移返回 `{ error, detail }` 交 LLM 纠正。
+
+**工件持久化**：`result` 超过 2000 字符时完整内容写入 `artifacts` 表，步骤仅存 200 字符摘要 + `artifactId` 引用（大对象按引用传递）。全部步骤终态后任务自动收敛为 `completed` / `failed`。
+
+**注册条件**：`caps.toolCalling` 且会话 ID 有效（工具工厂按请求绑定已校验归属的 sessionId）。
+
+**检查点恢复**：会话继续时，进行中任务的状态会被注入 system prompt，LLM 基于结构化状态自主续作。
+
+**实现**：[server/tools/agent-task.ts](../server/tools/agent-task.ts)
+
+---
+
 ## 环境变量
 
 | 变量名            | 必填 | 说明                                                 |
@@ -851,6 +993,8 @@ interface ModelConfig {
 | `SYSTEM_PROMPT`   | 否   | 自定义系统提示词                                     |
 | `IMGBB_API_KEY`   | 否   | ImgBB 图床 API Key，启用图片对话必填                 |
 | `TAVILY_API_KEY`  | 否   | Tavily 搜索 API Key，启用网页搜索必填                |
+| `GITHUB_TOKEN`    | 否   | GitHub 文件读取工具：不配置可读公开仓库（60 次/小时），配置后 5000 次/小时并支持私有仓库 |
+| `AUTH_SECRET`     | 生产是 | 会话 Cookie 的 HMAC 签名密钥；更换后所有已签发会话立即失效        |
 | `DATABASE_URL`    | 是   | PostgreSQL 连接串，开发端口 5434                     |
 
 ---
@@ -901,4 +1045,8 @@ location / {
 | [server/tools/recall-memory.ts](../server/tools/recall-memory.ts)           | recall-memory 检索工具（Agentic RAG）            |
 | [server/tools/generate-image.ts](../server/tools/generate-image.ts)         | 文生图 Agent 工具                                |
 | [server/api/generate-image.post.ts](../server/api/generate-image.post.ts)   | Workflow 路径文生图独立路由                      |
+| [server/api/audio/transcribe.post.ts](../server/api/audio/transcribe.post.ts) | 语音消息 ASR 转写（Workflow）                  |
+| [server/api/audio/tts.post.ts](../server/api/audio/tts.post.ts)             | TTS 语音合成（朗读按钮触发）                     |
+| [server/api/audio/[id].get.ts](../server/api/audio/[id].get.ts)             | 语音音频文件获取（TTL 7 天）                     |
+| [server/tools/github-file.ts](../server/tools/github-file.ts)               | GitHub 文件读取 Agent 工具                       |
 | [docs/db-schema.md](./db-schema.md)                                   | 数据库表结构文档                                 |

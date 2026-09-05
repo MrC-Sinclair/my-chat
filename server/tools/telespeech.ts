@@ -115,7 +115,9 @@ async function probeTeleSpeechEndpoint(): Promise<boolean> {
       headers: {
         Authorization: `Bearer ${apiKey}`
       },
-      body: formData
+      body: formData,
+      // 探测样本仅 1 秒静音，10 秒足够；防上游挂起阻塞首次转写请求
+      signal: AbortSignal.timeout(10_000)
     })
 
     // HTTP 200 表示端点可用；404/400 表示模型不存在，其他错误也视为不可用
@@ -252,7 +254,9 @@ export async function transcribeWithTeleSpeech(
       headers: {
         Authorization: `Bearer ${apiKey}`
       },
-      body: formData
+      body: formData,
+      // 上游超时兜底（与 sensevoice.ts 一致）：防上游挂起导致转写请求无限等待
+      signal: AbortSignal.timeout(60_000)
     })
 
     if (!response.ok) {

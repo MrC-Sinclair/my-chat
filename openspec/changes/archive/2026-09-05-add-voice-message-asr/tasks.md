@@ -75,6 +75,20 @@
 - [x] 8.1 运行 `pnpm lint` 全项目无 lint 错误
 - [x] 8.2 运行 `pnpm typecheck` 类型检查通过
 - [x] 8.3 运行 `pnpm test:unit` 单元测试通过（新增 ASR 工具封装测试 + 现有测试无回归）
-- [ ] 8.4 `pnpm dev` 启动后浏览器实测：录音按钮触摸目标 ≥ 44px、录音脉冲动画、60 秒自动停止、并发守卫防重复点击、转写成功生成语音气泡、情感标签展示、转文字折叠展开、音频回放、TTL 过期降级（手动删除音频文件验证 404 降级）
-- [ ] 8.5 移动端实测（Android WebView 或 Chrome DevTools 移动端模拟）：录音按钮可达、麦克风权限拒绝 toast、语音气泡不溢出
+- [x] 8.4 `pnpm dev` 启动后浏览器实测：录音按钮触摸目标 ≥ 44px、录音脉冲动画、60 秒自动停止、并发守卫防重复点击、转写成功生成语音气泡、情感标签展示、转文字折叠展开、音频回放、TTL 过期降级（手动删除音频文件验证 404 降级）
+- [x] 8.5 移动端实测（Android WebView 或 Chrome DevTools 移动端模拟）：录音按钮可达、麦克风权限拒绝 toast、语音气泡不溢出
 - [ ] 8.6 方言场景实测（如有方言音频样本）：验证 SenseVoiceSmall 检测方言语种标签触发 TeleSpeechASR 补强
+## 9. 实测记录（2026-09-05 收尾）
+
+> 实测方式：Playwright headless Chromium + --use-file-for-fake-audio-capture（CosyVoice2 TTS 生成的真人语音 WAV 作为 fake 麦克风输入），脚本见 scripts/voice-e2e.ts（gitignore，一次性）。
+
+- [x] 8.4 各项逐条验证通过：入口按钮桌面 40×40（sm: 规格）/ 手机 44×44；录音计时器 + animate-ping 脉冲（截图）；60 秒自动停止 + toast「录音已超过 60 秒，已自动停止」；转写成功（SenseVoiceSmall 真实转出「今天天气真不错，我们一起出去散步吧，顺便买点好吃。😊」）→ 自动提交 → 语音气泡渲染；转文字折叠/展开；音频回放（playing 态）；TTL 404 降级三件套（「音频已过期」提示 + 播放控件隐藏 + 转文字自动展开 + 情感标签保留）；消息持久化落库（metadata.audio 含 url/emotion/duration）。并发守卫为代码级验证（isStartingRecording 标志位，getUserMedia 竞态窗口难以稳定复现）
+- [x] 8.5 移动端（iPhone 13 视口模拟）逐条验证通过：入口按钮 44×44 ≥ 44px；语音气泡 x=55/w=249 在 390 视口内不溢出；麦克风权限拒绝双分支 toast 实测（NotAllowedError →「麦克风权限被拒绝…」；真实 headless 无设备抛 NotFoundError →「未检测到麦克风设备」）
+- [ ] 8.6 方言场景实测：**未完成** — 粤语测试样本已备（scripts/tts-cantonese.wav，CosyVoice2 生成），但实测期间硅基流动 SenseVoiceSmall 上游持续超时/500（转写请求挂起 >60s），待上游恢复后复测（pnpm tsx scripts/voice-e2e.ts E）
+
+### 实测期间发现并修复的产品级 Bug
+
+1. **server/middleware/security.ts Permissions-Policy 禁用麦克风**：microphone=() 导致任何浏览器中录音都无法启动（Permissions policy violation）→ 改为 microphone=(self)
+2. **首条消息不创建会话导致整段对话静默丢失**：currentSessionId 为空时 body.sessionId 为 undefined，服务端 onFinish 因无 sessionId 跳过持久化，刷新即丢 → wrappedHandleSubmit 发送前确保会话存在（含 pendingVoiceMessage 快照恢复，避免被 watch(currentSessionId) 清空）
+3. **ASR 上游无超时**：sensevoice.ts / telespeech.ts 的 fetch 无 AbortSignal，上游挂起时转写请求无限等待 → 增加 60s（转写）/ 10s（探测）超时兜底
+4. **CSP 拦截 blob 音频**：TTS 朗读的 blob: 音频被 default-src 'self' 拦截（「音频播放失败」）→ CSP 增加 media-src 'self' blob:

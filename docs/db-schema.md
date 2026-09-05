@@ -5,12 +5,15 @@
 ## ER 关系图
 
 ```
-sessions (1) ──── (N) messages (1) ──── (N) feedbacks
-   │                     │
-   └────── (N) ──────────┴── memory_vectors (1:1 关联 messages，冗余存储 content 快照)
+users (1) ──── (N) sessions (1) ──── (N) messages (1) ──── (N) feedbacks
+                        │                    │
+                        │                    └── memory_vectors (1:1 关联 messages，冗余存储 content 快照)
+                        ├── (N) agent_tasks (1) ──── (N) agent_task_steps (1) ──── (N) artifacts
+                        └──
 ```
 
 所有外键均设置 `onDelete: 'cascade'`，删除父记录时子记录级联删除。
+用户隔离的单点外键：`sessions.user_id`（messages/feedbacks/memory_vectors/agent_* 均经 session 归属）。
 
 ---
 
@@ -131,6 +134,62 @@ sessions (1) ──── (N) messages (1) ──── (N) feedbacks
 | `memory_embedding_idx` | HNSW | `embedding vector_cosine_ops` | pgvector 默认 `m=16, ef_construction=64`        |
 
 > Drizzle ORM 的 `index().using('hnsw', ...)` API 不支持 `WITH` 子句，使用 pgvector 默认参数。如需调优，可在 `server/db/index.ts` 启动时用原始 SQL `DROP INDEX` + `CREATE INDEX ... WITH (...)` 重建索引。
+
+---
+
+### users（用户表）
+
+承载认证身份与游客身份（openspec/changes/add-user-auth）。游客也是一行 users（`is_guest=true`），保证「不登录也能用」且数据隔离逻辑对所有身份统一。
+
+| 列名            | 类型        | 约束                                   | 说明                                       |
+| --------------- | ----------- | -------------------------------------- | ------------------------------------------ |
+| `id`            | `text`      | PK                                     | UUID                                       |
+| `email`         | `text`      | 可空；部分唯一索引（仅非空值参与唯一） | 邮箱（正式用户）；游客为 NULL              |
+| `password_hash` | `text`      | 可空                                   | scrypt 哈希（`scrypt$N$r$p$salt$hash`）    |
+| `is_guest`      | `boolean`   | NOT NULL, DEFAULT TRUE                 | 是否游客                                   |
+| `created_at`    | `timestamp` | NOT NULL, DEFAULT NOW()                | 创建时间                                   |
+
+`sessions.user_id` → users.id（CASCADE）。存量数据由 `scripts/migrate-legacy-sessions.sql` 归入 legacy 游客用户。
+
+### agent_tasks / agent_task_steps / artifacts（Agent 任务系统）
+
+LLM 显式规划的长程任务（openspec/changes/add-agent-task-system）。任务状态独立于 messages，经 session 级联归属。
+
+**agent_tasks**
+
+| 列名         | 类型        | 约束                | 说明                                          |
+| ------------ | ----------- | ------------------- | --------------------------------------------- |
+| `id`         | `text`      | PK                  | UUID                                          |
+| `session_id` | `text`      | NOT NULL, FK→CASCADE| 所属会话                                      |
+| `title`      | `text`      | NOT NULL            | 任务标题（LLM 规划产出）                      |
+| `status`     | `text`      | NOT NULL            | `in_progress` \| `completed` \| `failed`      |
+| `created_at` / `updated_at` | `timestamp` | NOT NULL | 时间戳                                       |
+
+**agent_task_steps**
+
+| 列名         | 类型        | 约束                 | 说明                                                        |
+| ------------ | ----------- | -------------------- | ----------------------------------------------------------- |
+| `id`         | `text`      | PK                   | UUID                                                        |
+| `task_id`    | `text`      | NOT NULL, FK→CASCADE | 所属任务                                                    |
+| `idx`        | `integer`   | NOT NULL             | 步骤顺序（从 1 开始）                                       |
+| `content`    | `text`      | NOT NULL             | 步骤描述                                                    |
+| `status`     | `text`      | NOT NULL             | `pending` \| `in_progress` \| `completed` \| `failed`       |
+| `result`     | `text`      | 可空                 | 结果摘要（超 200 字符截断，完整内容见 artifacts）           |
+| `updated_at` | `timestamp` | NOT NULL             | 更新时间                                                    |
+
+状态机：`pending → in_progress → completed | failed`（`failed → in_progress` 允许重试）。
+
+**artifacts**
+
+| 列名         | 类型        | 约束                 | 说明                 |
+| ------------ | ----------- | -------------------- | -------------------- |
+| `id`         | `text`      | PK                   | UUID                 |
+| `task_id`    | `text`      | NOT NULL, FK→CASCADE | 所属任务             |
+| `step_id`    | `text`      | NOT NULL, FK→CASCADE | 产出该工件的步骤     |
+| `content`    | `text`      | NOT NULL             | 完整内容             |
+| `created_at` | `timestamp` | NOT NULL, DEFAULT NOW() | 创建时间          |
+
+**索引**：`sessions_user_id_idx (user_id)`、`agent_tasks_session_status_idx (session_id, status)`、`agent_task_steps_task_id_idx (task_id)`、`artifacts_task_id_idx (task_id)`。
 
 ---
 

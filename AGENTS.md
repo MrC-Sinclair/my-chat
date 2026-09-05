@@ -99,17 +99,17 @@ pnpm db:studio        # Drizzle Studio 可视化数据库
 
 ```
 pages/              → ai-chat.vue, index.vue
-components/chat/    → ChatInput, MarkdownRenderer, CodeBlock, MermaidBlock, SessionSidebar, ThinkingProcess, ToolInvocation, QuickPromptIcon
-components/         → ToastProvider, ConfirmDialogProvider
-composables/        → useChatConfig, useChatSession, useToast, useConfirmDialog, useTooltip
+components/chat/    → ChatInput, MarkdownRenderer, CodeBlock, MermaidBlock, SessionSidebar, ThinkingProcess, ToolInvocation, QuickPromptIcon, VoiceMessageBubble
+components/         → ToastProvider, ConfirmDialogProvider, AuthDialog
+composables/        → useChatConfig, useChatSession, useToast, useConfirmDialog, useTooltip, useAuth
 utils/              → markdown.ts, katex.ts, highlight.ts, mermaid.ts, image-sizes.ts
-server/api/         → chat.post.ts, sessions.ts, sessions/[id]/index.ts, sessions/[id]/archive-memory.post.ts, messages.post.ts, generate-image.post.ts, models.ts
-server/tools/       → web-search.ts, ocr-document.ts, generate-image.ts, recall-memory.ts（chat.post.ts 中注册）+ weather.ts（getCityByIp 等函数，供 server/mcp/weather-server.ts 复用）
+server/api/         → chat.post.ts, sessions.ts, sessions/[id]/index.ts, sessions/[id]/archive-memory.post.ts, messages.post.ts, generate-image.post.ts, audio/transcribe.post.ts, audio/tts.post.ts, audio/[id].get.ts, auth/register.post.ts, auth/login.post.ts, auth/logout.post.ts, auth/me.get.ts, models.ts
+server/tools/       → web-search.ts, ocr-document.ts, generate-image.ts, recall-memory.ts, github-file.ts, agent-task.ts（chat.post.ts 中注册）；sensevoice.ts / telespeech.ts（ASR 转写，供 audio/transcribe 路由使用）；weather.ts（getCityByIp 等函数，供 server/mcp/weather-server.ts 复用）
 server/mcp/         → weather-server.ts（MCP stdio 传输，天气工具经 MCP 提供）
-server/utils/       → imgbb.ts, reasoning-provider.ts, embedding.ts, reranker.ts, image-generation.ts, memory-archive.ts
+server/utils/       → imgbb.ts, reasoning-provider.ts, embedding.ts, reranker.ts, image-generation.ts, memory-archive.ts, auth.ts
 server/db/          → schema.ts, index.ts
 server/config/      → models.ts
-server/middleware/   → security.ts
+server/middleware/   → security.ts, auth.ts
 ```
 
 **数据流**：前端 `Chat`（@ai-sdk/vue）→ `POST /api/chat` → `streamText()` → `onFinish` 持久化（图片多一步 `uploadToImgBb()`；推理通过 `reasoning-provider` 标记 → `chat.post` 转 reasoning 事件 → 前端 `ThinkingProcess` 展示）

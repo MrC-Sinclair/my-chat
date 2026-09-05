@@ -291,7 +291,9 @@ export async function transcribeWithSenseVoice(
       headers: {
         Authorization: `Bearer ${apiKey}`
       },
-      body: formData
+      body: formData,
+      // 上游超时兜底：ASR 正常 2-10 秒完成，60 秒防上游挂起导致转写请求无限等待
+      signal: AbortSignal.timeout(60_000)
     })
 
     if (!response.ok) {
