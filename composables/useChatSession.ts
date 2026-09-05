@@ -20,6 +20,26 @@ export interface MessageRecord {
   createdAt: string
 }
 
+/**
+ * 过滤会话历史中的空消息（供 switchSession 加载历史时调用）
+ *
+ * 背景：早期版本在 LLM 全程工具调用（无文本输出）时也会把空 assistant 回复落库，
+ * 重开会话会渲染为空气泡。此类消息一律不展示。
+ * 例外：带 audio / images 元数据的消息不算空 —— 语音气泡的音频、图片气泡的图
+ * 都挂在 metadata 上，content 为空是正常形态。
+ *
+ * 独立导出以便单测直接覆盖真实实现（而非测试内复制的模拟逻辑）。
+ */
+export function filterVisibleMessages(messages: MessageRecord[]): MessageRecord[] {
+  return messages.filter((msg) => {
+    if (msg.content && msg.content.trim()) return true
+    const meta = msg.metadata as Record<string, unknown> | undefined
+    return Boolean(
+      meta?.audio || (Array.isArray(meta?.images) && (meta.images as unknown[]).length > 0)
+    )
+  })
+}
+
 export function useChatSession(setMessages: (msgs: UIMessage[]) => void) {
   const sessionsList = ref<SessionItem[]>([])
   const currentSessionId = ref<string>('')
@@ -103,9 +123,10 @@ export function useChatSession(setMessages: (msgs: UIMessage[]) => void) {
     currentSessionId.value = sessionId
     try {
       const historyMessages = await $fetch<MessageRecord[]>(`/api/sessions/${sessionId}`)
-      if (historyMessages.length > 0) {
+      const visibleMessages = filterVisibleMessages(historyMessages)
+      if (visibleMessages.length > 0) {
         setMessages(
-          historyMessages.map((msg) => ({
+          visibleMessages.map((msg) => ({
             id: msg.id,
             role: msg.role as 'user' | 'assistant',
             parts: [{ type: 'text' as const, text: msg.content }],

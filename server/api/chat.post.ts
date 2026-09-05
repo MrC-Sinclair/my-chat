@@ -1048,13 +1048,19 @@ async function saveMessagesToDb(
       createdAt: new Date()
     })
   }
-  await db.insert(messagesTable).values({
-    id: crypto.randomUUID(),
-    sessionId,
-    role: 'assistant',
-    content: assistantText,
-    metadata: { model: modelName },
-    createdAt: new Date()
-  })
+  // assistant 空回复不落库：LLM 全程工具调用（如 agent-task 多步循环耗尽 stepCountIs 上限）
+  // 或思考被打断时 text 为空，空消息重开后会渲染为空气泡，且污染归档输入与消息计数。
+  // 工具产出已存 agent_tasks/artifacts 表，下次请求经检查点注入续作，跳过不丢信息；
+  // user 消息无论如何都要保留（用户提问本身有价值，且归档/检查点依赖会话连续性）
+  if (assistantText.trim()) {
+    await db.insert(messagesTable).values({
+      id: crypto.randomUUID(),
+      sessionId,
+      role: 'assistant',
+      content: assistantText,
+      metadata: { model: modelName },
+      createdAt: new Date()
+    })
+  }
   await db.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))
 }

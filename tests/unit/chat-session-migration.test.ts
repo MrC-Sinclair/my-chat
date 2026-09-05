@@ -5,15 +5,10 @@
  * 测试 switchSession 将 DB 记录映射为 UIMessage 格式（parts 结构）的逻辑
  */
 import { describe, it, expect } from 'vitest'
+import { filterVisibleMessages } from '~/composables/useChatSession'
 
-/** DB 中的消息记录格式 */
-interface MessageRecord {
-  id: string
-  sessionId: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  createdAt: string
-}
+/** DB 中的消息记录格式：直接复用 useChatSession 的真实类型（含 metadata，与实现同步） */
+type MessageRecord = import('~/composables/useChatSession').MessageRecord
 
 /** UIMessage 格式（v5 parts 结构） */
 interface UIMessage {
@@ -167,5 +162,70 @@ describe('会话切换消息映射', () => {
     // parts 必须存在且格式正确
     expect(result[0].parts).toBeDefined()
     expect(Array.isArray(result[0].parts)).toBe(true)
+  })
+})
+
+describe('空消息过滤（filterVisibleMessages，真实实现）', () => {
+  const base = { sessionId: 's-1', createdAt: '2026-09-06T00:00:00Z' }
+
+  it('空 content 的 assistant 消息被过滤（LLM 全程工具调用无文本输出的历史脏数据）', () => {
+    const msgs: MessageRecord[] = [
+      { ...base, id: 'm1', role: 'user', content: '请创建一个两步计划' },
+      { ...base, id: 'm2', role: 'assistant', content: '' }
+    ]
+    const result = filterVisibleMessages(msgs)
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe('m1')
+  })
+
+  it('纯空白字符的 content 视为空并过滤', () => {
+    const msgs: MessageRecord[] = [
+      { ...base, id: 'm1', role: 'assistant', content: '   \n\t  ' }
+    ]
+    expect(filterVisibleMessages(msgs)).toHaveLength(0)
+  })
+
+  it('带 audio 元数据的空 content 消息保留（语音气泡内容挂在 metadata）', () => {
+    const msgs: MessageRecord[] = [
+      {
+        ...base,
+        id: 'm1',
+        role: 'user',
+        content: '',
+        metadata: { audio: { url: '/api/audio/xxx.webm', emotion: null, duration: 2.5 } }
+      }
+    ]
+    expect(filterVisibleMessages(msgs)).toHaveLength(1)
+  })
+
+  it('带非空 images 元数据的空 content 消息保留', () => {
+    const msgs: MessageRecord[] = [
+      {
+        ...base,
+        id: 'm1',
+        role: 'user',
+        content: '',
+        metadata: { images: [{ index: 0, url: 'https://example.com/a.png' }] }
+      }
+    ]
+    expect(filterVisibleMessages(msgs)).toHaveLength(1)
+  })
+
+  it('空 images 数组不豁免：仍按空消息过滤', () => {
+    const msgs: MessageRecord[] = [
+      { ...base, id: 'm1', role: 'assistant', content: '', metadata: { images: [] } }
+    ]
+    expect(filterVisibleMessages(msgs)).toHaveLength(0)
+  })
+
+  it('混合列表：正常消息保留、空消息剔除、顺序不变', () => {
+    const msgs: MessageRecord[] = [
+      { ...base, id: 'm1', role: 'user', content: '第一轮提问' },
+      { ...base, id: 'm2', role: 'assistant', content: '' },
+      { ...base, id: 'm3', role: 'user', content: '第二轮提问' },
+      { ...base, id: 'm4', role: 'assistant', content: '第二轮回答' }
+    ]
+    const result = filterVisibleMessages(msgs)
+    expect(result.map((m) => m.id)).toEqual(['m1', 'm3', 'm4'])
   })
 })
