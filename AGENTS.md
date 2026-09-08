@@ -32,12 +32,12 @@ pnpm db:studio        # Drizzle Studio 可视化数据库
 
 ## AI Agent 执行纪律
 
-> ⚠️ **本章规则优先级最高**，所有 AI 编程助手（Trae、Cursor、Qoder、CodeBuddy 等）必须无条件遵守，不因任务简单而豁免。
+> 本章规则供所有 AI 编程助手（Trae、Cursor、Qoder、CodeBuddy 等）遵守。标注"事故级"的约束（安全 / 数据 / 验证）违反会导致线上问题，必须保留；其余为建议，可酌情取舍。
 
 ### 强制验证规则
 
 - **验证规则触发条件**：每次对任何 `.vue`、`.ts`、`.js` 文件执行编辑操作后，无论改动多小（包括仅修改注释、文案、CSS 类名、格式调整），任务结束前都必须运行 `pnpm lint`；涉及类型定义的变更必须额外运行 `pnpm typecheck`；核心逻辑变更必须运行 `pnpm test:unit`
-- **禁止以改动简单为由跳过验证（硬性禁令）**：严禁以"改动太小不会出错""只改了一行""只是文案调整""只改了格式"等任何理由跳过验证步骤。任何代码变更都必须通过对应的验证命令，违反此规则视为严重执行失误
+- **改动再小也要验证**：不以"改动太小不会出错""只改了一行""只是文案调整""只改了格式"等理由跳过验证。每次代码变更都应通过对应的验证命令
 
 ### 多方案确认模式
 
@@ -79,9 +79,9 @@ pnpm db:studio        # Drizzle Studio 可视化数据库
 ### 调用流程
 
 1. 先用 `resolve-library-id` 拿库 ID（上表已知 ID 可跳过此步，直接进入第 2 步）
-2. 再用 `query-docs` 查具体 API，`query` 参数必须聚焦单一概念（如 "streamText tool calling stopWhen stepCountIs"），不要一次问多个不相关主题
+2. 再用 `query-docs` 查具体 API，`query` 参数聚焦单一概念（如 "streamText tool calling stopWhen stepCountIs"），不要一次问多个不相关主题
 3. 每个工具每个问题最多调用 3 次；若 3 次仍查不到所需信息，回退到内置知识 + WebSearch 兜底
-4. 调用结果须与项目现有代码（`server/api/chat.post.ts`、`server/db/schema.ts` 等）交叉对照，避免引入与项目版本不兼容的 API
+4. 调用结果与项目现有代码（`server/api/chat.post.ts`、`server/db/schema.ts` 等）交叉对照，避免引入与项目版本不兼容的 API
 
 ### 例外（可不调用）
 
@@ -120,7 +120,7 @@ server/middleware/   → security.ts, auth.ts
 
 ## Agent 架构设计规范
 
-> ⚠️ **本章规范的是「my-chat 项目本身」的 Agent 架构设计**，与「AI Agent 执行纪律」章节（规范 AI 编程助手如何写代码）是两回事，勿混淆。新增功能、改造核心流程时必须遵守本章原则。
+> 本章规范「my-chat 项目本身」的 Agent 架构设计，与「AI Agent 执行纪律」章节（规范 AI 编程助手如何写代码）是两回事，勿混淆。新增功能、改造核心流程时建议参照本章原则。
 
 ### 核心判定标准
 
@@ -161,26 +161,26 @@ server/middleware/   → security.ts, auth.ts
 
 ## UI/UX 设计规范
 
-所有可交互元素必须提供视觉反馈，让用户感知操作已被接收：
+所有可交互元素应提供视觉反馈，让用户感知操作已被接收：
 
 - **导航切换**：页面/视图切换使用 `transition` 过渡动画（如 `fade`、`slide`），避免硬切
 - **悬浮反馈**：可点击元素 hover 时加 `shadow`、`scale` 或 `bg` 变化，用 `transition` 平滑过渡（推荐 `duration-150` \~ `duration-200`）
 - **点击反馈**：按钮/卡片 active 时加 `scale-95` 或 `brightness-90`，提供按压感
-- **状态切换**：展开/折叠、选中/未选中使用 `transition` 过渡，禁止瞬间跳变
-- **加载状态**：异步操作显示 loading 指示器（spinner 或骨架屏），禁止无反馈的等待
+- **状态切换**：展开/折叠、选中/未选中使用 `transition` 过渡，避免瞬间跳变
+- **加载状态**：异步操作显示 loading 指示器（spinner 或骨架屏），避免无反馈的等待
 - **过渡时长**：微交互 150-200ms，页面级动画 200-300ms，不超过 500ms
-- **图标按钮提示**：纯图标按钮（无文字）必须用 `v-tooltip` 包裹提供文字提示，禁止使用原生 `title` 属性
+- **图标按钮提示**：纯图标按钮（无文字）应使用 `v-tooltip` 包裹提供文字提示，不要使用原生 `title` 属性
 
 ## 交互与优化规则
 
-以下规则基于实际优化经验总结，新增功能时必须遵守：
+以下规则基于实际优化经验总结，新增功能时建议遵守：
 
 ### 触摸设备适配（Android 平板 WebView + 手机）
 
 - **操作按钮必须触摸可达**：hover-only 的按钮（`opacity-0 group-hover:opacity-100`）在触摸设备上不可见，手机端必须始终显示（不加 `group-hover`），平板端必须同时加 `focus-within:opacity-100`
 - **触摸目标 ≥ 36px**：纯图标按钮必须保证 `min-w-[36px] min-h-[36px]`（手机端），桌面端可恢复默认大小（`sm:min-w-0 sm:min-h-0`）
 - **禁止使用浏览器原生对话框**：`confirm()`、`alert()`、`prompt()` 在 WebView 中风格不协调且可能被拦截，必须使用自定义 `ConfirmDialogProvider` + `useConfirmDialog()` composable
-- **按钮点击反馈**：所有可点击元素必须加 `active:scale-95` 或 `active:scale-[0.98]`，提供触觉反馈感
+- **按钮点击反馈**：所有可点击元素建议加 `active:scale-95` 或 `active:scale-[0.98]`，提供触觉反馈感
 - **输入区按钮 ≥ 44px**：发送/停止等核心操作按钮必须 `min-w-[44px] min-h-[44px]`
 
 ### 动画与过渡
@@ -198,19 +198,19 @@ server/middleware/   → security.ts, auth.ts
 
 ### 输入体验
 
-- **多行输入框自动增高**：textarea 必须监听 input 变化动态调整 `scrollHeight`，设置 `min-h` 和 `max-h` 约束
+- **多行输入框自动增高**：textarea 监听 input 变化动态调整 `scrollHeight`，设置 `min-h` 和 `max-h` 约束
 - **Enter 发送 / Shift+Enter 换行**：聊天输入框的标准交互模式
 
 ### 信息展示
 
-- **时间显示**：会话列表等场景必须显示相对时间（"刚刚"、"3 分钟前"、"2 天前"），超过 7 天显示日期
-- **搜索结果**：必须显示摘要（snippet），不能只显示标题，用户需要预判内容相关性
-- **AI 消息操作栏**：每条 AI 回复必须提供"复制"和"重新生成"按钮，复制成功后图标切换 + Toast 提示
+- **时间显示**：会话列表等场景显示相对时间（"刚刚"、"3 分钟前"、"2 天前"），超过 7 天显示日期
+- **搜索结果**：显示摘要（snippet），不能只显示标题，用户需要预判内容相关性
+- **AI 消息操作栏**：每条 AI 回复提供"复制"和"重新生成"按钮，复制成功后图标切换 + Toast 提示
 
 ### 图标与视觉
 
-- **统一使用 SVG 图标**：禁止使用 Unicode 字符（如 ☰、✕）作为图标，全部替换为内联 SVG，保持视觉一致性
-- **行内代码颜色**：使用柔和的紫色（`#7c3aed`），禁止使用刺眼的红色（`#e11d48`），避免打断阅读节奏
+- **统一使用 SVG 图标**：不使用 Unicode 字符（如 ☰、✕）作为图标，全部替换为内联 SVG，保持视觉一致性
+- **行内代码颜色**：使用柔和的紫色（`#7c3aed`），不用刺眼的红色（`#e11d48`），避免打断阅读节奏
 - **消息气泡宽度**：用户消息 `max-w-[92%] sm:max-w-[85%]`，AI 消息 `max-w-[96%] sm:max-w-[90%]`，手机端放宽以充分利用屏幕空间
 
 ### 会话管理
@@ -220,7 +220,7 @@ server/middleware/   → security.ts, auth.ts
 
 ### 组件职责与布局分离
 
-- **设计稿转码必须 H5 实测**：从设计稿（Figma/截图等）映射出的页面，必须 `pnpm dev` 启动后逐页在浏览器核对（间距、滚动条、溢出、对齐、断点切换），不能仅凭「已按设计稿映射」判定完成；硬件能力（相机、传感器等）才需真机验证
+- **设计稿转码应 H5 实测**：从设计稿（Figma/截图等）映射出的页面，应 `pnpm dev` 启动后逐页在浏览器核对（间距、滚动条、溢出、对齐、断点切换），不能仅凭「已按设计稿映射」判定完成；硬件能力（相机、传感器等）才需真机验证
 - **替换元素显式尺寸**：`<img>`/`<video>`/`<iframe>` 等替换元素必须显式声明 `width`/`height` 或用 `aspect-ratio`，避免加载完成后引发 CLS（累积布局偏移）。流式 Markdown 渲染场景尤其关键——图片加载完会推动已渲染内容，破坏打字机效果体验；`<img>` 默认 `display:inline` + `vertical-align:baseline` 会产生下方间隙，需 `display:block` 或 `vertical-align:middle` 消除
 - **默认不可信原则**：替换元素与表单控件（`<input>`/`<select>`/`<textarea>`）的默认样式在 Android WebView 与桌面浏览器存在差异（input 圆角、placeholder 颜色、select 下拉箭头等），不要依赖引擎默认值，需显式声明关键属性。`box-sizing` 已被 Tailwind Preflight 全局兜底，无需重复声明
 
@@ -239,12 +239,12 @@ server/middleware/   → security.ts, auth.ts
 
 ## 代码规范
 
-- Vue 组件：`<script setup lang="ts">`，禁止 Options API
+- Vue 组件统一用 `<script setup lang="ts">`，不使用 Options API
 - 文件名：kebab-case（`ai-chat.vue`、`chat.post.ts`）
 - 组件名：PascalCase（`MarkdownRenderer`）
 - 常量：UPPER_SNAKE_CASE（`LLM_MODEL`）
 - 数据库列：snake_case（`created_at`、`session_id`）
-- 前端 API 调用：统一用 Nuxt 的 `$fetch` / `useFetch`，禁止原生 `fetch`
+- 前端 API 调用统一用 Nuxt 的 `$fetch` / `useFetch`，不使用原生 `fetch`
 - 注释规则：只写「为什么」（非直觉的坑、协议约定、反直觉取舍）；「是什么」由代码自解释，禁止复述代码、函数名、类型声明
 
 ## 关键规则
@@ -285,8 +285,8 @@ Nuxt 3 使用 SSR，服务端和客户端必须渲染出相同的 HTML，否则�
 - **修改业务逻辑后必须进行测试**：测试失败时先判断根因再心动
   - 预期内的行为变更 → 同步更新测试用例
   - 意外的回归（测试作为安全网抓住了bug） → 修复代码，不改测试
-- **修改 `server/db/schema.ts` 后必须同步更新 `docs/db-schema.md`**：`docs/db-schema.md` 是表结构的唯一文档来源，禁止代码与文档脱节（`pnpm db:push` 执行要求 → 详见「关键规则」章节）
-- **修改云函数（入参/返回值/业务逻辑）或 HTTP 接口后必须同步更新 `docs/API.md`**：`docs/API.md` 是唯一接口定义来源，禁止代码与文档脱节
+- **修改 `server/db/schema.ts` 后同步更新 `docs/db-schema.md`**：`docs/db-schema.md` 是表结构的唯一文档来源，避免代码与文档脱节（`pnpm db:push` 执行要求 → 详见「关键规则」章节）
+- **修改云函数（入参/返回值/业务逻辑）或 HTTP 接口后同步更新 `docs/API.md`**：`docs/API.md` 是唯一接口定义来源，避免代码与文档脱节
 
 ## 注意事项
 
