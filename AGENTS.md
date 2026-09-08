@@ -1,8 +1,132 @@
 # AGENTS.md
 
-my-chat — 基于 Nuxt 3 + Vercel AI SDK 的 AI 对话应用，支持 Markdown + LaTeX 公式安全渲染、图片对话（多模态），内置工具调用（天气、搜索、OCR）。适配平板和手机屏幕。**项目目标：从「带工具的对话应用」演进为「Agent 架构」，详见「Agent 架构设计规范」章节。**
+my-chat — 基于 Nuxt 3 + Vercel AI SDK 的 AI 对话应用，支持 Markdown + LaTeX 公式安全渲染、图片对话（多模态），内置工具调用（天气、搜索、OCR）。适配平板和手机屏幕。**项目目标：从「带工具的对话应用」演进为「Agent 架构」，详见 L2「Agent 架构设计规范」章节。**
 
-## 设置与运行
+> 阅读顺序（重要）：先读 **L1 执行纪律**（每次必读，含事故级关键规则），再按任务检索 **L2 项目知识库**。标注"事故级"的约束违反会直接导致线上问题，必须保留；其余为建议，可酌情取舍。
+
+## L1 执行纪律（每次必读）
+
+### 验证与改动纪律
+
+- **验证规则触发条件**：每次对任何 `.vue`、`.ts`、`.js` 文件执行编辑操作后，无论改动多小（包括仅修改注释、文案、CSS 类名、格式调整），任务结束前都必须运行 `pnpm lint`；涉及类型定义的变更必须额外运行 `pnpm typecheck`；核心逻辑变更必须运行 `pnpm test:unit`
+- **改动再小也要验证**：不以"改动太小不会出错""只改了一行""只是文案调整""只改了格式"等理由跳过验证。每次代码变更都应通过对应的验证命令
+- **禁止未执行就标记完成**：每个操作必须实际执行并验证成功，才能标记完成。禁止基于假设或推断跳过执行步骤
+- **关键操作必须验证**：每个有副作用的操作（启动服务、安装依赖、修改文件等）执行后必须验证结果，不能假设成功。验证方式取决于操作类型：检查退出码、检查终端输出无报错、检查服务是否可达等
+- **交叉验证原则**：当工具返回的结果会影响后续决策时，必须用另一种工具交叉验证。例如：文件搜索工具说文件不存在时，用其他方式再确认；命令输出看似成功时，检查退出码是否为 0
+- **文件存在性检查不能依赖单一搜索工具**：文件搜索工具对隐藏文件（以 `.` 开头）和目录的匹配可能不可靠，会返回空结果导致误判。当搜索工具报告文件不存在时，必须用其他方式（如直接路径检测、目录列表等）交叉确认
+- **修改文件前重新读取**：距上次读取超过 3 条消息，或编辑操作（`replace_in_file`/`SearchReplace`）连续失败 2 次，必须重新读取文件内容，禁止基于过时上下文继续操作
+- **搜索无结果禁止单次下结论**：搜索代码内容或关键词无结果时，禁止直接判定"项目中没有此功能/代码"。必须换关键词、换正则表达式重试至少 1 次，或用目录列表交叉确认
+- **大文件分批读取**：超过 500 行的文件，使用行号范围分批读取（如先读 1-200 行），避免一次性加载导致上下文丢失
+- **空 catch 必须命名吞掉的内容**：`try` 块只包裹单条语句；`catch` 必须写明吞掉了什么异常、为何其他异常不可达，禁止 `catch (e) {}` 这类静默空 catch（借鉴自外部项目工程规范）
+
+### 协作与确认
+
+- **多方案确认模式**：仅当存在 ≥2 条且后果不可逆（如删除/迁移/公开发布）的技术路径，或需求存在真实歧义需用户二选一时，使用 `AskUserQuestion` 弹框列出 3-4 个选项（注明推荐理由），最后一列留给用户主动输入；严禁手写纯文本 checkbox 或直接编写完整代码结束对话
+- **模型声明**：如 AI 助手能获知自身模型信息，则在任务开始时声明，格式为：`模型：{名称} | 大小：{参数规模} | 类型：{模型类型} | 版本：{修订版本/更新日期}`；无法获取的字段标注"未知"。无法获知时跳过，不视为违规
+
+### 反思与不确定性标注（建议）
+
+> 以下为可选做法，仅在满足场景时酌情采用，不强制、不影响日常简单任务效率。
+
+- **苏格拉底式自我质询**：修改核心逻辑（Markdown 渲染管线/流式处理/数据库 Schema）时，可扮演"对手"角色对假设多轮辩驳后再给方案
+- **置信度评分**：涉及多端兼容差异（Android WebView vs 桌面浏览器 vs 手机浏览器）时，可对每步给出高/中/低置信度评估并附理由
+- **公开残余不确定性**：任务完成时，对无法确认的信息和潜在风险，优先查证（文档/源码/测试 demo）二次确认；仍存疑的在报告中用 `[不确定]` 标签列出及验证方法，便于扫描
+- **多级对抗性深化**：复杂改动提交前，可对初稿做外部视角审查，核查矛盾和遗漏
+
+### 代码与测试规范
+
+- Vue 组件统一用 `<script setup lang="ts">`，不使用 Options API
+- 文件名：kebab-case（`ai-chat.vue`、`chat.post.ts`）
+- 组件名：PascalCase（`MarkdownRenderer`）
+- 常量：UPPER_SNAKE_CASE（`LLM_MODEL`）
+- 数据库列：snake_case（`created_at`、`session_id`）
+- 前端 API 调用统一用 Nuxt 的 `$fetch` / `useFetch`，不使用原生 `fetch`
+- 注释规则：只写「为什么」（非直觉的坑、协议约定、反直觉取舍）；「是什么」由代码自解释，禁止复述代码、函数名、类型声明
+
+> 涉及下列「高频更新 / AI 相关」库的核心 API 时，**必须**先用 context7 MCP 拉取最新文档，禁止仅凭训练数据内置知识写代码。
+
+#### 强制查询的库
+
+| 库 | Context7 ID | 触发场景 |
+| --- | --- | --- |
+| Vercel AI SDK | `/vercel/ai` | `streamText` / `tool()` / `stopWhen` / `stepCountIs`（v5 已取代 `maxSteps`）/ `onFinish` / `onStepFinish` / 多模态 content parts / provider 配置 |
+| Nuxt 3 | `/websites/nuxt_3_x` | `useFetch` / `useAsyncData` / `defineEventHandler` / `runtimeConfig` / SSR 相关 API / 路由约定 |
+| Drizzle ORM | `/drizzle-team/drizzle-orm-docs` | `schema` 定义 / `db.select/insert/update/delete` / 关联查询 / `drizzle-kit` 配置 / 迁移 |
+
+#### 调用流程
+
+1. 先用 `resolve-library-id` 拿库 ID（上表已知 ID 可跳过此步，直接进入第 2 步）
+2. 再用 `query-docs` 查具体 API，`query` 参数聚焦单一概念（如 "streamText tool calling stopWhen stepCountIs"），不要一次问多个不相关主题
+3. 每个工具每个问题最多调用 3 次；若 3 次仍查不到所需信息，回退到内置知识 + WebSearch 兜底
+4. 调用结果与项目现有代码（`server/api/chat.post.ts`、`server/db/schema.ts` 等）交叉对照，避免引入与项目版本不兼容的 API
+
+#### 例外（可不调用）
+
+- 修改业务逻辑、CSS、文案、组件模板结构等与上述库 API 无关的任务
+- 上述库的 Vue 模板基础语法（`ref`、`computed`、`watch`、`v-if`/`v-for` 等）等稳定 API
+- 已在项目代码中有大量同类用法可参照时（如新增一个相似工具，可参考 `server/tools/` 现有实现）
+
+#### 注意事项
+
+- Vercel AI SDK 有多个版本（`ai_5_0_0`、`ai_6.0.0-beta` 等），如项目 `package.json` 锁定具体版本，用 `/vercel/ai/<version>` 形式查询（如 `/vercel/ai/ai_5_0_0`）
+- Drizzle ORM 优先用 `/drizzle-team/drizzle-orm-docs`（官方文档源），避免用社区镜像
+- context7 库 ID 偶有失效，如查询返回空，重新 `resolve-library-id` 获取新 ID
+
+- 每次提交前必须通过 `pnpm typecheck` + `pnpm lint` + `pnpm test:unit`；修改渲染逻辑后跑 `pnpm test:e2e`，发版前跑 `pnpm build`
+- 覆盖率要求：lines ≥ 70%，functions ≥ 65%，branches ≥ 60%
+- 修改核心逻辑时必须补充对应的单元测试
+- **修改业务逻辑后必须进行测试**：测试失败时先判断根因再心动
+  - 预期内的行为变更 → 同步更新测试用例
+  - 意外的回归（测试作为安全网抓住了 bug） → 修复代码，不改测试
+- **修改 `server/db/schema.ts` 后同步更新 `docs/db-schema.md`**：`docs/db-schema.md` 是表结构的唯一文档来源，避免代码与文档脱节（`pnpm db:push` 执行要求 → 详见 L1 事故级关键规则）
+- **修改云函数（入参/返回值/业务逻辑）或 HTTP 接口后同步更新 `docs/API.md`**：`docs/API.md` 是唯一接口定义来源，避免代码与文档脱节
+
+### 事故级关键规则（踩坑精华，必读）
+
+- 永远不要将未净化的字符串直接传入 `v-html`，必须经过 `renderMarkdown()` 处理（内含 DOMPurify 净化）
+- DOMPurify 白名单必须包含 MathML（`math`, `mrow`, `mi`, `mfrac` 等）和 SVG（`svg`, `path`, `line` 等）标签，否则 KaTeX 公式会被过滤掉
+- 消息持久化必须在 `streamText` 的 `onFinish` 回调中执行，禁止在 `onChunk` 中写库
+- 密钥只能放在 `runtimeConfig` 的非 public 字段或 `.env` 文件中，禁止暴露到前端
+- 修改 `server/db/schema.ts` 后必须运行 `pnpm db:push`
+- 修改 Markdown 渲染相关代码后，运行 `pnpm vitest run tests/unit/markdown.test.ts` 验证
+- 新增 AI 工具时，在 `server/tools/` 创建文件，用 `tool()` 定义，并在 `chat.post.ts` 的 `toolsConfig` 注册；须遵守「Agent 架构设计规范 > 工具系统设计原则」（职责单一、LLM 自主决策、错误返回不抛异常）。同时追加到 system prompt 的「工具使用规则」注入条件必须与 `toolsConfig` 注册条件（`caps.toolCalling` + 各 toggle 开关）严格一致，避免 LLM 幻觉调用或未注册却引导调用
+- 新增 API 路由时必须包含参数校验和 `createError()` 错误处理
+- 修改涉及 `res.write`/`res.end` 的代码后**必须验证流式输出（打字机效果）** → 详见 L1 事故级关键规则 > 踩坑注意事项
+- **模板标签结构变更必须手动校验闭合**：编辑模板（添加/删除标签）后，都要手动核对对应的起始/闭合标签是否完整。lint 校验的要求见 L1 验证与改动纪律
+- **只在真正的边界做运行时校验，勿在同进程过度验证**：已通过 TypeScript 静态类型保证的同进程调用（函数入参、内部模块返回值）不额外加 `zod`/运行时校验或 hostile-input 测试；运行时校验只放在真正的边界——配置解析（`runtimeConfig`/`.env`）、model/tool 的 JSON、数据库/文件读写、进程间与网络 wire 边界（借鉴自外部项目工程规范）
+
+#### 数据安全规则
+
+- **异步写操作必须防重复提交**：任何修改数据的异步操作（API 路由、HTTP 请求、数据库写入），入口必须有守卫阻止并发重复调用，异步完成后（success + fail 分支）必须重置守卫。实现方式因场景而异：标志位 / disabled 属性 / debounce 均可
+- **服务端数据库避免 Read-Modify-Write**：先查后改的模式存在竞态窗口。优先使用原子操作（如 `UPDATE ... WHERE`、Drizzle 的 `db.update().set().where()`、`INSERT ... ON CONFLICT`），除非业务逻辑必须基于旧值做判断
+- **多数据源同步注意一致性**：同一数据写入多个存储时，确保所有路径以相同顺序写入，避免旧数据覆盖新数据
+
+#### SSR 水合规则
+
+Nuxt 3 使用 SSR，服务端和客户端必须渲染出相同的 HTML，否则产生水合不匹配（Hydration Mismatch）警告或错误。以下规则防止此类问题：
+
+- **禁止在模板或 computed 中使用不确定值**：`Date.now()`、`new Date()`、`Math.random()`、`crypto.randomUUID()` 等在 SSR 和客户端会产生不同结果，必须放在 `onMounted` 内或用 `<ClientOnly>` 包裹
+- **浏览器 API 必须守卫**：`window`、`document`、`navigator`、`localStorage` 等仅在客户端存在，访问前必须用 `import.meta.client` 或 `process.client` 守卫，或放在 `onMounted` 内
+- **客户端条件渲染用** **`<ClientOnly>`**：依赖浏览器 API 或客户端状态的组件（如地图、图表、富文本编辑器）必须用 `<ClientOnly>` 包裹，或使用 `client:only` 指令跳过 SSR
+- **ref 初始值必须 SSR 安全**：`ref()` 的初始值在 SSR 和客户端必须一致。需要客户端才能确定的值（如屏幕宽度、用户偏好），应在 `onMounted` 中延迟赋值，初始值用安全的默认值
+- **禁止 onMounted 后直接修改 SSR 渲染的 DOM**：`onMounted` 中直接操作 DOM（如 `createElement`、`replaceChild`）会破坏 Vue 的水合节点匹配。如需动态渲染，用 `<ClientOnly>` 包裹整个区域
+
+#### 踩坑注意事项
+
+- `nuxt.config.ts` 中的 `fix-windows-path-urls` Vite 中间件会拦截所有 HTTP 响应并缓冲 body。修改此中间件时**必须确保非 HTML 响应（特别是** **`/api/chat`** **的 SSE 流式响应）直接透传**，否则会破坏打字机效果。任何涉及 `res.write`/`res.end` 的修改都必须测试流式输出是否正常
+- `MarkdownRenderer.vue` 中代码块通过 `createApp(CodeBlock).mount()` 动态挂载，不是声明式组件，修改时注意 Vue 实例生命周期
+- 前端通过 `@ai-sdk/vue` 的 `new Chat({ transport: new DefaultChatTransport({ api: '/api/chat', body: () => ({...}) }) })` 发起对话。`body` 必须是**函数** `() => ({...})`（不是静态对象字面量，也不是 `computed()`），每次发送时重新求值，从而正确捕获 `sessionId`、`model`、`enable_web_search` 等动态值；若写成静态对象会发送过期值
+- 数据库开发端口是 **5434**（非默认 5432），测试端口是 **5433**
+- `saveMessagesToDb` 只保存最后一条用户消息（反向查找），避免重复插入历史消息
+- `dompurify`、`highlight.js`、`katex`、`marked` 在 devDependencies 中但运行时使用，不要误删
+- 模型白名单在 `server/config/models.ts`（`AVAILABLE_MODELS` 数组）。`chat.post.ts` 通过 `ALLOWED_MODEL_VALUES`（由 `AVAILABLE_MODELS` 自动派生）校验，**前端模型列表由 `GET /api/models` 返回 `AVAILABLE_MODELS`**。新增模型只需在 `AVAILABLE_MODELS` 中添加一条，校验与前端列表自动同步，无需手动维护多处
+- **图片对话使用 ImgBB 图床**：硅基流动不支持 base64 图片，需先上传到 ImgBB 获取公网 URL。在 `.env` 中配置 `IMGBB_API_KEY`，免费注册 <https://api.imgbb.com/> 获取
+- **`enable_thinking` 参数的注入由 `getModelCapabilities()` 的 `toggleableThinking` 能力决定**：`caps.toggleableThinking === true` 时才在请求体注入 `enable_thinking`（经 `reasoning-provider` 的 customFetch 注入）。强制思考模型（如 R1 / GLM-Z1，`toggleableThinking: false`）与不可思考模型**不传**该参数，否则 GLM-Z1 会返回 400。注意：**视觉模型 Qwen3.5-4B 因 `toggleableThinking: true` 同样支持 `enable_thinking`**，并非"视觉/推理模型不支持"。新增模型需在 `server/config/models.ts` 正确配置四个能力标志：`vision` / `deepThinking` / `toggleableThinking` / `toolCalling`
+- **图片对话统一使用 streamText()**：纯文本和图片均通过 `streamText()` 处理，图片先上传 ImgBB 获取公网 URL 后作为多模态 content parts 传入
+
+## L2 项目知识库（按任务检索）
+
+### 环境与构建
 
 ```bash
 docker compose up -d    # 启动 PostgreSQL
@@ -11,8 +135,6 @@ cp .env.example .env    # 复制环境变量（默认 LLM Provider 为硅基流�
 pnpm db:push            # 同步数据库 Schema
 pnpm dev                # 启动开发服务器 localhost:3000
 ```
-
-## 构建与测试命令
 
 ```bash
 pnpm dev              # 开发服务器
@@ -30,72 +152,7 @@ pnpm db:push          # 同步 Schema 到数据库（修改 schema.ts 后必须�
 pnpm db:studio        # Drizzle Studio 可视化数据库
 ```
 
-## AI Agent 执行纪律
-
-> 本章规则供所有 AI 编程助手（Trae、Cursor、Qoder、CodeBuddy 等）遵守。标注"事故级"的约束（安全 / 数据 / 验证）违反会导致线上问题，必须保留；其余为建议，可酌情取舍。
-
-### 强制验证规则
-
-- **验证规则触发条件**：每次对任何 `.vue`、`.ts`、`.js` 文件执行编辑操作后，无论改动多小（包括仅修改注释、文案、CSS 类名、格式调整），任务结束前都必须运行 `pnpm lint`；涉及类型定义的变更必须额外运行 `pnpm typecheck`；核心逻辑变更必须运行 `pnpm test:unit`
-- **改动再小也要验证**：不以"改动太小不会出错""只改了一行""只是文案调整""只改了格式"等理由跳过验证。每次代码变更都应通过对应的验证命令
-
-### 多方案确认模式
-
-- **多方案确认模式**：仅当存在 ≥2 条且后果不可逆（如删除/迁移/公开发布）的技术路径，或需求存在真实歧义需用户二选一时，使用 `AskUserQuestion` 弹框列出 3-4 个选项（注明推荐理由），最后一列留给用户主动输入；严禁手写纯文本 checkbox 或直接编写完整代码结束对话
-
-### 基本执行纪律
-
-- **模型声明**：如 AI 助手能获知自身模型信息，则在任务开始时声明，格式为：`模型：{名称} | 大小：{参数规模} | 类型：{模型类型} | 版本：{修订版本/更新日期}`；无法获取的字段标注"未知"。无法获知时跳过，不视为违规
-- **禁止未执行就标记完成**：每个操作必须实际执行并验证成功，才能标记完成。禁止基于假设或推断跳过执行步骤
-- **关键操作必须验证**：每个有副作用的操作（启动服务、安装依赖、修改文件等）执行后必须验证结果，不能假设成功。验证方式取决于操作类型：检查退出码、检查终端输出无报错、检查服务是否可达等
-- **交叉验证原则**：当工具返回的结果会影响后续决策时，必须用另一种工具交叉验证。例如：文件搜索工具说文件不存在时，用其他方式再确认；命令输出看似成功时，检查退出码是否为 0
-- **文件存在性检查不能依赖单一搜索工具**：文件搜索工具对隐藏文件（以 `.` 开头）和目录的匹配可能不可靠，会返回空结果导致误判。当搜索工具报告文件不存在时，必须用其他方式（如直接路径检测、目录列表等）交叉确认
-- **修改文件前重新读取**：距上次读取超过 3 条消息，或编辑操作（`replace_in_file`/`SearchReplace`）连续失败 2 次，必须重新读取文件内容，禁止基于过时上下文继续操作
-- **搜索无结果禁止单次下结论**：搜索代码内容或关键词无结果时，禁止直接判定"项目中没有此功能/代码"。必须换关键词、换正则表达式重试至少 1 次，或用目录列表交叉确认
-- **大文件分批读取**：超过 500 行的文件，使用行号范围分批读取（如先读 1-200 行），避免一次性加载导致上下文丢失
-- **空 catch 必须命名吞掉的内容**：`try` 块只包裹单条语句；`catch` 必须写明吞掉了什么异常、为何其他异常不可达，禁止 `catch (e) {}` 这类静默空 catch（借鉴自外部项目工程规范）
-
-### 反思与不确定性标注（建议）
-
-> 以下为可选做法，仅在满足场景时酌情采用，不强制、不影响日常简单任务效率。
-
-- **苏格拉底式自我质询**：修改核心逻辑（Markdown 渲染管线/流式处理/数据库 Schema）时，可扮演"对手"角色对假设多轮辩驳后再给方案
-- **置信度评分**：涉及多端兼容差异（Android WebView vs 桌面浏览器 vs 手机浏览器）时，可对每步给出高/中/低置信度评估并附理由
-- **公开残余不确定性**：任务完成时，对无法确认的信息和潜在风险，优先查证（文档/源码/测试 demo）二次确认；仍存疑的在报告中用 `[不确定]` 标签列出及验证方法，便于扫描
-- **多级对抗性深化**：复杂改动提交前，可对初稿做外部视角审查，核查矛盾和遗漏
-
-## 文档查询规则（context7 MCP）
-
-> 涉及下列「高频更新 / AI 相关」库的核心 API 时，**必须**先用 context7 MCP 拉取最新文档，禁止仅凭训练数据内置知识写代码。规则优先级同「AI Agent 执行纪律」。
-
-### 强制查询的库
-
-| 库 | Context7 ID | 触发场景 |
-|---|---|---|
-| Vercel AI SDK | `/vercel/ai` | `streamText` / `tool()` / `stopWhen` / `stepCountIs`（v5 已取代 `maxSteps`）/ `onFinish` / `onStepFinish` / 多模态 content parts / provider 配置 |
-| Nuxt 3 | `/websites/nuxt_3_x` | `useFetch` / `useAsyncData` / `defineEventHandler` / `runtimeConfig` / SSR 相关 API / 路由约定 |
-| Drizzle ORM | `/drizzle-team/drizzle-orm-docs` | `schema` 定义 / `db.select/insert/update/delete` / 关联查询 / `drizzle-kit` 配置 / 迁移 |
-
-### 调用流程
-
-1. 先用 `resolve-library-id` 拿库 ID（上表已知 ID 可跳过此步，直接进入第 2 步）
-2. 再用 `query-docs` 查具体 API，`query` 参数聚焦单一概念（如 "streamText tool calling stopWhen stepCountIs"），不要一次问多个不相关主题
-3. 每个工具每个问题最多调用 3 次；若 3 次仍查不到所需信息，回退到内置知识 + WebSearch 兜底
-4. 调用结果与项目现有代码（`server/api/chat.post.ts`、`server/db/schema.ts` 等）交叉对照，避免引入与项目版本不兼容的 API
-
-### 例外（可不调用）
-
-- 修改业务逻辑、CSS、文案、组件模板结构等与上述库 API 无关的任务
-- 上述库的 Vue 模板基础语法（`ref`、`computed`、`watch`、`v-if`/`v-for` 等）等稳定 API
-- 已在项目代码中有大量同类用法可参照时（如新增一个相似工具，可参考 `server/tools/` 现有实现）
-
-### 注意事项
-
-- Vercel AI SDK 有多个版本（`ai_5_0_0`、`ai_6.0.0-beta` 等），如项目 `package.json` 锁定具体版本，用 `/vercel/ai/<version>` 形式查询（如 `/vercel/ai/ai_5_0_0`）
-- Drizzle ORM 优先用 `/drizzle-team/drizzle-orm-docs`（官方文档源），避免用社区镜像
-- context7 库 ID 偶有失效，如查询返回空，重新 `resolve-library-id` 获取新 ID
-
-## 架构设计
+### 架构设计
 
 ```
 pages/              → ai-chat.vue, index.vue
@@ -118,11 +175,11 @@ server/middleware/   → security.ts, auth.ts
 
 **DB**：`sessions (1:N) → messages (1:N) → feedbacks`（均级联删除）
 
-## Agent 架构设计规范
+### Agent 架构设计规范
 
-> 本章规范「my-chat 项目本身」的 Agent 架构设计，与「AI Agent 执行纪律」章节（规范 AI 编程助手如何写代码）是两回事，勿混淆。新增功能、改造核心流程时建议参照本章原则。
+> 本章规范「my-chat 项目本身」的 Agent 架构设计，与 L1 执行纪律（规范 AI 编程助手如何写代码）是两回事，勿混淆。新增功能、改造核心流程时建议参照本章原则。
 
-### 核心判定标准
+#### 核心判定标准
 
 **LLM 自主决策 = Agent；代码预编排 = Workflow**。新功能默认走 Agent 路径，仅在安全/合规护栏允许 Workflow（须在设计文档说明理由）。
 
@@ -134,15 +191,15 @@ server/middleware/   → security.ts, auth.ts
 
 **红线**：若控制流由代码预编排（if/else 写死工具调用步骤），须在 openspec design 中说明理由，否则违规。
 
-### 工具系统
+#### 工具系统
 
 一个工具只做一件事，组合交给 LLM。调用与否、顺序、次数全由 LLM 自主决定，禁止用 if/else 在代码里写死工具调用步骤（`TIME_KEYWORDS` 仅用于在 system prompt 中**提示** LLM 时效性问题时调用 webSearch，并非硬编码工具调用；新功能不要复制这种关键词硬编码模式，工具调用与否仍应交由 LLM 决定）。执行失败返回 `{ error, detail }` 不 throw，由 LLM 决定重试/换工具。大对象通过 URL/ID 传递，不进 LLM 上下文。`description` 须说明"何时调用"和"何时不调用"。新增工具在 `server/tools/` 用 `tool()` 定义、`chat.post.ts` 注册；需独立进程才用 MCP。
 
-### 执行循环
+#### 执行循环
 
 实际代码基于「是否有工具实际注册」动态决定循环上限：有工具时 `stopWhen: stepCountIs(5)`，无工具时 `stepCountIs(1)`（AI SDK v5 已用 `stopWhen`/`stepCountIs` 取代 `maxSteps`）。`stopWhen` 是硬上限，LLM 可自主提前停止。复杂任务由 LLM 自主规划多次调用，代码不预编排。工具失败、Provider 失败（返回 500 + toast）不中断流，让 LLM 基于错误继续。消息通过 `onFinish` 异步落库，不阻塞主循环。
 
-### 记忆系统
+#### 记忆系统
 
 记忆分为两层：
 
@@ -159,23 +216,23 @@ server/middleware/   → security.ts, auth.ts
 
 > 📋 远期演进方向详见 `openspec/agent-future-roadmap.md`。
 
-## UI/UX 设计规范
+### UI/UX 设计规范
 
 所有可交互元素应提供视觉反馈，让用户感知操作已被接收：
 
 - **导航切换**：页面/视图切换使用 `transition` 过渡动画（如 `fade`、`slide`），避免硬切
-- **悬浮反馈**：可点击元素 hover 时加 `shadow`、`scale` 或 `bg` 变化，用 `transition` 平滑过渡（推荐 `duration-150` \~ `duration-200`）
+- **悬浮反馈**：可点击元素 hover 时加 `shadow`、`scale` 或 `bg` 变化，用 `transition` 平滑过渡（推荐 `duration-150` ~ `duration-200`）
 - **点击反馈**：按钮/卡片 active 时加 `scale-95` 或 `brightness-90`，提供按压感
 - **状态切换**：展开/折叠、选中/未选中使用 `transition` 过渡，避免瞬间跳变
 - **加载状态**：异步操作显示 loading 指示器（spinner 或骨架屏），避免无反馈的等待
 - **过渡时长**：微交互 150-200ms，页面级动画 200-300ms，不超过 500ms
 - **图标按钮提示**：纯图标按钮（无文字）应使用 `v-tooltip` 包裹提供文字提示，不要使用原生 `title` 属性
 
-## 交互与优化规则
+### 交互与优化规则
 
 以下规则基于实际优化经验总结，新增功能时建议遵守：
 
-### 触摸设备适配（Android 平板 WebView + 手机）
+#### 触摸设备适配（Android 平板 WebView + 手机）
 
 - **操作按钮必须触摸可达**：hover-only 的按钮（`opacity-0 group-hover:opacity-100`）在触摸设备上不可见，手机端必须始终显示（不加 `group-hover`），平板端必须同时加 `focus-within:opacity-100`
 - **触摸目标 ≥ 36px**：纯图标按钮必须保证 `min-w-[36px] min-h-[36px]`（手机端），桌面端可恢复默认大小（`sm:min-w-0 sm:min-h-0`）
@@ -183,52 +240,52 @@ server/middleware/   → security.ts, auth.ts
 - **按钮点击反馈**：所有可点击元素建议加 `active:scale-95` 或 `active:scale-[0.98]`，提供触觉反馈感
 - **输入区按钮 ≥ 44px**：发送/停止等核心操作按钮必须 `min-w-[44px] min-h-[44px]`
 
-### 动画与过渡
+#### 动画与过渡
 
-- **侧边栏/面板切换**：详见「Responsive Design > 侧边栏」章节
+- **侧边栏/面板切换**：详见 L2 响应式设计 > 侧边栏
 - **消息列表动画**：消息列表使用虚拟滚动（`@tanstack/vue-virtual`）渲染，虚拟项通过 `position: absolute` + `transform: translateY(start)` 定位，与 `<TransitionGroup>` 的 transform 过渡存在架构层面冲突（transform 互相覆盖、虚拟项卸载打断离场动画、流式输出期间 measureElement 重算加剧抖动），**禁止使用 `<TransitionGroup>` 包裹虚拟滚动列表**。「消息到达」的视觉反馈通过「自动滚动到底部 + overscan 预渲染 + 流式打字机效果」提供。如需新增入场动画，应使用不依赖 transform 的方案（如 opacity-only CSS animation）
 - **折叠/展开区域**：禁止用 `v-if` 直接切换，必须用 `max-height` + `overflow: hidden` + `transition` 实现平滑高度过渡
 - **自动滚动**：聊天消息区域必须在消息数量变化和 AI 流式输出时自动滚动到底部，使用 `scrollTo({ behavior: 'smooth' })`
 
-### 用户反馈系统
+#### 用户反馈系统
 
 - **错误提示**：所有 API 请求失败必须通过 `useToast()` 向用户展示错误信息，禁止仅 `console.error` 静默处理
 - **操作成功提示**：删除、重命名等操作成功后用 `toast.success()` 反馈
 - **Toast 系统**：通过 `ToastProvider`（在 `app.vue` 中注册）+ `useToast()` composable 使用，支持 `success`/`error`/`info` 三种类型
 
-### 输入体验
+#### 输入体验
 
 - **多行输入框自动增高**：textarea 监听 input 变化动态调整 `scrollHeight`，设置 `min-h` 和 `max-h` 约束
 - **Enter 发送 / Shift+Enter 换行**：聊天输入框的标准交互模式
 
-### 信息展示
+#### 信息展示
 
 - **时间显示**：会话列表等场景显示相对时间（"刚刚"、"3 分钟前"、"2 天前"），超过 7 天显示日期
 - **搜索结果**：显示摘要（snippet），不能只显示标题，用户需要预判内容相关性
 - **AI 消息操作栏**：每条 AI 回复提供"复制"和"重新生成"按钮，复制成功后图标切换 + Toast 提示
 
-### 图标与视觉
+#### 图标与视觉
 
 - **统一使用 SVG 图标**：不使用 Unicode 字符（如 ☰、✕）作为图标，全部替换为内联 SVG，保持视觉一致性
 - **行内代码颜色**：使用柔和的紫色（`#7c3aed`），不用刺眼的红色（`#e11d48`），避免打断阅读节奏
 - **消息气泡宽度**：用户消息 `max-w-[92%] sm:max-w-[85%]`，AI 消息 `max-w-[96%] sm:max-w-[90%]`，手机端放宽以充分利用屏幕空间
 
-### 会话管理
+#### 会话管理
 
 - **会话重命名**：支持双击标题或点击编辑图标进入编辑模式，Enter 确认、Escape 取消、blur 自动确认
 - **删除确认**：必须通过 `useConfirmDialog()` 弹窗确认，禁止无确认直接删除
 
-### 组件职责与布局分离
+#### 组件职责与布局分离
 
 - **设计稿转码应 H5 实测**：从设计稿（Figma/截图等）映射出的页面，应 `pnpm dev` 启动后逐页在浏览器核对（间距、滚动条、溢出、对齐、断点切换），不能仅凭「已按设计稿映射」判定完成；硬件能力（相机、传感器等）才需真机验证
 - **替换元素显式尺寸**：`<img>`/`<video>`/`<iframe>` 等替换元素必须显式声明 `width`/`height` 或用 `aspect-ratio`，避免加载完成后引发 CLS（累积布局偏移）。流式 Markdown 渲染场景尤其关键——图片加载完会推动已渲染内容，破坏打字机效果体验；`<img>` 默认 `display:inline` + `vertical-align:baseline` 会产生下方间隙，需 `display:block` 或 `vertical-align:middle` 消除
 - **默认不可信原则**：替换元素与表单控件（`<input>`/`<select>`/`<textarea>`）的默认样式在 Android WebView 与桌面浏览器存在差异（input 圆角、placeholder 颜色、select 下拉箭头等），不要依赖引擎默认值，需显式声明关键属性。`box-sizing` 已被 Tailwind Preflight 全局兜底，无需重复声明
 
-## 响应式设计与移动兼容性
+### 响应式设计与移动兼容性
 
 本项目同时支持 **Android 平板横屏**和**手机竖屏**，断点为 `sm:640px`，手机端无前缀，平板端加 `sm:` 前缀。
 
-### 侧边栏（关键模式）
+#### 侧边栏（关键模式）
 
 侧边栏在手机和平板上使用**完全不同的布局模式**，已封装在 `ai-chat.vue` 中：
 
@@ -237,71 +294,7 @@ server/middleware/   → security.ts, auth.ts
 - `isMobile` 通过 `window.innerWidth < 640` 判断，在 `onMounted` 中初始化并监听 `resize`
 - 手机端侧边栏自带 X 关闭按钮，点击遮罩也可关闭
 
-## 代码规范
-
-- Vue 组件统一用 `<script setup lang="ts">`，不使用 Options API
-- 文件名：kebab-case（`ai-chat.vue`、`chat.post.ts`）
-- 组件名：PascalCase（`MarkdownRenderer`）
-- 常量：UPPER_SNAKE_CASE（`LLM_MODEL`）
-- 数据库列：snake_case（`created_at`、`session_id`）
-- 前端 API 调用统一用 Nuxt 的 `$fetch` / `useFetch`，不使用原生 `fetch`
-- 注释规则：只写「为什么」（非直觉的坑、协议约定、反直觉取舍）；「是什么」由代码自解释，禁止复述代码、函数名、类型声明
-
-## 关键规则
-
-- 永远不要将未净化的字符串直接传入 `v-html`，必须经过 `renderMarkdown()` 处理（内含 DOMPurify 净化）
-- DOMPurify 白名单必须包含 MathML（`math`, `mrow`, `mi`, `mfrac` 等）和 SVG（`svg`, `path`, `line` 等）标签，否则 KaTeX 公式会被过滤掉
-- 消息持久化必须在 `streamText` 的 `onFinish` 回调中执行，禁止在 `onChunk` 中写库
-- 密钥只能放在 `runtimeConfig` 的非 public 字段或 `.env` 文件中，禁止暴露到前端
-- 修改 `server/db/schema.ts` 后必须运行 `pnpm db:push`
-- 修改 Markdown 渲染相关代码后，运行 `pnpm vitest run tests/unit/markdown.test.ts` 验证
-- 新增 AI 工具时，在 `server/tools/` 创建文件，用 `tool()` 定义，并在 `chat.post.ts` 的 `toolsConfig` 注册；须遵守「Agent 架构设计规范 > 工具系统设计原则」（职责单一、LLM 自主决策、错误返回不抛异常）。同时追加到 system prompt 的「工具使用规则」注入条件必须与 `toolsConfig` 注册条件（`caps.toolCalling` + 各 toggle 开关）严格一致，避免 LLM 幻觉调用或未注册却引导调用
-- 新增 API 路由时必须包含参数校验和 `createError()` 错误处理
-- 修改涉及 `res.write`/`res.end` 的代码后**必须验证流式输出（打字机效果）** → 详见「注意事项」章节
-- **模板标签结构变更必须手动校验闭合**：编辑模板（添加/删除标签）后，都要手动核对对应的起始/闭合标签是否完整。lint 校验的硬性要求见「AI Agent 执行纪律」章节的强制验证规则
-- **只在真正的边界做运行时校验，勿在同进程过度验证**：已通过 TypeScript 静态类型保证的同进程调用（函数入参、内部模块返回值）不额外加 `zod`/运行时校验或 hostile-input 测试；运行时校验只放在真正的边界——配置解析（`runtimeConfig`/`.env`）、model/tool 的 JSON、数据库/文件读写、进程间与网络 wire 边界（借鉴自外部项目工程规范）
-
-### 数据安全规则
-
-- **异步写操作必须防重复提交**：任何修改数据的异步操作（API 路由、HTTP 请求、数据库写入），入口必须有守卫阻止并发重复调用，异步完成后（success + fail 分支）必须重置守卫。实现方式因场景而异：标志位 / disabled 属性 / debounce 均可
-- **服务端数据库避免 Read-Modify-Write**：先查后改的模式存在竞态窗口。优先使用原子操作（如 `UPDATE ... WHERE`、Drizzle 的 `db.update().set().where()`、`INSERT ... ON CONFLICT`），除非业务逻辑必须基于旧值做判断
-- **多数据源同步注意一致性**：同一数据写入多个存储时，确保所有路径以相同顺序写入，避免旧数据覆盖新数据
-
-## SSR 水合规则
-
-Nuxt 3 使用 SSR，服务端和客户端必须渲染出相同的 HTML，否则产生水合不匹配（Hydration Mismatch）警告或错误。以下规则防止此类问题：
-
-- **禁止在模板或 computed 中使用不确定值**：`Date.now()`、`new Date()`、`Math.random()`、`crypto.randomUUID()` 等在 SSR 和客户端会产生不同结果，必须放在 `onMounted` 内或用 `<ClientOnly>` 包裹
-- **浏览器 API 必须守卫**：`window`、`document`、`navigator`、`localStorage` 等仅在客户端存在，访问前必须用 `import.meta.client` 或 `process.client` 守卫，或放在 `onMounted` 内
-- **客户端条件渲染用** **`<ClientOnly>`**：依赖浏览器 API 或客户端状态的组件（如地图、图表、富文本编辑器）必须用 `<ClientOnly>` 包裹，或使用 `client:only` 指令跳过 SSR
-- **ref 初始值必须 SSR 安全**：`ref()` 的初始值在 SSR 和客户端必须一致。需要客户端才能确定的值（如屏幕宽度、用户偏好），应在 `onMounted` 中延迟赋值，初始值用安全的默认值
-- **禁止 onMounted 后直接修改 SSR 渲染的 DOM**：`onMounted` 中直接操作 DOM（如 `createElement`、`replaceChild`）会破坏 Vue 的水合节点匹配。如需动态渲染，用 `<ClientOnly>` 包裹整个区域
-
-## 测试策略
-
-- 每次提交前必须通过 `pnpm typecheck` + `pnpm lint` + `pnpm test:unit`；修改渲染逻辑后跑 `pnpm test:e2e`，发版前跑 `pnpm build`
-- 覆盖率要求：lines ≥ 70%，functions ≥ 65%，branches ≥ 60%
-- 修改核心逻辑时必须补充对应的单元测试
-- **修改业务逻辑后必须进行测试**：测试失败时先判断根因再心动
-  - 预期内的行为变更 → 同步更新测试用例
-  - 意外的回归（测试作为安全网抓住了bug） → 修复代码，不改测试
-- **修改 `server/db/schema.ts` 后同步更新 `docs/db-schema.md`**：`docs/db-schema.md` 是表结构的唯一文档来源，避免代码与文档脱节（`pnpm db:push` 执行要求 → 详见「关键规则」章节）
-- **修改云函数（入参/返回值/业务逻辑）或 HTTP 接口后同步更新 `docs/API.md`**：`docs/API.md` 是唯一接口定义来源，避免代码与文档脱节
-
-## 注意事项
-
-- `nuxt.config.ts` 中的 `fix-windows-path-urls` Vite 中间件会拦截所有 HTTP 响应并缓冲 body。修改此中间件时**必须确保非 HTML 响应（特别是** **`/api/chat`** **的 SSE 流式响应）直接透传**，否则会破坏打字机效果。任何涉及 `res.write`/`res.end` 的修改都必须测试流式输出是否正常
-- `MarkdownRenderer.vue` 中代码块通过 `createApp(CodeBlock).mount()` 动态挂载，不是声明式组件，修改时注意 Vue 实例生命周期
-- 前端通过 `@ai-sdk/vue` 的 `new Chat({ transport: new DefaultChatTransport({ api: '/api/chat', body: () => ({...}) }) })` 发起对话。`body` 必须是**函数** `() => ({...})`（不是静态对象字面量，也不是 `computed()`），每次发送时重新求值，从而正确捕获 `sessionId`、`model`、`enable_web_search` 等动态值；若写成静态对象会发送过期值
-- 数据库开发端口是 **5434**（非默认 5432），测试端口是 **5433**
-- `saveMessagesToDb` 只保存最后一条用户消息（反向查找），避免重复插入历史消息
-- `dompurify`、`highlight.js`、`katex`、`marked` 在 devDependencies 中但运行时使用，不要误删
-- 模型白名单在 `server/config/models.ts`（`AVAILABLE_MODELS` 数组）。`chat.post.ts` 通过 `ALLOWED_MODEL_VALUES`（由 `AVAILABLE_MODELS` 自动派生）校验，**前端模型列表由 `GET /api/models` 返回 `AVAILABLE_MODELS`**。新增模型只需在 `AVAILABLE_MODELS` 中添加一条，校验与前端列表自动同步，无需手动维护多处
-- **图片对话使用 ImgBB 图床**：硅基流动不支持 base64 图片，需先上传到 ImgBB 获取公网 URL。在 `.env` 中配置 `IMGBB_API_KEY`，免费注册 <https://api.imgbb.com/> 获取
-- **`enable_thinking` 参数的注入由 `getModelCapabilities()` 的 `toggleableThinking` 能力决定**：`caps.toggleableThinking === true` 时才在请求体注入 `enable_thinking`（经 `reasoning-provider` 的 customFetch 注入）。强制思考模型（如 R1 / GLM-Z1，`toggleableThinking: false`）与不可思考模型**不传**该参数，否则 GLM-Z1 会返回 400。注意：**视觉模型 Qwen3.5-4B 因 `toggleableThinking: true` 同样支持 `enable_thinking`**，并非"视觉/推理模型不支持"。新增模型需在 `server/config/models.ts` 正确配置四个能力标志：`vision` / `deepThinking` / `toggleableThinking` / `toolCalling`
-- **图片对话统一使用 streamText()**：纯文本和图片均通过 `streamText()` 处理，图片先上传 ImgBB 获取公网 URL 后作为多模态 content parts 传入
-
-## 问题排查规范
+### 问题排查规范
 
 | 问题              | 排查步骤                                                                                                                                     |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
