@@ -2,7 +2,7 @@ import { streamText, stepCountIs, createUIMessageStream, createUIMessageStreamRe
 import { createMCPClient } from '@ai-sdk/mcp'
 import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio'
 import { db } from '~/server/db'
-import { messages as messagesTable, sessions } from '~/server/db/schema'
+import { sessions } from '~/server/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { webSearchTool } from '~/server/tools/web-search'
 import { ocrDocumentTool } from '~/server/tools/ocr-document'
@@ -15,6 +15,7 @@ import {
   getActiveTaskContext
 } from '~/server/tools/agent-task'
 import { archiveSessionMessages } from '~/server/utils/memory-archive'
+import { persistChatTurn } from '~/server/utils/message-persistence'
 import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/models'
 import { getAuthUser } from '~/server/utils/auth'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
@@ -354,7 +355,8 @@ export default defineEventHandler(async (event) => {
     enable_web_search,
     enable_ocr,
     enable_image_generation,
-    lastSessionId
+    lastSessionId,
+    trigger
   } = body ?? {}
 
   // 会话归属校验（add-user-auth design.md 决策 4）：客户端传入 sessionId 时必须是本人会话，
@@ -705,14 +707,20 @@ export default defineEventHandler(async (event) => {
             // 只有 reasoning 没有正式回答（极端情况）
             cleanText = ''
           }
-          await saveMessagesToDb(
+          // 「重新生成」识别：AI SDK 的 DefaultChatTransport 会在重新生成时带
+          // trigger='regenerate-message'（常规发送为 'submit-message'）。据此让持久化走
+          // 「不重复插入用户消息 + 替换既有助手回复」分支，否则会重复入库（详见 message-persistence.ts）
+          const isRegenerate = trigger === 'regenerate-message'
+          const lastUserMessage = [...messages].reverse().find((msg: { role: string }) => msg.role === 'user')
+          await persistChatTurn({
             sessionId,
-            messages,
-            cleanText,
-            useModel,
-            hasImages ? imageUrls : undefined,
-            audio
-          )
+            userText: lastUserMessage ? extractTextFromMessage(lastUserMessage) : null,
+            assistantText: cleanText,
+            modelName: useModel,
+            imageUrls: hasImages ? imageUrls : undefined,
+            audio,
+            isRegenerate
+          })
         } catch (err) {
           console.error('保存消息到数据库失败:', err)
         }
@@ -1011,56 +1019,3 @@ export default defineEventHandler(async (event) => {
     })
   }
 })
-
-async function saveMessagesToDb(
-  sessionId: string,
-  chatMessages: Array<{ role: string; content: unknown }>,
-  assistantText: string,
-  modelName: string,
-  imageUrls?: string[],
-  audio?: { url: string; emotion: string | null; duration: number }
-) {
-  if (chatMessages.length === 0) return
-  const lastUserMessage = [...chatMessages].reverse().find((msg) => msg.role === 'user')
-  if (lastUserMessage) {
-    const meta: Record<string, unknown> = {}
-    if (imageUrls && imageUrls.length > 0) {
-      meta.images = imageUrls.map((url, i) => ({ index: i, url }))
-    }
-    // 语音消息元信息落库（决策 5）：audio.emotion 已在 body 解析阶段经 ALLOWED_EMOTIONS 白名单校验
-    // audio 是单条语音消息的元信息快照（供 UI 展示情感标签），与「情感不作为长期状态注入」不矛盾
-    if (audio && audio.url) {
-      meta.audio = {
-        url: audio.url,
-        emotion: audio.emotion,
-        duration: audio.duration,
-        createdAt: new Date().toISOString()
-      }
-    }
-    // 兼容 AI SDK v5 的 parts 格式和旧 content 字符串格式
-    const userText = extractTextFromMessage(lastUserMessage)
-    await db.insert(messagesTable).values({
-      id: crypto.randomUUID(),
-      sessionId,
-      role: 'user',
-      content: userText,
-      metadata: Object.keys(meta).length > 0 ? meta : undefined,
-      createdAt: new Date()
-    })
-  }
-  // assistant 空回复不落库：LLM 全程工具调用（如 agent-task 多步循环耗尽 stepCountIs 上限）
-  // 或思考被打断时 text 为空，空消息重开后会渲染为空气泡，且污染归档输入与消息计数。
-  // 工具产出已存 agent_tasks/artifacts 表，下次请求经检查点注入续作，跳过不丢信息；
-  // user 消息无论如何都要保留（用户提问本身有价值，且归档/检查点依赖会话连续性）
-  if (assistantText.trim()) {
-    await db.insert(messagesTable).values({
-      id: crypto.randomUUID(),
-      sessionId,
-      role: 'assistant',
-      content: assistantText,
-      metadata: { model: modelName },
-      createdAt: new Date()
-    })
-  }
-  await db.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))
-}

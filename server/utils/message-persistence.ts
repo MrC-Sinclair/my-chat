@@ -1,0 +1,150 @@
+/**
+ * @file 对话轮次持久化（user + assistant 消息落库）
+ *
+ * 从 `server/api/chat.post.ts` 抽出的持久化逻辑，供 `onFinish` 回调调用。
+ * 抽出动机：这段逻辑决定会话历史的数据正确性（重复插入 / 覆盖错行都会污染上下文与归档输入），
+ * 必须能被单元测试直接覆盖，而不是只能靠端到端跑通来间接验证。
+ *
+ * 调用方契约：
+ *   - 只在 `streamText` 的 `onFinish` 中调用（禁止在 onChunk 中写库）
+ *   - `userText` 由调用方从 UIMessage 的 parts / content 提取后传入；无可保存的用户消息时传 null
+ *   - `isRegenerate` 由请求体的 `trigger === 'regenerate-message'` 决定（AI SDK 自带字段）
+ */
+import { eq, and, desc } from 'drizzle-orm'
+import { db } from '~/server/db'
+import { messages as messagesTable, sessions } from '~/server/db/schema'
+
+/** 语音消息音频元信息（emotion 已在 body 解析阶段经 ALLOWED_EMOTIONS 白名单校验） */
+export interface PersistedAudioMeta {
+  url: string
+  emotion: string | null
+  duration: number
+}
+
+export interface PersistChatTurnOptions {
+  sessionId: string
+  /** 本轮用户消息纯文本；无可保存的用户消息时为 null */
+  userText: string | null
+  /** LLM 正式回答（已剔除 reasoning 段）；空串表示无文本输出 */
+  assistantText: string
+  modelName: string
+  imageUrls?: string[]
+  audio?: PersistedAudioMeta
+  /** 是否为「重新生成」请求：为真时不重复插入用户消息，且替换既有助手回复 */
+  isRegenerate?: boolean
+}
+
+/**
+ * 持久化一轮对话（用户消息 + AI 回复）
+ *
+ * 分支语义：
+ *   - 常规发送：插入最后一条用户消息 + 插入 AI 回复（AI 回复为空时跳过，见下）
+ *   - 重新生成：用户消息**不插入**（首次发送时已落库），并将既有助手回复**更新为**新回复
+ *
+ * 助手回复为空的处理：LLM 全程工具调用（agent-task 多步循环耗尽 stepCountIs 上限）或
+ * 思考被打断时 text 为空，空消息重开后会渲染为空气泡，且污染归档输入与消息计数。
+ * 工具产出已存 agent_tasks/artifacts 表，下次请求经检查点注入续作，跳过不丢信息；
+ * user 消息无论如何都要保留（用户提问本身有价值，且归档/检查点依赖会话连续性）。
+ * 重新生成场景下若无新文本可写入，则保留既有回复不删除，避免「改一次反而不见了」。
+ */
+export async function persistChatTurn(options: PersistChatTurnOptions): Promise<void> {
+  const { sessionId, userText, assistantText, modelName, imageUrls, audio, isRegenerate } = options
+  if (!sessionId) return
+
+  // 常规发送才插入用户消息。重新生成时该消息已存在于库中，重复插入会让
+  // 会话历史出现「两条相同用户提问」，AI 上下文与归档输入同步被污染。
+  if (userText !== null && !isRegenerate) {
+    const meta: Record<string, unknown> = {}
+    if (imageUrls && imageUrls.length > 0) {
+      meta.images = imageUrls.map((url, i) => ({ index: i, url }))
+    }
+    if (audio && audio.url) {
+      // 语音消息是单条消息的元信息快照（供 UI 展示情感标签），与「情感不作为长期状态注入」不矛盾
+      meta.audio = {
+        url: audio.url,
+        emotion: audio.emotion,
+        duration: audio.duration,
+        createdAt: new Date().toISOString()
+      }
+    }
+    await db.insert(messagesTable).values({
+      id: crypto.randomUUID(),
+      sessionId,
+      role: 'user',
+      content: userText,
+      metadata: Object.keys(meta).length > 0 ? meta : undefined,
+      createdAt: new Date()
+    })
+  }
+
+  if (!assistantText.trim()) {
+    await touchSession(sessionId)
+    return
+  }
+
+  if (isRegenerate) {
+    const replaced = await replaceLatestAssistantReply(sessionId, assistantText, modelName)
+    if (replaced) {
+      await touchSession(sessionId)
+      return
+    }
+    // 无可替换的既有回复（首次发送失败未落库等）→ 退回常规插入
+  }
+
+  await db.insert(messagesTable).values({
+    id: crypto.randomUUID(),
+    sessionId,
+    role: 'assistant',
+    content: assistantText,
+    metadata: { model: modelName },
+    createdAt: new Date()
+  })
+  await touchSession(sessionId)
+}
+
+/**
+ * 将本会话「最后一条助手回复」更新为新内容（不新增行、保持原 createdAt 位置）
+ *
+ * 防误伤：只有当最新助手行晚于最新用户行（即它确实是这条用户消息的回复）时才替换。
+ * 若上一轮 AI 回复为空未落库，最新助手行其实是更早一轮的回复，此时替换会丢历史，
+ * 因此退回插入新行（此时库中本就没有本轮回复，不存在新旧并存问题）。
+ *
+ * @returns 是否完成替换
+ */
+async function replaceLatestAssistantReply(
+  sessionId: string,
+  assistantText: string,
+  modelName: string
+): Promise<boolean> {
+  const sessionCondition = eq(messagesTable.sessionId, sessionId)
+
+  const [latestAssistant] = await db
+    .select({ id: messagesTable.id, createdAt: messagesTable.createdAt })
+    .from(messagesTable)
+    .where(and(sessionCondition, eq(messagesTable.role, 'assistant')))
+    .orderBy(desc(messagesTable.createdAt))
+    .limit(1)
+
+  if (!latestAssistant) return false
+
+  const [latestUser] = await db
+    .select({ id: messagesTable.id, createdAt: messagesTable.createdAt })
+    .from(messagesTable)
+    .where(and(sessionCondition, eq(messagesTable.role, 'user')))
+    .orderBy(desc(messagesTable.createdAt))
+    .limit(1)
+
+  if (latestUser && latestAssistant.createdAt < latestUser.createdAt) return false
+
+  await db
+    .update(messagesTable)
+    .set({ content: assistantText, metadata: { model: modelName } })
+    .where(eq(messagesTable.id, latestAssistant.id))
+
+  return true
+}
+
+/** 更新会话 updatedAt，让会话列表按最近活跃排序 */
+async function touchSession(sessionId: string): Promise<void> {
+  await db.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))
+}

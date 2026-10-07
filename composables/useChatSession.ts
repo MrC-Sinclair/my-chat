@@ -92,24 +92,46 @@ export function useChatSession(setMessages: (msgs: UIMessage[]) => void) {
     }
   }
 
-  async function createNewSession() {
+  /**
+   * 新建会话（惰性，不写库）
+   *
+   * 只重置本地状态回到欢迎页：`currentSessionId` 置空后，ChatInput 提交会先经
+   * `ensureSession()` 落库再发送。DB 行延迟到「真正产生消息」时创建。
+   *
+   * 为什么不在点击时就 POST：旧的即时创建会在库里留下 0 条消息的空会话
+   * （用户点一下又切走/刷新即永久残留，登出换身份时也会凭空多一个）。
+   * 惰性创建让「会话行」只在有内容时存在。
+   */
+  function startNewSession() {
+    // 在修改 currentSessionId 之前保存旧值，触发上一个会话的归档
+    const previousSessionId = currentSessionId.value
+    if (previousSessionId) {
+      lastSessionId.value = previousSessionId
+      triggerArchive(previousSessionId)
+    }
+    currentSessionId.value = ''
+    setMessages([])
+  }
+
+  /**
+   * 确保会话已落库（首次发送消息 / 生图前调用）
+   *
+   * @returns 会话 ID；创建失败时返回空字符串（调用方据此中止发送，避免消息发出去却无处持久化）
+   */
+  async function ensureSession(): Promise<string> {
+    if (currentSessionId.value) return currentSessionId.value
     try {
-      // 在修改 currentSessionId 之前保存旧值，触发上一个会话的归档
-      const previousSessionId = currentSessionId.value
-      if (previousSessionId) {
-        lastSessionId.value = previousSessionId
-        triggerArchive(previousSessionId)
-      }
       const res = await $fetch<SessionItem>('/api/sessions', {
         method: 'POST',
         body: { title: `新对话 ${new Date().toLocaleString('zh-CN')}` }
       })
       currentSessionId.value = res.id
-      setMessages([])
       await loadSessions()
+      return res.id
     } catch (err) {
       console.error('创建会话失败:', err)
       toast.error('创建会话失败')
+      return ''
     }
   }
 
@@ -216,7 +238,8 @@ export function useChatSession(setMessages: (msgs: UIMessage[]) => void) {
     currentSessionId,
     lastSessionId,
     loadSessions,
-    createNewSession,
+    startNewSession,
+    ensureSession,
     switchSession,
     deleteSession,
     renameSession,

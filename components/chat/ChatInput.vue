@@ -675,11 +675,8 @@ watch(
 <template>
   <footer class="shrink-0 bg-semi-bg-0 px-3 sm:px-4 pb-3 sm:pb-4 pt-1 sm:pt-2">
     <form class="max-w-full sm:max-w-3xl mx-auto" @submit.prevent="emit('submit')">
-      <!-- 模型选择 chip 组：横向滚动，更紧凑 -->
-      <div
-        v-if="modelOptions.length > 0"
-        class="flex items-center gap-1 overflow-x-auto mb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
+      <!-- 模型选择 chip 组：窄屏换行展示（不裁剪、不横向溢出），宽屏一行放下 -->
+      <div v-if="modelOptions.length > 0" class="flex flex-wrap items-center gap-1 mb-2">
         <button
           v-for="opt in modelOptions"
           :key="opt.value"
@@ -1136,7 +1133,7 @@ watch(
           data-testid="send-btn"
           :disabled="!input.trim() || isOverLimit"
           :aria-label="input.trim() && !isOverLimit ? '发送消息' : '发送按钮已禁用'"
-          class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-semi-normal"
+          class="shrink-0 min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl transition-all duration-semi-normal"
           :class="
             input.trim() && !isOverLimit
               ? 'bg-semi-primary hover:bg-semi-primary-hover text-white active:scale-95 shadow-semi-card hover:shadow-semi-elevated'
@@ -1162,7 +1159,7 @@ watch(
           type="button"
           data-testid="stop-btn"
           aria-label="停止生成"
-          class="shrink-0 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl bg-semi-primary hover:bg-semi-primary-active text-white active:scale-95 transition-all shadow-semi-card"
+          class="shrink-0 min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center rounded-xl bg-semi-primary hover:bg-semi-primary-active text-white active:scale-95 transition-all shadow-semi-card"
           @click="emit('stop')"
         >
           <svg
@@ -1310,6 +1307,14 @@ watch(
           </svg>
           生图
         </button>
+
+        <span
+          v-if="isOverLimit"
+          class="text-semi-micro-md text-semi-danger font-medium"
+          role="status"
+        >
+          已超出 {{ inputLength - MAX_INPUT_LENGTH }} 字，请删减后再发送
+        </span>
 
         <span
           v-if="inputLength > 0"

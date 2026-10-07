@@ -117,7 +117,7 @@ Nuxt 3 使用 SSR，服务端和客户端必须渲染出相同的 HTML，否则�
 - `MarkdownRenderer.vue` 中代码块通过 `createApp(CodeBlock).mount()` 动态挂载，不是声明式组件，修改时注意 Vue 实例生命周期
 - 前端通过 `@ai-sdk/vue` 的 `new Chat({ transport: new DefaultChatTransport({ api: '/api/chat', body: () => ({...}) }) })` 发起对话。`body` 必须是**函数** `() => ({...})`（不是静态对象字面量，也不是 `computed()`），每次发送时重新求值，从而正确捕获 `sessionId`、`model`、`enable_web_search` 等动态值；若写成静态对象会发送过期值
 - 数据库开发端口是 **5434**（非默认 5432），测试端口是 **5433**
-- `saveMessagesToDb` 只保存最后一条用户消息（反向查找），避免重复插入历史消息
+- **消息持久化走 `server/utils/message-persistence.ts` 的 `persistChatTurn()`**（原 `chat.post.ts` 内联 `saveMessagesToDb`，为可单测抽出）：常规发送只保存最后一条用户消息（反向查找），避免重复插入历史消息；**「重新生成」请求（AI SDK 自带 `body.trigger === 'regenerate-message'`）必须不插入用户消息、并把既有助手回复行更新为新内容**，否则会重复入库（同一会话出现两条相同用户提问 + 新旧两条 AI 回复）
 - `dompurify`、`highlight.js`、`katex`、`marked` 在 devDependencies 中但运行时使用，不要误删
 - 模型白名单在 `server/config/models.ts`（`AVAILABLE_MODELS` 数组）。`chat.post.ts` 通过 `ALLOWED_MODEL_VALUES`（由 `AVAILABLE_MODELS` 自动派生）校验，**前端模型列表由 `GET /api/models` 返回 `AVAILABLE_MODELS`**。新增模型只需在 `AVAILABLE_MODELS` 中添加一条，校验与前端列表自动同步，无需手动维护多处
 - **图片对话使用 ImgBB 图床**：硅基流动不支持 base64 图片，需先上传到 ImgBB 获取公网 URL。在 `.env` 中配置 `IMGBB_API_KEY`，免费注册 <https://api.imgbb.com/> 获取

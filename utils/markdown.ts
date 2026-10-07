@@ -85,12 +85,22 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
    * 代码块内的 $$ 或 $ 不应被当作公式提取。
    * 例如 ```latex\n$$E=mc^2$$\n``` 中的 $$ 是代码内容，不是公式定界符。
    * 在 marked 解析前恢复代码块，不影响 Markdown 解析。
+   *
+   * 缩进容错（必须保留）：模型输出经常把围栏嵌在有序/无序列表项内（围栏行带 2~3 空格缩进），
+   * 或闭合围栏缩进与开启围栏不一致（多打 1~4 个空格）。若正则要求围栏顶格且闭合围栏缩进与
+   * 开启围栏完全相同，这类输入会提取失败，引发两个连锁缺陷：
+   *   1. 代码内容参与后续公式提取 → 代码里的 $E=mc^2$ 被替换成 <span class="math-inline">
+   *      注入代码块内部（渲染器失守，代码被 KaTeX 改写）；
+   *   2. marked 不认这种围栏 → 源码整体泄漏为普通文本（裸露的 ``` 可见，代码里的 <span>
+   *      被浏览器当 HTML 执行）。
+   * 因此开启/闭合围栏都允许任意前导空白；恢复时把闭合围栏对齐到开启围栏的缩进，
+   * 使列表项内的代码块仍留在列表项内（不破坏列表层级）。
    */
-  const fencedCodeRegex = /^(`{3,}|~{3,})(\w*)\n([\s\S]*?)\n\1$/gm
-  let processedText = rawText.replace(fencedCodeRegex, (_, fence, _lang, code) => {
+  const fencedCodeRegex = /^([ \t]*)(`{3,}|~{3,})[ \t]*([^\n`]*?)[ \t]*\n([\s\S]*?)\n[ \t]*\2[ \t]*$/gm
+  let processedText = rawText.replace(fencedCodeRegex, (_, indent, fence, lang, code) => {
     const index = codeBlocks.length
-    codeBlocks.push(`${fence}${_lang}\n${code}\n${fence}`)
-    return `%%CODEBLOCK${index}%%`
+    codeBlocks.push(`${indent}${fence}${lang}\n${code}\n${indent}${fence}`)
+    return `${indent}%%CODEBLOCK${index}%%`
   })
 
   /**

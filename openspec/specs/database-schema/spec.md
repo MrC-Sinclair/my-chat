@@ -19,7 +19,7 @@ TypeScript 属性名采用 camelCase，数据库列名采用 snake_case，二者
 
 #### Scenario: 消息保存时 updatedAt 被手动更新
 
-- **WHEN** `saveMessagesToDb` 完成消息插入后
+- **WHEN** `persistChatTurn` 完成消息插入后
 - **THEN** 执行 `db.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))`
 - **AND** `updated_at` 列更新为当前时间戳，用于会话列表按最近活跃时间排序
 
@@ -35,7 +35,7 @@ TypeScript 属性名采用 camelCase，数据库列名采用 snake_case，二者
 
 #### Scenario: 用户消息和 AI 消息分别落库
 
-- **WHEN** `streamText` 的 `onFinish` 回调触发 `saveMessagesToDb`
+- **WHEN** `streamText` 的 `onFinish` 回调触发 `persistChatTurn`
 - **THEN** 向 `messages` 表插入一条 `role='user'` 的用户消息记录
 - **AND** 向 `messages` 表插入一条 `role='assistant'` 的 AI 回复记录
 - **AND** 两条记录的 `session_id` 均指向当前会话
@@ -143,7 +143,7 @@ TypeScript 属性名采用 camelCase，数据库列名采用 snake_case，二者
 
 ### Requirement: messages.metadata JSONB 字段
 
-`messages` 表的 `metadata` 列 MUST 为 JSONB 类型，可空，用于存储消息的附加元数据。`saveMessagesToDb` SHALL 按以下规则写入 metadata：
+`messages` 表的 `metadata` 列 MUST 为 JSONB 类型，可空，用于存储消息的附加元数据。`persistChatTurn` SHALL 按以下规则写入 metadata：
 - **用户消息**：若携带图片，写入 `{ images: [{ index: number, url: string }, ...] }`；若为语音消息，写入 `{ audio: { url: string, emotion: string, duration: number, createdAt: string } }`；同时携带图片与音频时合并为 `{ images: [...], audio: {...} }`；无图片且无音频时 metadata 为 `undefined`（不写入该列）
 - **AI 消息**：写入 `{ model: "<模型名称>" }`，如 `{ model: "Qwen/Qwen3-8B" }`
 
@@ -151,19 +151,19 @@ TypeScript 属性名采用 camelCase，数据库列名采用 snake_case，二者
 
 #### Scenario: 用户消息附带图片时写入 images 数组
 
-- **WHEN** 用户上传图片并发送消息，`saveMessagesToDb` 收到 `imageUrls` 参数非空
+- **WHEN** 用户上传图片并发送消息，`persistChatTurn` 收到 `imageUrls` 参数非空
 - **THEN** 用户消息记录的 `metadata` 写入 `{ images: [{ index: 0, url: "..." }, { index: 1, url: "..." }] }`
 - **AND** 图片 URL 为 ImgBB 上传后的公网 URL
 
 #### Scenario: 用户消息为语音消息时写入 audio 对象
 
-- **WHEN** 用户发送语音消息，`saveMessagesToDb` 收到 `audio` 参数（含 url/emotion/duration/createdAt）
+- **WHEN** 用户发送语音消息，`persistChatTurn` 收到 `audio` 参数（含 url/emotion/duration/createdAt）
 - **THEN** 用户消息记录的 `metadata` 写入 `{ audio: { url: "/api/audio/<uuid>", emotion: "happy", duration: 5, createdAt: "<ISO>" } }`
 - **AND** `content` 字段存储转写文本（非音频数据）
 
 #### Scenario: AI 消息写入使用的模型名
 
-- **WHEN** `saveMessagesToDb` 插入 AI 回复记录
+- **WHEN** `persistChatTurn` 插入 AI 回复记录
 - **THEN** `metadata` 写入 `{ model: modelName }`
 - **AND** modelName 来自请求参数，用于后续追溯每条 AI 回复使用的模型
 
@@ -181,18 +181,18 @@ TypeScript 属性名采用 camelCase，数据库列名采用 snake_case，二者
 
 #### Scenario: audio.emotion 落库前经白名单校验
 
-- **WHEN** `saveMessagesToDb` 收到 `audio.emotion` 为 `"happy"`/`"sad"`/`"angry"`/`"neutral"` 之一
+- **WHEN** `persistChatTurn` 收到 `audio.emotion` 为 `"happy"`/`"sad"`/`"angry"`/`"neutral"` 之一
 - **THEN** 通过 `ALLOWED_EMOTIONS` 白名单校验，原样写入 `metadata.audio.emotion`
 
-- **WHEN** `saveMessagesToDb` 收到 `audio.emotion` 为其他值（`null`、空串、`"unknown"`、`"EMO_UNKNOWN"`、任意攻击字符串）
+- **WHEN** `persistChatTurn` 收到 `audio.emotion` 为其他值（`null`、空串、`"unknown"`、`"EMO_UNKNOWN"`、任意攻击字符串）
 - **THEN** **不**写入原始值，落库为 `metadata.audio.emotion: null`
-### Requirement: saveMessagesToDb 仅保存最后一条用户消息
+### Requirement: persistChatTurn 仅保存最后一条用户消息
 
-`server/api/chat.post.ts` 中的 `saveMessagesToDb` 函数 SHALL 反向查找传入的 `chatMessages` 数组中最后一条 `role='user'` 的消息（实现：`[...chatMessages].reverse().find((msg) => msg.role === 'user')`），仅将该条用户消息插入 `messages` 表，避免重复插入历史用户消息。同时插入一条 `role='assistant'` 的 AI 回复记录，最后通过 `db.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))` 更新会话最近活跃时间。该函数 MUST 在 `streamText` 的 `onFinish` 回调中调用，禁止在 `onChunk` 中写库（避免阻塞流式输出）。
+`server/utils/message-persistence.ts` 中的 `persistChatTurn`（原为 `server/api/chat.post.ts` 内联函数，为可单测抽出）SHALL 反向查找传入的 `chatMessages` 数组中最后一条 `role='user'` 的消息（实现：`[...chatMessages].reverse().find((msg) => msg.role === 'user')`，由调用方提取 `userText` 传入），仅将该条用户消息插入 `messages` 表，避免重复插入历史用户消息。同时插入一条 `role='assistant'` 的 AI 回复记录，最后通过 `db.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))` 更新会话最近活跃时间。该函数 MUST 在 `streamText` 的 `onFinish` 回调中调用，禁止在 `onChunk` 中写库（避免阻塞流式输出）。
 
 #### Scenario: 历史会话追加新消息时只插入最新一条 user
 
-- **WHEN** `saveMessagesToDb` 接收的 `chatMessages` 包含多条历史 user 消息（如 5 条）
+- **WHEN** `persistChatTurn` 接收的 `chatMessages` 包含多条历史 user 消息（如 5 条）
 - **THEN** 仅反向查找最后一条 user 消息插入 `messages` 表
 - **AND** 不重复插入历史 user 消息
 - **AND** 同时插入一条 assistant 消息
@@ -205,21 +205,46 @@ TypeScript 属性名采用 camelCase，数据库列名采用 snake_case，二者
 #### Scenario: 持久化时机限定在 onFinish
 
 - **WHEN** `streamText` 流式输出过程中触发 `onChunk`
-- **THEN** `onChunk` 内不调用 `saveMessagesToDb`，不执行数据库写入
-- **AND** 仅在 `onFinish` 回调（流式结束）时调用 `saveMessagesToDb` 落库
+- **THEN** `onChunk` 内不调用 `persistChatTurn`，不执行数据库写入
+- **AND** 仅在 `onFinish` 回调（流式结束）时调用 `persistChatTurn` 落库
+
+### Requirement: 重新生成时替换既有助手回复（不重复入库）
+
+`persistChatTurn` SHALL 依据调用方传入的 `isRegenerate`（由请求体 `trigger === 'regenerate-message'` 判定，该字段由 AI SDK 的 `DefaultChatTransport` 自动携带）选择持久化分支：**为真时 MUST NOT 插入用户消息**（该消息首次发送时已落库），并 MUST 将本会话最后一条 `role='assistant'` 消息**更新**为新内容（`content` + `metadata.model`），而不是再插入一条新记录。更新目标行 MUST 满足「其 `created_at` 晚于或等于最后一条 `role='user'` 消息的 `created_at`」，即它确实是这条用户消息的回复；否则（上一轮回复为空未落库等场景）SHALL 退回插入新行，避免覆盖更早一轮的历史回复。新回复为空字符串时 SHALL 保留既有助手回复不动（既不删除也不新增）。
+
+#### Scenario: 重新生成后用户消息不重复
+
+- **WHEN** 用户在会话 `s1` 中点击「重新生成」，客户端重发 `messages`（仅含 user，assistant 已被移除）
+- **THEN** 服务端识别 `trigger === 'regenerate-message'`
+- **AND** `messages` 表不新增 user 行（会话中仍只有 1 条该用户提问）
+- **AND** 旧 assistant 行的 `content` 被更新为新回复，`created_at` 保持不变（消息顺序不被打乱）
+- **AND** 会话中不存在「新旧两条 AI 回复并存」
+
+#### Scenario: 上轮回复未落库时不覆盖历史
+
+- **WHEN** 会话中最后一条 user 消息之后没有 assistant 回复（上轮 LLM 无文本输出，未落库）
+- **AND** 用户触发重新生成
+- **THEN** 最后一条 assistant 行的 `created_at` 早于最后一条 user 行
+- **AND** `persistChatTurn` 退回插入新 assistant 行，不覆盖更早一轮的回复
+
+#### Scenario: 重新生成但新回复为空
+
+- **WHEN** 重新生成流式结束，`assistantText` 为空
+- **THEN** 既有的 assistant 行保持不变（不删除、不置空）
+- **AND** 仍更新 `sessions.updated_at`
 
 ### Requirement: createdAt / updatedAt 时间戳约定
 
-所有数据表的 `created_at` 列 MUST 使用 `timestamp().notNull().defaultNow()`，由数据库在 INSERT 时自动填充当前时间。`sessions.updated_at` 列 MUST 同样使用 `timestamp().notNull().defaultNow()` 作为默认值，但在 `saveMessagesToDb` 末尾通过 `db.update(sessions).set({ updatedAt: new Date() })` 手动更新。`messages` 和 `feedbacks` 表仅有 `created_at`，无 `updated_at`（消息和反馈不可变）。
+所有数据表的 `created_at` 列 MUST 使用 `timestamp().notNull().defaultNow()`，由数据库在 INSERT 时自动填充当前时间。`sessions.updated_at` 列 MUST 同样使用 `timestamp().notNull().defaultNow()` 作为默认值，但在 `persistChatTurn` 末尾通过 `db.update(sessions).set({ updatedAt: new Date() })` 手动更新。`messages` 和 `feedbacks` 表仅有 `created_at`，无 `updated_at`（消息和反馈不可变）。
 
 #### Scenario: 插入记录时 created_at 自动填充
 
 - **WHEN** 向 `messages` 表插入记录且未显式指定 `createdAt`
 - **THEN** 数据库自动填充 `created_at` 为当前时间戳
 
-#### Scenario: saveMessagesToDb 显式传入 createdAt
+#### Scenario: persistChatTurn 显式传入 createdAt
 
-- **WHEN** `saveMessagesToDb` 插入 user / assistant 消息
+- **WHEN** `persistChatTurn` 插入 user / assistant 消息
 - **THEN** 代码显式传入 `createdAt: new Date()`
 - **AND** 该时间戳由应用层生成（与数据库 defaultNow 等价，但显式传入便于测试控制）
 
@@ -231,11 +256,11 @@ TypeScript 属性名采用 camelCase，数据库列名采用 snake_case，二者
 
 ### Requirement: UUID v4 主键生成策略
 
-所有数据表（sessions / messages / feedbacks）的 `id` 列 MUST 为 text 类型主键，存储 UUID v4 字符串，由应用层通过 `crypto.randomUUID()` 生成。不使用数据库原生 UUID 类型或自增整数主键。`saveMessagesToDb` 在插入 user / assistant 消息时 MUST 显式传入 `id: crypto.randomUUID()`。
+所有数据表（sessions / messages / feedbacks）的 `id` 列 MUST 为 text 类型主键，存储 UUID v4 字符串，由应用层通过 `crypto.randomUUID()` 生成。不使用数据库原生 UUID 类型或自增整数主键。`persistChatTurn` 在插入 user / assistant 消息时 MUST 显式传入 `id: crypto.randomUUID()`。
 
 #### Scenario: 插入消息时生成 UUID v4
 
-- **WHEN** `saveMessagesToDb` 插入 user 或 assistant 消息
+- **WHEN** `persistChatTurn` 插入 user 或 assistant 消息
 - **THEN** `id` 字段为 `crypto.randomUUID()` 生成的 UUID v4 字符串
 - **AND** 不依赖数据库的 UUID 生成函数
 

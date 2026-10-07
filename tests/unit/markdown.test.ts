@@ -154,6 +154,61 @@ describe('renderMarkdown', () => {
     expect(html).toContain('$$x^2$$')
   })
 
+  // ===== 围栏缩进容错（列表项内代码块 / 闭合围栏缩进错位）=====
+  // 背景：模型输出常把围栏嵌在列表项内（缩进 3 空格），或闭合围栏缩进与开启围栏不一致。
+  // 提取正则不容忍缩进时会出现「代码内容被公式提取改写 + 源码整体泄漏」两类连锁缺陷。
+
+  it('列表项内的代码块应正常渲染（不泄漏围栏源码）', () => {
+    const md = '1. **第一步**\n   ```mermaid\n   graph TD\n     A --> B\n   ```\n\n2. 结束'
+    const html = renderMarkdown(md)
+    expect(html).toContain('language-mermaid')
+    expect(html).toContain('graph TD')
+    expect(html).not.toContain('```')
+  })
+
+  it('列表项内代码块中的 $ 公式不应被当作公式（避免改写代码）', () => {
+    const md = "1. 示例\n   ```javascript\n   const el = '<span class=\"x\">hi</span>'\n   // $E=mc^2$\n   ```"
+    const html = renderMarkdown(md)
+    expect(html).toContain('language-javascript')
+    // 代码内的 HTML 应保持转义、$ 公式保持原文，均不得被渲染成标签
+    expect(html).toContain('&lt;span')
+    expect(html).toContain('$E=mc^2$')
+    expect(html).not.toContain('class="math-inline"')
+    expect(html).not.toContain('<span class="x">')
+  })
+
+  it('闭合围栏缩进多于开启围栏时仍应识别为代码块', () => {
+    const md = '```javascript\nconst a = 1\n    ```\n\n> 引用'
+    const html = renderMarkdown(md)
+    expect(html).toContain('language-javascript')
+    expect(html).toContain('const a = 1')
+    expect(html).not.toContain('```')
+    // 末尾引用块不得被吞进代码块
+    expect(html).toContain('<blockquote')
+  })
+
+  it('多个列表项内代码块应全部识别，后续引用块不被吞并', () => {
+    const md = [
+      '1. 第一步',
+      '   ```mermaid',
+      '   graph TD',
+      '   ```',
+      '',
+      '2. 第二步',
+      '   ```javascript',
+      '   const a = 1',
+      '   ```',
+      '',
+      '> 提示：仅供参考'
+    ].join('\n')
+    const html = renderMarkdown(md)
+    expect(html.match(/<pre>/g)?.length).toBe(2)
+    expect(html).toContain('language-mermaid')
+    expect(html).toContain('language-javascript')
+    expect(html).toContain('<blockquote')
+    expect(html).not.toContain('```')
+  })
+
   it('不完整的 $$ 公式应渲染为骨架屏占位（流式 FOUC 修复）', () => {
     const html = renderMarkdown('这是一个不完整的公式 $$\\int_0^1 f(x)')
     // 未闭合的 $$ 用骨架屏占位，避免流式输出时暴露 LaTeX 源码字符

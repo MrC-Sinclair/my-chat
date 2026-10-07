@@ -43,12 +43,18 @@
 #### Scenario: estimateSize 在 measureElement 测量前提供初始估计高度
 
 - **WHEN** 虚拟项尚未挂载到 DOM，`measureElement` 未被调用
-- **THEN** `estimateSize` 选项根据消息类型和内容估算初始高度：用户消息固定 80px，AI 消息按文本长度（`Math.ceil(text.length / 30) * 24`）累加并加上思考过程（120px）和工具调用（每个 120px）的预留空间
-- **AND** 估算值限制在 120px ~ 800px 区间内，避免极端值
+- **THEN** `estimateSize` 选项根据消息类型和内容估算初始高度：用户消息固定 80px（语音消息 140px），AI 消息按**视觉行数**估算——对每行取 `Math.max(1, Math.ceil(line.length / 40))` 累加后乘 24px，并额外累加表格行（每行 28px）、思考过程（120px）和工具调用（每个 160px）的预留空间
+- **AND** 估算值限制在 120px ~ 8000px 区间内，避免极端值
+
+> **为什么必须按视觉行数而非 `text.length / 30`**：模型常常输出不含换行的长段落，只按 `\n` 分行会把上千字的段落算成 1 行；旧公式封顶 800px 又把带表格/搜索面板的长回复压到远低于真实高度。
+> 估算偏低会让 `getTotalSize()` 过小、未渲染项位置整体前移，表现为「滚到底后仍看不到最新消息」。宁可略高，不可严重偏低——渲染后即被实测值接管。
 
 ### Requirement: 高度只增不减策略（避免流式期间测量抖动）
 
-`pages/ai-chat.vue` SHALL 在 `measureElement` 回调中实现"高度只增不减"策略，避免流式输出期间 MarkdownRenderer 重新渲染的中间状态导致测量值回退引发滚动抖动。`lastMeasuredHeights`（`Map<number, number>`）MUST 记录每个虚拟项索引的历史最大测量高度。`measureElement` 回调 MUST 通过 `Math.max(h, lastH)` 取当前测量值与历史记录的最大值作为上报高度，并更新 `lastMeasuredHeights`。会话切换时 MUST 在 `watch(currentSessionId)` 中调用 `lastMeasuredHeights.clear()` 清空记录，避免旧会话的高度记录干扰新会话的测量。
+`pages/ai-chat.vue` SHALL 在 `measureElement` 回调中实现"高度只增不减"策略，避免流式输出期间 MarkdownRenderer 重新渲染的中间状态导致测量值回退引发滚动抖动。`lastMeasuredHeights`（`Map<string, number>`）MUST 以**消息 id** 为 key 记录每个虚拟项的历史最大测量高度（无 id 的消息退回 `idx-<索引>`）。`measureElement` 回调 MUST 通过 `Math.max(h, lastH)` 取当前测量值与历史记录的最大值作为上报高度，并更新 `lastMeasuredHeights`。会话切换时 MUST 在 `watch(currentSessionId)` 中调用 `lastMeasuredHeights.clear()` 清空记录，避免旧会话的高度记录干扰新会话的测量。
+
+> **为什么 key 必须是消息 id 而不是索引**：编辑消息 / 重新生成会让同一索引指向另一条消息，
+> 用索引会把上一条消息的高度错误地套用到新消息上（总高虚高 → 底部出现大片空白）。
 
 #### Scenario: 流式期间 MarkdownRenderer 中间状态读到较小高度时取历史最大值
 
@@ -72,7 +78,7 @@
 
 ### Requirement: 自动滚动到底部（消息数量变化和 AI 流式输出时）
 
-`pages/ai-chat.vue` SHALL 在消息数量增加和 AI 流式输出时自动滚动到底部，确保用户始终看到最新内容。`scrollToBottom()` 函数 MUST 先调用 `enableStickToBottom()` 启用滚动锁定，然后在 `nextTick` 中调用 `virtualizer.value.scrollToIndex(messages.value.length - 1, { align: 'end', behavior: 'auto' })` 滚动到最后一条消息。`watch(messages.value.length)` MUST 在新消息数量大于旧消息数量时调用 `scrollToBottom()`。AI 流式输出期间（`isLoading.value === true`），`watch(最后一条消息文本)` MUST 直接设置 `scroll.scrollTop = scroll.scrollHeight` 跟随底部，不使用 `virtualizer.scrollToIndex` 以避免与 `scheduleRemeasure` 中的 `measure()` 冲突导致 `getTotalSize` 抖动。流式结束时（`watch(isLoading)` 由 true 变 false）若 `stickToBottom` 为 true，MUST 调用 `scrollToBottom()` 归位。
+`pages/ai-chat.vue` SHALL 在消息数量增加和 AI 流式输出时自动滚动到底部，确保用户始终看到最新内容。`scrollToBottom()` 函数 MUST 先调用 `enableStickToBottom()` 启用滚动锁定，然后在 `nextTick` 中启动贴底保持循环（见「贴底保持」Requirement），由其首轮 `pinToBottom()` 把视图顶到底部。`watch(messages.value.length)` MUST 在新消息数量大于旧消息数量时调用 `scrollToBottom()`。AI 流式输出期间（`isLoading.value === true`），`watch(最后一条消息文本)` MUST 直接设置 `scroll.scrollTop = scroll.scrollHeight` 跟随底部，不使用 `virtualizer.scrollToIndex` 以避免与 `scheduleRemeasure` 中的 `measure()` 冲突导致 `getTotalSize` 抖动。流式结束时（`watch(isLoading)` 由 true 变 false）若 `stickToBottom` 为 true，MUST 调用 `scrollToBottom()` 归位。切换会话加载历史后 MUST 显式调用 `scrollToBottom()`，保证重新打开会话定位在最新消息而不是中间。
 
 #### Scenario: 用户发送新消息后自动滚动到底部
 
@@ -95,7 +101,7 @@
 
 ### Requirement: 流式输出期间滚动锁定（用户手动上滑时不强制滚回底部）
 
-`pages/ai-chat.vue` SHALL 实现滚动锁定机制，当用户在流式输出期间主动向上滚动查看历史消息时，不强制将视图滚回底部。`stickToBottom` 标志位 MUST 默认为 false，仅在 `enableStickToBottom()` 被调用时置为 true，并在 2500ms 后自动重置为 false（通过 `stickToBottomTimer` 防抖）。消息容器 MUST 通过 `ResizeObserver` 监听尺寸变化触发 `virtualizer.measure()`，并通过 `scroll` 事件监听器（`passive: true`）检测用户滚动行为。`scroll` 事件回调 MUST 计算 `scrollHeight - scrollTop - clientHeight < 50` 判断是否在底部附近，若不在底部附近则将 `stickToBottom` 置为 false 并清除防抖定时器。流式结束时的 `scrollToBottom()` 调用 MUST 受 `stickToBottom` 标志位约束，用户主动上滑后不强制归位。
+`pages/ai-chat.vue` SHALL 实现滚动锁定机制，当用户在流式输出期间主动向上滚动查看历史消息时，不强制将视图滚回底部。`stickToBottom` 标志位 MUST 默认为 false，仅在 `enableStickToBottom()` 被调用时置为 true，并在 2500ms 后自动重置为 false（通过 `stickToBottomTimer` 防抖）。消息容器 MUST 通过 `ResizeObserver` 监听尺寸变化触发 `virtualizer.measure()`，并通过 `scroll` 事件监听器（`passive: true`）检测用户滚动行为。`scroll` 事件回调 MUST 计算 `scrollHeight - scrollTop - clientHeight < 50` 判断是否在底部附近；若不在底部附近，**只有在最近 600ms 内发生过真实用户输入**（`wheel` / `touchstart` / `touchmove` / `pointerdown` / `keydown` 标记）时才判定为用户主动上滑并将 `stickToBottom` 置为 false；否则视为布局驱动的位移（见「贴底保持」Requirement），保持贴底并重新顶到底。流式结束时的 `scrollToBottom()` 调用 MUST 受 `stickToBottom` 标志位约束，用户主动上滑后不强制归位。
 
 #### Scenario: 用户在流式期间主动向上滚动查看历史
 
@@ -119,9 +125,34 @@
 - **THEN** 后续 `enableStickToBottom()` 调用可重新启用 `stickToBottom`（如新消息到达）
 - **AND** `stickToBottomTimer` 通过 `clearTimeout` 清除旧定时器并重新计时
 
+### Requirement: 贴底保持（收敛循环 + 区分布局位移与用户上滑）
+
+`pages/ai-chat.vue` MUST 实现贴底保持循环 `startBottomSettle()`：以 100ms 为间隔轮询，只要 `stickToBottom` 为真且距底大于 50px 就重新贴底，直到用户上滑（`stickToBottom` 置 false）、组件卸载或达到安全上限（600 次 ≈ 60s）。贴底动作 `pinToBottom()` MUST 使用 `el.scrollTop = el.scrollHeight` 直接顶到当前布局底部，而非 `virtualizer.scrollToIndex`：后者依据测量缓存计算目标偏移，`measure()` 重算后算出的偏移可能短于真实底部且反复重试仍是同一位置。虚拟容器（其高度 = `getTotalSize()`）MUST 被 `ResizeObserver` 监听，尺寸变化时若处于贴底状态则重启收敛循环。消息容器 MUST 监听 `End` 键并调用 `scrollToBottom()`，语义为「跳到最新消息」。
+
+#### Scenario: 打开长会话后停在最新消息
+
+- **WHEN** 会话包含 30 条高内容消息，用户点击该会话加载历史
+- **THEN** 加载完成后调用 `scrollToBottom()` 并启动收敛循环
+- **AND** 多轮测量导致总高变化后仍持续贴底，最终距底 ≤ 50px
+- **AND** 最后一条消息完整可见（不出现在视口之外）
+
+#### Scenario: 按 End 键一次到达最新消息
+
+- **WHEN** 用户上滑到历史位置后按 `End`
+- **THEN** 消息容器的 `keydown` 监听调用 `scrollToBottom()`
+- **AND** 收敛循环逐轮顶到底部，1.5s 内距底 ≤ 50px（无需反复按十几次）
+
+#### Scenario: 重测量导致的位移不被误判为用户上滑
+
+- **WHEN** 内部 `measure()` 重算使内容整体位移，视图距底变为 3000px
+- **AND** 最近 600ms 内没有滚轮/触摸/按键/拖拽输入
+- **THEN** `scroll` 回调判定为布局位移，`stickToBottom` 保持为 true
+- **AND** 收敛循环重新贴底，视图回到最新消息
+- **AND** 用户随后真实滚轮上滑时（有输入事件），`stickToBottom` 置 false，视图不再被拽回
+
 ### Requirement: overscan 预渲染避免滚动边缘空白
 
-`pages/ai-chat.vue` SHALL 在 `useVirtualizer` 配置中设置 `overscan: 5`，在虚拟列表可视区域外预渲染 5 条消息，避免快速滚动时出现空白区域。`overscan` 值 MUST 通过 `computed` 配置传入虚拟滚动器，与 `count`、`estimateSize`、`measureElement` 等选项一同响应式更新。预渲染的虚拟项 MUST 与可视区域内的虚拟项采用相同的渲染逻辑（包括 `:ref` 调用 `measureElement`、`data-index` 属性、`transform` 定位），确保滚动到边缘时无需重新挂载。
+`pages/ai-chat.vue` SHALL 在 `useVirtualizer` 配置中设置 `overscan: 6`，在虚拟列表可视区域外预渲染 6 条消息，避免快速滚动时出现空白区域（高内容消息单条即可撑满数屏，overscan 偏小会在滚动/贴底时留下空白）。`overscan` 值 MUST 通过 `computed` 配置传入虚拟滚动器，与 `count`、`estimateSize`、`measureElement` 等选项一同响应式更新。预渲染的虚拟项 MUST 与可视区域内的虚拟项采用相同的渲染逻辑（包括 `:ref` 调用 `measureElement`、`data-index` 属性、`transform` 定位），确保滚动到边缘时无需重新挂载。
 
 #### Scenario: 快速滚动时预渲染区域填充内容避免空白
 

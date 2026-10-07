@@ -53,6 +53,20 @@
     visibility theme('transitionDuration.semi-fast') ease;
 }
 
+@media (width < 640px) {
+  /**
+   * 窄屏不展示工具提示（显示规则见下方 >= 640px 的 :hover 分支），
+   * 因此这里必须用 display: none 而不是仅靠 visibility: hidden：
+   * 默认态只是 visibility: hidden，伪元素仍参与布局，其几何盒（左中定位 + nowrap 文案）
+   * 会计入祖先的可滚动溢出区域 → 窄屏出现整页横向滚动（实测 375px 视口下文档宽 447px，
+   * 根因就是「生图」等按钮的长 tooltip 伪元素越界，而非按钮本身宽度）。
+   */
+  [data-tooltip]::after,
+  [data-tooltip]::before {
+    display: none;
+  }
+}
+
 @media (width >= 640px) {
   [data-tooltip]:hover::after,
   [data-tooltip]:hover::before {

@@ -21,3 +21,7 @@ tests-e2e/
 # 测试辅助脚本与人工测试产物（一次性使用，不进仓库）
 scripts/
 tests/fixtures/
+
+# 本地验证截图与工具记忆目录（临时产物，不进仓库）
+tmp/
+.workbuddy/

@@ -4,7 +4,7 @@
 
 `server/api/sessions.ts` SHALL 通过 `POST /api/sessions` 创建新会话：使用 `crypto.randomUUID()` 生成会话 ID，请求体（可选）`{ title?: string }` 不传或为空时 SHALL 自动生成默认标题 `新对话 ${new Date().toLocaleString('zh-CN')}`，插入数据库后返回新建会话记录 `{ id, title, createdAt, updatedAt }`。其他未支持的 HTTP 方法 SHALL 返回 `405 方法不允许`。
 
-前端 `composables/useChatSession.ts` 的 `createNewSession()` SHALL 在切换 `currentSessionId` 之前保存旧值，若旧值非空则 fire-and-forget 触发上一个会话的归档（详见「会话切换归档」Requirement），然后调用 POST 接口、更新 `currentSessionId`、清空消息列表、重新拉取会话列表。创建失败 SHALL 通过 `useToast().error()` 提示「创建会话失败」。
+前端 `composables/useChatSession.ts` SHALL 将「回到欢迎页」与「落库建会话」拆成两步：`startNewSession()`（用户点击「新建会话」时调用）只保存旧的 `currentSessionId` 并 fire-and-forget 触发上一个会话的归档（详见「会话切换归档」Requirement），随后把 `currentSessionId` 置空、清空消息列表，**不调用 POST 接口**；`ensureSession()` 在首次发送消息/生图前调用，`currentSessionId` 为空时才 POST 建会话并刷新会话列表。这样避免产生 0 条消息的空会话（点一下就切走、刷新或注销换身份都会留下永久残留）。`ensureSession()` 创建失败 SHALL `console.error` 记录并通过 `useToast().error()` 提示「创建会话失败」，返回空字符串；调用方 MUST 在返回空串时中止发送，避免消息发出却无处持久化。
 
 #### Scenario: 请求体未传 title 时使用默认标题
 
@@ -19,18 +19,27 @@
 - **THEN** 服务端使用请求体中的 title 插入数据库
 - **AND** 返回新建会话记录，title 为「我的对话」
 
-#### Scenario: 前端创建会话时触发上一个会话归档
+#### Scenario: 前端新建会话时触发上一个会话归档（且不立即建库）
 
-- **WHEN** 用户当前会话 ID 为 `sess-A`，点击「新建会话」触发 `createNewSession()`
+- **WHEN** 用户当前会话 ID 为 `sess-A`，点击「新建会话」触发 `startNewSession()`
 - **THEN** `useChatSession` 先把 `lastSessionId` 置为 `sess-A`
 - **AND** fire-and-forget 调用 `POST /api/sessions/sess-A/archive-memory`（不阻塞主流程）
-- **AND** 随后发起 `POST /api/sessions` 创建新会话并切换 `currentSessionId` 为新 ID
+- **AND** `currentSessionId` 置为空字符串、消息列表清空，回到欢迎页
+- **AND** **不**发起 `POST /api/sessions`，数据库中不产生 0 条消息的空会话
 
-#### Scenario: 创建失败时提示错误
+#### Scenario: 首条消息发送时才落库建会话
+
+- **WHEN** `currentSessionId` 为空，用户提交首条消息触发 `ensureSession()`
+- **THEN** 发起 `POST /api/sessions` 新建会话并切换 `currentSessionId` 为新 ID
+- **AND** 刷新会话列表，随后该消息带 `sessionId` 发送
+- **AND** 同一会话中后续消息不再重复建会话（`currentSessionId` 非空时 `ensureSession()` 直接返回原 ID）
+
+#### Scenario: 创建失败时提示错误并中止发送
 
 - **WHEN** POST 请求因网络或数据库异常失败
-- **THEN** `useChatSession` 捕获错误并 `console.error` 记录
-- **AND** 通过 `useToast().error()` 向用户展示「创建会话失败」提示
+- **THEN** `ensureSession()` 捕获错误、`console.error` 记录、返回空字符串
+- **AND** 通过 `useToast().error()` 向用户展示「创建会话失败」
+- **AND** 调用方不提交消息（输入框内容保留，不出现「以为已发送实则全丢」）
 
 ### Requirement: 会话列表
 
@@ -280,7 +289,7 @@
 
 ### Requirement: 会话切换归档
 
-`composables/useChatSession.ts` SHALL 在会话切换时通过 `triggerArchive(sessionId)` fire-and-forget 调用 `POST /api/sessions/:id/archive-memory`，将上一个会话的短期记忆归档为长期记忆。归档触发时机：`createNewSession()` 和 `switchSession(sessionId)` 中，在修改 `currentSessionId` 之前保存旧值为 `previousSessionId`，仅当 `previousSessionId` 非空且（在 switchSession 场景下）不等于目标 `sessionId` 时才触发归档，同时将 `lastSessionId.value` 置为 `previousSessionId` 供 `chat.post.ts` 的 `DefaultChatTransport.body` 读取。
+`composables/useChatSession.ts` SHALL 在会话切换时通过 `triggerArchive(sessionId)` fire-and-forget 调用 `POST /api/sessions/:id/archive-memory`，将上一个会话的短期记忆归档为长期记忆。归档触发时机：`startNewSession()`（原 `createNewSession()`）和 `switchSession(sessionId)` 中，在修改 `currentSessionId` 之前保存旧值为 `previousSessionId`，仅当 `previousSessionId` 非空且（在 switchSession 场景下）不等于目标 `sessionId` 时才触发归档，同时将 `lastSessionId.value` 置为 `previousSessionId` 供 `chat.post.ts` 的 `DefaultChatTransport.body` 读取。
 
 `triggerArchive()` SHALL 不 `await` 完成以避免阻塞会话切换；失败仅 `console.error` 记录，不弹 toast（归档是增强操作，失败不影响主流程）。前端 SHALL 通过 `archivingSessions: Set<string>` 防重复守卫避免同一会话归档进行中时重复请求；`finally` 分支 SHALL 移除守卫以允许后续重试。
 
@@ -294,11 +303,11 @@
 
 #### Scenario: 创建新会话时触发旧会话归档
 
-- **WHEN** 当前 `currentSessionId === "sess-A"`，用户点击「新建会话」触发 `createNewSession()`
+- **WHEN** 当前 `currentSessionId === "sess-A"`，用户点击「新建会话」触发 `startNewSession()`
 - **THEN** `previousSessionId = "sess-A"`（非空）
 - **AND** `lastSessionId.value` 被置为 `"sess-A"`
 - **AND** `triggerArchive("sess-A")` 被 fire-and-forget 调用
-- **AND** 随后继续创建新会话流程
+- **AND** 随后回到欢迎页（会话行延迟到首条消息时才落库）
 
 #### Scenario: 首次进入无旧会话不触发归档
 

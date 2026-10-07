@@ -150,13 +150,13 @@ function setMessages(msgs: UIMessage[]) {
 }
 
 async function wrappedHandleSubmit() {
-  // 首条消息发送前确保会话存在：currentSessionId 为空时 body.sessionId 为 undefined，
+  // 首条消息发送前确保会话已在库中存在：currentSessionId 为空时 body.sessionId 为 undefined，
   // 服务端 onFinish 因无 sessionId 静默跳过持久化，整段对话刷新即丢（含语音气泡的音频元信息）
   if (!currentSessionId.value) {
-    // createNewSession 会触发 watch(currentSessionId) 清空 pending 语音状态（防切换残留），
+    // ensureSession 会触发 watch(currentSessionId) 清空 pending 语音状态（防切换残留），
     // 先快照发送所需的音频元信息，创建成功后恢复
     const audioSnapshot = pendingVoiceMessage.value ? { ...pendingVoiceMessage.value } : null
-    await createNewSession()
+    await ensureSession()
     // 创建失败时 currentSessionId 仍为空：中止发送（输入框内容未清空），避免用户以为已发出实则全丢
     if (!currentSessionId.value) {
       toast.error('创建会话失败，请重试')
@@ -215,9 +215,11 @@ async function handleImageGenerated(result: {
 
   // 2. 持久化到 DB（异步，失败不丢失前端图片，仅 toast 提示）
   // 注：saveMessage 内部已有 toast.error，此处 catch 阻止抛出避免 unhandled rejection
-  if (currentSessionId.value) {
+  // 注：会话采用惰性创建，欢迎页直接生图时需先确保会话已落库，否则图片消息无处持久化
+  const sessionId = currentSessionId.value || (await ensureSession())
+  if (sessionId) {
     try {
-      await saveMessage(currentSessionId.value, 'assistant', result.markdown, {
+      await saveMessage(sessionId, 'assistant', result.markdown, {
         model: 'Kwai-Kolors/Kolors'
       })
     } catch {
@@ -351,6 +353,8 @@ const isMobile = ref(false)
 let onResize: (() => void) | null = null
 
 let ro: ResizeObserver | null = null
+/** 虚拟容器（高度 = getTotalSize()）尺寸监听，用于贴底状态下跟随高度变化 */
+let parentRo: ResizeObserver | null = null
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
   isMobile.value = window.innerWidth < 640
@@ -372,7 +376,9 @@ onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick)
   if (onResize) window.removeEventListener('resize', onResize)
   if (ro) ro.disconnect()
+  if (parentRo) parentRo.disconnect()
   if (stickToBottomTimer) clearTimeout(stickToBottomTimer)
+  stopBottomSettle()
 })
 
 watch(
@@ -387,22 +393,73 @@ watch(
         virtualizer.value?.measure()
       })
       ro.observe(el)
-      const onScroll = () => {
-        if (!stickToBottom) return
-        const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50
-        if (!isAtBottom) {
-          stickToBottom = false
-          if (stickToBottomTimer) {
-            clearTimeout(stickToBottomTimer)
-            stickToBottomTimer = null
-          }
-        }
-      }
       el.addEventListener('scroll', onScroll, { passive: true })
+      // 用户输入标记：只有这些输入之后发生的「离开底部」才算用户主动上滑
+      // （拖拽滚动条不产生 wheel 事件，因此还需监听 pointerdown/mousedown）
+      el.addEventListener('wheel', markUserScrollInput, { passive: true })
+      el.addEventListener('touchstart', markUserScrollInput, { passive: true })
+      el.addEventListener('touchmove', markUserScrollInput, { passive: true })
+      el.addEventListener('pointerdown', markUserScrollInput, { passive: true })
+      el.addEventListener('keydown', markUserScrollInput)
     }
   },
   { immediate: true }
 )
+
+/**
+ * 滚动事件：维护「贴底」意图 + 到底后触发收敛
+ *
+ * 关键难点：scroll 事件无法区分「用户滚动」与「布局驱动的滚动」。
+ * 虚拟列表在重测量后会自动调整 scrollTop 保持视觉锚点（内容整体位移），
+ * 这同样触发 scroll 事件且位移方向与用户上滑一致；若按「离开底部就取消贴底」处理，
+ * 会把布局位移误判为用户上滑 → 贴底失效 → 视图停在中途（这正是「末尾不可达」的成因）。
+ * 因此只有在最近 600ms 内发生过真实用户输入（滚轮/触摸/按键/拖拽滚动条）时，
+ * 才把「离开底部」当作主动上滑；否则视为布局位移，保持贴底并重新顶到底。
+ */
+let lastUserScrollInputAt = 0
+const USER_SCROLL_INPUT_WINDOW_MS = 600
+/** 上一次 scroll 事件的距底距离，用于识别「刚刚到底」这一次滚动 */
+let lastScrollDistance = Number.POSITIVE_INFINITY
+
+function markUserScrollInput() {
+  lastUserScrollInputAt = Date.now()
+}
+
+function onScroll() {
+  const el = messagesContainer.value
+  if (!el) return
+  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+  const arrivedAtBottom = distance < 50 && lastScrollDistance >= 50
+  lastScrollDistance = distance
+  const userDriven = Date.now() - lastUserScrollInputAt < USER_SCROLL_INPUT_WINDOW_MS
+
+  if (distance < 50) {
+    enableStickToBottom()
+    if (arrivedAtBottom && !bottomSettleTimer) startBottomSettle()
+    return
+  }
+
+  if (!userDriven) {
+    // 布局位移（重测量/图片加载等）把视图顶离底部：保持贴底意图，继续收敛
+    if (stickToBottom && !bottomSettleTimer) startBottomSettle()
+    return
+  }
+
+  if (!stickToBottom) return
+  stickToBottom = false
+  if (stickToBottomTimer) {
+    clearTimeout(stickToBottomTimer)
+    stickToBottomTimer = null
+  }
+}
+
+/** End/Home/PageUp/PageDown/方向键：显式请求跳转，直接贴底并收敛 */
+function onMessagesKeydown(e: KeyboardEvent) {
+  if (e.key === 'End' && !e.ctrlKey && !e.metaKey) {
+    markUserScrollInput()
+    scrollToBottom()
+  }
+}
 
 function remeasureAllItems() {
   if (!virtualizerParentRef.value || !virtualizer.value) return
@@ -495,7 +552,8 @@ const {
   currentSessionId,
   lastSessionId,
   loadSessions,
-  createNewSession,
+  startNewSession,
+  ensureSession,
   switchSession,
   deleteSession,
   renameSession,
@@ -524,6 +582,7 @@ onMounted(() => {
 // 身份变化（登录/注册/退出）→ 重载会话列表；当前会话不属于新身份时切换到新身份的最近会话。
 // 注：切换身份瞬间 switchSession 可能触发上一会话的归档兜底（fire-and-forget），
 // 该请求在新身份下会 404，仅产生一条无害日志，不影响数据
+// 注：新身份下无任何会话时只回到欢迎页（startNewSession），不预先建空会话
 watch(authUser, async (u, old) => {
   if (old === undefined || !u) return
   await loadSessions()
@@ -533,7 +592,7 @@ watch(authUser, async (u, old) => {
     if (first) {
       await switchSession(first.id)
     } else {
-      await createNewSession()
+      startNewSession()
     }
   }
 })
@@ -632,7 +691,14 @@ const virtualizerParentRef = ref<HTMLElement | null>(null)
 
 // 记录每个虚拟项的上次测量高度，用于流式期间"高度只增不减"策略
 // 避免 MarkdownRenderer 重新渲染中间状态读到错误高度导致 getTotalSize 回退 → 抖动
-const lastMeasuredHeights = new Map<number, number>()
+// key 用消息 id 而非索引：编辑消息/重新生成会让同一索引指向另一条消息，
+// 用索引会把上一条消息的高度错误地套用到新消息上（总高虚高 → 底部留白）
+const lastMeasuredHeights = new Map<string, number>()
+
+/** 虚拟项高度记录的 key（无 id 的兜底项退回索引） */
+function heightKeyOf(index: number): string {
+  return messages.value[index]?.id || `idx-${index}`
+}
 
 const virtualizer = useVirtualizer(
   computed(() => ({
@@ -649,43 +715,138 @@ const virtualizer = useVirtualizer(
       }
       const text = getMessageText(msg)
       const toolInvocations = getVisibleToolInvocations(msg)
-      let est = 100
-      est += Math.ceil(text.length / 30) * 24
+      // 按「视觉行数」估算：长段落会自动折行，只按 \n 分行会把无换行的长段落估成 1 行
+      // （模型常输出整段无换行的长文本），导致总高严重偏小、滚不到底。
+      // 旧实现（每 30 字符 24px + 封顶 800px）对带表格/搜索面板的长回复同样低估数倍。
+      // 估算只是下限参考，渲染后由 measureElement 的实测值接管（宁可略高，不可严重偏低）。
+      const lines = text ? text.split('\n') : []
+      let visualLines = 0
+      for (const line of lines) visualLines += Math.max(1, Math.ceil(line.length / 40))
+      // 表格行（含分隔线）行高明显大于正文行，单独加权
+      const tableRows = lines.filter((line) => line.trim().startsWith('|')).length
+      let est = 90 + visualLines * 24 + tableRows * 28
       if (getReasoningContent(msg)) est += 120
-      if (toolInvocations.length) est += toolInvocations.length * 120
-      return Math.min(Math.max(est, 120), 800)
+      if (toolInvocations.length) est += toolInvocations.length * 160
+      return Math.min(Math.max(est, 120), 8000)
     },
-    overscan: 5,
+    overscan: 6,
     measureElement: (element: Element) => {
       const h = element.getBoundingClientRect().height
       const idx = Number((element as HTMLElement).dataset.index)
       // "高度只增不减"策略：MarkdownRenderer 重新渲染时 DOM 会短暂变小，
       // 读到中间状态会导致 getTotalSize 回退 → scrollH 减小 → scrollT 抖动
       // 始终应用 max 策略，切换会话时在 watch(currentSessionId) 中清空记录
-      const lastH = lastMeasuredHeights.get(idx) || 0
+      const key = heightKeyOf(idx)
+      const lastH = lastMeasuredHeights.get(key) || 0
       const safeH = Math.max(h, lastH)
-      lastMeasuredHeights.set(idx, safeH)
+      lastMeasuredHeights.set(key, safeH)
       return safeH
     },
     gap: 0
   }))
 )
 
-watch(virtualizerParentRef, () => {
-  // @tanstack/vue-virtual 内置 ResizeObserver 会自动监听虚拟项高度变化
-  // 不再需要自定义 itemResizeRo/itemMutationMo：它们会绕过 max 策略频繁触发
-  // remeasureAllItems，读到 MarkdownRenderer 重新渲染的中间状态导致抖动
+watch(virtualizerParentRef, (el) => {
+  if (parentRo) {
+    parentRo.disconnect()
+    parentRo = null
+  }
+  if (!import.meta.client || !el) return
+  // 监听虚拟容器（其高度 = getTotalSize()）的尺寸变化：
+  // 总高度在渲染后仍会多次变化（新项被测量、图片加载、代码高亮、最后一轮 measure() 重算），
+  // 每次变化都可能把视图顶离底部。贴底状态下必须重新贴底，否则会停在半路
+  // （表现为「打开会话/流式结束后看不到最新消息」，需反复按 End 才能逐步接近）。
+  parentRo = new ResizeObserver(() => {
+    if (stickToBottom && !isLoading.value) startBottomSettle()
+  })
+  parentRo.observe(el)
 })
+
+/**
+ * 贴底收敛：反复重新定位到底部，直到滚动位置真正稳定
+ *
+ * 为什么需要反复重试：虚拟列表的总高度 = 已渲染项实测高度 + 未渲染项估算高度。
+ * 滚到底时新项才被渲染，实测高度通常大于估算 → 总高度变大 → 原来的 scrollTop
+ * 已不是底部（表现为「按 End / 拖到底后仍看不到最新消息，反复按十几次才逐步接近」）。
+ * 单次 scrollToIndex 无法解决，必须定时重试到收敛，因此用定时轮询而非等待某次
+ * 状态变化（实测滚动位置收敛是多帧连续过程，依赖单次事件会漏掉后续的高度增长）。
+ *
+ * 流式期间沿用「直接设置 scrollTop」策略（见 watch 最后一条消息文本），
+ * 避免 scrollToIndex 与 scheduleRemeasure 里的 measure() 互相冲突导致抖动。
+ */
+const BOTTOM_SETTLE_INTERVAL_MS = 100
+/** 距底 ≤ 该值视为已到底（同时是「用户轻微上滑」的容忍带，不与之对抗） */
+const BOTTOM_SETTLE_THRESHOLD = 50
+/** 安全上限（≈60s）：正常几百毫秒内收敛，超出说明状态异常，停止避免无限循环 */
+const BOTTOM_SETTLE_MAX_TICKS = 600
+let bottomSettleTimer: ReturnType<typeof setInterval> | null = null
+let bottomSettleTicks = 0
+
+function stopBottomSettle() {
+  if (bottomSettleTimer) {
+    clearInterval(bottomSettleTimer)
+    bottomSettleTimer = null
+  }
+  bottomSettleTicks = 0
+}
+
+function pinToBottom() {
+  const el = messagesContainer.value
+  if (!el || messages.value.length === 0) return
+  // 直接用 scrollTop = scrollHeight 顶到当前布局底部，而不用 virtualizer.scrollToIndex：
+  // scrollToIndex 依据测量缓存计算目标偏移，缓存被 measure() 重算（估算值替换实测值）后
+  // 算出的偏移可能短于真实底部（实测会停在距底数千像素处且反复重试仍是同一位置）。
+  // 直接赋值只依赖已提交的布局高度，不会算错；渲染后总高变大时由循环下一轮再顶一次。
+  el.scrollTop = el.scrollHeight
+}
+
+/**
+ * 贴底保持循环：只要还处于「贴底」意图中就持续盯着，一旦被顶离底部就重新贴底
+ *
+ * 为什么不能收敛一次就停：总高度稳定后，内部重测量（remeasureAllItems 里的 measure()）
+ * 仍会重新分配各虚拟项的高度，使内容整体位移而不改变容器总高度（ResizeObserver 也看不到），
+ * 视图因此停在中途。所以需要在贴底意图存续期间轮询校正。
+ * 循环终止条件：用户主动上滑（stickToBottom=false）、组件卸载、安全上限。
+ * 贴底意图本身有 2.5s 过期机制，空闲时会自动失效，不会长期占用定时器。
+ */
+function startBottomSettle() {
+  stopBottomSettle()
+  pinToBottom()
+  bottomSettleTimer = setInterval(() => {
+    bottomSettleTicks++
+    const el = messagesContainer.value
+    if (
+      !el ||
+      messages.value.length === 0 ||
+      !stickToBottom ||
+      bottomSettleTicks > BOTTOM_SETTLE_MAX_TICKS
+    ) {
+      stopBottomSettle()
+      return
+    }
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+    // 已到底或用户只是轻微上滑 → 空转等待（内容后续变化导致偏移时再贴底）
+    if (distance > BOTTOM_SETTLE_THRESHOLD) pinToBottom()
+  }, BOTTOM_SETTLE_INTERVAL_MS)
+}
 
 function scrollToBottom() {
   enableStickToBottom()
   nextTick(() => {
     if (messages.value.length === 0) return
-    virtualizer.value.scrollToIndex(messages.value.length - 1, {
-      align: 'end',
-      behavior: 'auto'
-    })
+    startBottomSettle()
   })
+}
+
+/**
+ * 切换会话：拉取历史消息后定位到最新消息
+ *
+ * 消息数量可能与新会话相同（长度 watch 不触发），必须显式贴底，
+ * 否则重新打开会话会停在中间位置（虚拟列表初始只有估算高度，定位在中间）。
+ */
+async function handleSwitchSession(sessionId: string) {
+  await switchSession(sessionId)
+  scrollToBottom()
 }
 
 watch(
@@ -894,8 +1055,8 @@ function onDocumentClick(e: Event) {
           <LazySessionSidebar
             :sessions-list="sessionsList"
             :current-session-id="currentSessionId"
-            @create="createNewSession"
-            @switch="switchSession"
+            @create="startNewSession"
+            @switch="handleSwitchSession"
             @delete="deleteSession"
             @rename="renameSession"
             @close="closeSidebar"
@@ -912,8 +1073,8 @@ function onDocumentClick(e: Event) {
           v-show="showSidebar"
           :sessions-list="sessionsList"
           :current-session-id="currentSessionId"
-          @create="createNewSession"
-          @switch="switchSession"
+          @create="startNewSession"
+          @switch="handleSwitchSession"
           @delete="deleteSession"
           @rename="renameSession"
           @open-auth="openAuthDialog"
@@ -978,7 +1139,7 @@ function onDocumentClick(e: Event) {
             class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all active:scale-95"
             aria-label="新建会话"
             v-tooltip="'新建会话'"
-            @click="createNewSession"
+            @click="startNewSession"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -997,7 +1158,12 @@ function onDocumentClick(e: Event) {
         </div>
       </header>
 
-      <main ref="messagesContainer" class="flex-1 overflow-y-auto scroll-smooth min-h-0">
+      <main
+        ref="messagesContainer"
+        class="flex-1 overflow-y-auto min-h-0"
+        tabindex="-1"
+        @keydown="onMessagesKeydown"
+      >
         <div
           v-if="messages.length === 0"
           class="flex flex-col items-center min-h-full px-4 sm:px-6 py-6 sm:py-8 pb-32 sm:pb-8 relative"
@@ -1206,6 +1372,7 @@ function onDocumentClick(e: Event) {
                       <button
                         class="p-2 text-semi-text-3 hover:text-semi-text-1 hover:bg-semi-fill-1 rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                         v-tooltip="'编辑消息'"
+                        aria-label="编辑消息"
                         @click="
                           startEditing(virtualRow.index, getMessageText(messages[virtualRow.index]))
                         "
@@ -1277,6 +1444,7 @@ function onDocumentClick(e: Event) {
                     <button
                       class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                       v-tooltip="'复制'"
+                      aria-label="复制回复"
                       @click="
                         copyMessage(
                           getMessageText(messages[virtualRow.index]),
@@ -1384,6 +1552,7 @@ function onDocumentClick(e: Event) {
                     <button
                       class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                       v-tooltip="'重新生成'"
+                      aria-label="重新生成回复"
                       :disabled="isLoading"
                       @click="handleReload"
                     >
