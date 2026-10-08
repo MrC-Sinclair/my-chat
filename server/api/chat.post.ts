@@ -29,6 +29,7 @@ import {
   REASONING_PREFIX,
   REASONING_END
 } from '~/server/utils/reasoning-provider'
+import { buildVisionImageParts } from '~/server/utils/vision-images'
 
 const llmProvider = createReasoningProvider()
 
@@ -340,12 +341,6 @@ function saveBase64Image(base64: string): string {
   return `/uploads/${filename}`
 }
 
-function parseBase64Meta(dataUrl: string): { base64: string; mimeType: string } | null {
-  const match = dataUrl.match(/^data:([\w/+-]+);base64,(.+)$/)
-  if (!match) return null
-  return { mimeType: match[1], base64: match[2] }
-}
-
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const {
@@ -359,7 +354,8 @@ export default defineEventHandler(async (event) => {
     enable_ocr,
     enable_image_generation,
     lastSessionId,
-    trigger
+    trigger,
+    editing_message_id: editingMessageId
   } = body ?? {}
 
   // 会话归属校验（add-user-auth design.md 决策 4）：客户端传入 sessionId 时必须是本人会话，
@@ -497,21 +493,10 @@ export default defineEventHandler(async (event) => {
           const parts: Array<
             | { type: 'text'; text: string }
             | { type: 'image'; image: string | URL; mimeType?: string }
-          > = [{ type: 'text', text: textContent }]
-
-          for (const url of imageUrls) {
-            if (url.startsWith('data:')) {
-              // ImgBB 失败降级：复用 parseBase64Meta 提取 base64 字符串（不是 data: URL 字符串）
-              const meta = parseBase64Meta(url)
-              parts.push({
-                type: 'image',
-                image: meta ? meta.base64 : url,
-                mimeType: meta?.mimeType
-              })
-            } else {
-              parts.push({ type: 'image', image: new URL(url) })
-            }
-          }
+          > = [
+            { type: 'text', text: textContent },
+            ...buildVisionImageParts(imageUrls, images || [])
+          ]
           return { role: 'user' as const, content: parts }
         } else {
           // 非视觉模型：过滤掉 data: 降级值（OCR 工具无法 fetch data URL）
@@ -714,6 +699,10 @@ export default defineEventHandler(async (event) => {
           // trigger='regenerate-message'（常规发送为 'submit-message'）。据此让持久化走
           // 「不重复插入用户消息 + 替换既有助手回复」分支，否则会重复入库（详见 message-persistence.ts）
           const isRegenerate = trigger === 'regenerate-message'
+          // 「编辑重发」识别：前端截断本地列表后重发，若不裁剪库内历史，
+          // 重开会话会同时看到被替换的旧问答与新一轮（详见 message-persistence.ts）
+          const pruneFromMessageId =
+            typeof editingMessageId === 'string' && editingMessageId ? editingMessageId : undefined
           const lastUserMessage = [...messages].reverse().find((msg: { role: string }) => msg.role === 'user')
           await persistChatTurn({
             sessionId,
@@ -722,7 +711,8 @@ export default defineEventHandler(async (event) => {
             modelName: useModel,
             imageUrls: hasImages ? imageUrls : undefined,
             audio,
-            isRegenerate
+            isRegenerate,
+            pruneFromMessageId
           })
         } catch (err) {
           console.error('保存消息到数据库失败:', err)

@@ -9,8 +9,9 @@
  *   - 只在 `streamText` 的 `onFinish` 中调用（禁止在 onChunk 中写库）
  *   - `userText` 由调用方从 UIMessage 的 parts / content 提取后传入；无可保存的用户消息时传 null
  *   - `isRegenerate` 由请求体的 `trigger === 'regenerate-message'` 决定（AI SDK 自带字段）
+ *   - `pruneFromMessageId` 由请求体的 `editing_message_id` 决定（前端「编辑重发」时带上被编辑消息的库内 id）
  */
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, sql } from 'drizzle-orm'
 import { db } from '~/server/db'
 import { messages as messagesTable, sessions } from '~/server/db/schema'
 
@@ -32,6 +33,8 @@ export interface PersistChatTurnOptions {
   audio?: PersistedAudioMeta
   /** 是否为「重新生成」请求：为真时不重复插入用户消息，且替换既有助手回复 */
   isRegenerate?: boolean
+  /** 「编辑重发」时被编辑消息的库内 id：插入新一轮前先删除该条及其后的全部历史 */
+  pruneFromMessageId?: string
 }
 
 /**
@@ -48,8 +51,23 @@ export interface PersistChatTurnOptions {
  * 重新生成场景下若无新文本可写入，则保留既有回复不删除，避免「改一次反而不见了」。
  */
 export async function persistChatTurn(options: PersistChatTurnOptions): Promise<void> {
-  const { sessionId, userText, assistantText, modelName, imageUrls, audio, isRegenerate } = options
+  const {
+    sessionId,
+    userText,
+    assistantText,
+    modelName,
+    imageUrls,
+    audio,
+    isRegenerate,
+    pruneFromMessageId
+  } = options
   if (!sessionId) return
+
+  // 编辑重发：先删掉被替换的那一轮（含被编辑条自身），再按常规插入新一轮。
+  // 必须插在插入语句之前，否则会把自己刚写入的消息一起删掉。
+  if (pruneFromMessageId) {
+    await pruneMessagesFrom(sessionId, pruneFromMessageId)
+  }
 
   // 常规发送才插入用户消息。重新生成时该消息已存在于库中，重复插入会让
   // 会话历史出现「两条相同用户提问」，AI 上下文与归档输入同步被污染。
@@ -142,6 +160,27 @@ async function replaceLatestAssistantReply(
     .where(eq(messagesTable.id, latestAssistant.id))
 
   return true
+}
+
+/**
+ * 删除锚点消息及其之后的全部历史（编辑重发）
+ *
+ * 单条 DELETE + 子查询定位锚点，避免「先查 createdAt 再删」的竞态窗口。
+ * 锚点 id 必须同时匹配 sessionId，跨会话传入他人 id 时子查询为 NULL → 一行都不删。
+ */
+async function pruneMessagesFrom(sessionId: string, anchorMessageId: string): Promise<void> {
+  await db
+    .delete(messagesTable)
+    .where(
+      and(
+        eq(messagesTable.sessionId, sessionId),
+        // 子查询里的表名与 messagesTable 的 pgTable('messages') 一致；锚点不存在时子查询为 NULL → 不删任何行
+        sql`created_at >= (
+          SELECT m2.created_at FROM messages m2
+          WHERE m2.id = ${anchorMessageId} AND m2.session_id = ${sessionId}
+        )`
+      )
+    )
 }
 
 /** 更新会话 updatedAt，让会话列表按最近活跃排序 */

@@ -11,7 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockDb, mockMessages, mockSessions, selectQueue } = vi.hoisted(() => {
+const { mockDb, mockMessages, mockSessions, selectQueue, deleteWhere } = vi.hoisted(() => {
   /** 列 mock：仅需让 drizzle 操作符拿到对象即可，不校验生成的 SQL */
   const col = (name: string) => ({ name, table: {}, dataType: 'string' })
 
@@ -39,13 +39,23 @@ const { mockDb, mockMessages, mockSessions, selectQueue } = vi.hoisted(() => {
 
   const select = vi.fn(() => selectChain(selectQueue.shift() ?? []))
 
+  /** 记录 DELETE 的 where 条件，供断言裁剪范围 */
+  const deleteWhere: unknown[][] = []
+  const deleteChain = {
+    where: vi.fn((cond: unknown) => {
+      deleteWhere.push([cond])
+      return Promise.resolve()
+    })
+  }
+
   const mockDb = {
     select,
     insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-    update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })) }))
+    update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })) })),
+    delete: vi.fn(() => deleteChain)
   }
 
-  return { mockDb, mockMessages, mockSessions, selectQueue }
+  return { mockDb, mockMessages, mockSessions, selectQueue, deleteWhere }
 })
 
 vi.mock('~/server/db', () => ({ db: mockDb }))
@@ -71,6 +81,7 @@ describe('persistChatTurn', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     selectQueue.length = 0
+    deleteWhere.length = 0
   })
 
   it('常规发送应插入用户消息与助手回复，并更新会话 updatedAt', async () => {
@@ -214,5 +225,47 @@ describe('persistChatTurn', () => {
 
     expect(mockDb.insert).not.toHaveBeenCalled()
     expect(mockDb.update).not.toHaveBeenCalled()
+  })
+
+  it('编辑重发：先裁剪锚点及其后的历史，再按常规插入新一轮', async () => {
+    await persistChatTurn({
+      sessionId: 's1',
+      userText: '改后的问题',
+      assistantText: '改后的回答',
+      modelName: 'Qwen3-8B',
+      pruneFromMessageId: 'u-edit'
+    })
+
+    expect(mockDb.delete).toHaveBeenCalledTimes(1)
+    expect(deleteWhere).toHaveLength(1)
+    // 裁剪发生在插入之前，否则会把刚写入的新一轮删掉
+    const deleteOrder = mockDb.delete.mock.invocationCallOrder[0]
+    const firstInsertOrder = mockDb.insert.mock.invocationCallOrder[0]
+    expect(deleteOrder).toBeLessThan(firstInsertOrder)
+    expect(mockDb.insert).toHaveBeenCalledTimes(2)
+    expect(insertedValues(0)).toMatchObject({ role: 'user', content: '改后的问题' })
+  })
+
+  it('未传 pruneFromMessageId 时不应删除任何历史', async () => {
+    await persistChatTurn({
+      sessionId: 's1',
+      userText: '你好',
+      assistantText: '回答',
+      modelName: 'Qwen3-8B'
+    })
+
+    expect(mockDb.delete).not.toHaveBeenCalled()
+  })
+
+  it('sessionId 为空时即便带裁剪 id 也不写库', async () => {
+    await persistChatTurn({
+      sessionId: '',
+      userText: '你好',
+      assistantText: '回答',
+      modelName: 'Qwen3-8B',
+      pruneFromMessageId: 'u-edit'
+    })
+
+    expect(mockDb.delete).not.toHaveBeenCalled()
   })
 })

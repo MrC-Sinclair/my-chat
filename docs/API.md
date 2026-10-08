@@ -83,6 +83,7 @@ AI 对话核心接口，使用 Vercel AI SDK 的 `streamText` 流式生成回复
 | `enable_ocr`        | `boolean`       | 否   | `false`              | 是否启用 OCR 工具（`extractTextFromImage`），仅 `toolCalling` 模型生效，默认关闭                      |
 | `enable_image_generation` | `boolean` | 否   | `true`               | 是否启用文生图 Agent 工具（`generateImage`），仅 `toolCalling` 模型生效，默认开启                     |
 | `audio`             | `object`        | 否   | —                    | 语音消息音频元信息，含 `url`/`emotion`/`duration`。`emotion` 经白名单校验后注入 system prompt，`url`/`emotion`/`duration` 落库到 `messages.metadata.audio` |
+| `editing_message_id` | `string` (UUID) | 否  | —                    | 「编辑重发」时前端带上被编辑消息的库内 id。服务端在插入新一轮前先删除该条及其后的全部历史（单条 `DELETE ... created_at >= (子查询)`，子查询同时约束 `session_id`，他人 id 不生效）；不传则不裁剪 |
 | `trigger`           | `string`        | 否   | `submit-message`     | 由 AI SDK `DefaultChatTransport` 自动携带。`regenerate-message` 表示「重新生成」：此时**不插入用户消息**（已存在），并将本会话最后一条 assistant 消息更新为新回复；其余值走常规的「插入用户消息 + 插入 AI 回复」 |
 | `lastSessionId`     | `string` (UUID) | 否   | —                    | 上一个会话 ID，服务端据此 fire-and-forget 触发旧会话记忆归档兜底 |
 
@@ -122,10 +123,10 @@ AI 对话核心接口，使用 Vercel AI SDK 的 `streamText` 流式生成回复
 
 **图片处理流程**
 
-1. `data:` 开头的 base64 图片先保存到 `public/uploads/`，再上传到 ImgBB 获取公网 URL
+1. `data:` 开头的 base64 图片先保存到 `public/uploads/`，再上传到 ImgBB 获取公网 URL（用于落库与历史展示）
 2. 上传失败时降级使用 base64 原值
 3. 公网 URL 图片直接使用
-4. 仅最后一条用户消息会附带图片，作为多模态 content parts 传入 LLM
+4. 仅最后一条用户消息会附带图片。视觉模型（`caps.vision`）的 content parts **用客户端原始 base64**（`server/utils/vision-images.ts`）——硅基流动拒绝外部图片 URL（400 code 20040）；非视觉模型才把 ImgBB URL 以 `[附图片N: URL]` 文本注入，供 LLM 调 OCR 工具
 
 **响应**
 

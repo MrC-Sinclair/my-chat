@@ -8,6 +8,8 @@ import ChatInput, { type UploadedImage, type VoiceTranscribedResult } from '~/co
 import VoiceMessageBubble from '~/components/chat/VoiceMessageBubble.vue'
 import QuickPromptIcon from '~/components/chat/QuickPromptIcon.vue'
 import { useChatSession } from '~/composables/useChatSession'
+import { generateId } from '~/utils/uuid'
+import { copyToClipboard } from '~/utils/clipboard'
 import { useChatConfig } from '~/composables/useChatConfig'
 import { useToast } from '~/composables/useToast'
 
@@ -63,6 +65,8 @@ interface VoiceMessageAudio {
 
 /** 待提交的语音消息音频元信息（录音转写完成后 → 提交 /api/chat 前的临时存储） */
 const pendingVoiceMessage = ref<VoiceMessageAudio | null>(null)
+/** 被编辑消息的库内 id：编辑重发时告知服务端裁掉该条及其后的历史，普通发送为 null */
+const pendingEditingMessageId = ref<string | null>(null)
 /** 已提交语音消息的音频元信息 Map（key 为 UIMessage.id，用于渲染语音气泡） */
 const messageAudio = ref<Map<string, VoiceMessageAudio>>(new Map())
 
@@ -87,11 +91,14 @@ const chat = new Chat({
         uploadedImages.value.length > 0 ? uploadedImages.value.map((img) => img.dataUrl) : undefined,
       // 语音消息音频元信息（design.md 决策 3+5：转写文本已在 input，audio 字段供 chat.post.ts
       // 注入情感 system prompt + saveMessagesToDb 落库 metadata.audio）
-      audio: pendingVoiceMessage.value || undefined
+      audio: pendingVoiceMessage.value || undefined,
+      // 编辑重发：服务端据此删除被编辑的那条消息及其之后的历史，避免新旧两轮并存
+      editing_message_id: pendingEditingMessageId.value || undefined
     })
   }),
   onFinish: ({ message }) => {
     uploadedImages.value = []
+    pendingEditingMessageId.value = null
     if (pendingMessageImages.value.length > 0) {
       nextTick(() => {
         const targetMsg = message
@@ -122,6 +129,7 @@ const chat = new Chat({
   },
   onError: (err) => {
     uploadedImages.value = []
+    pendingEditingMessageId.value = null
     if (pendingMessageImages.value.length > 0) {
       const targetMsg = chat.messages[nextMessageIndex.value]
       if (targetMsg && targetMsg.role === 'user') {
@@ -207,7 +215,7 @@ async function handleImageGenerated(result: {
   // 1. 同步到 useChat 状态机（先做，确保 UI 立即显示图片）
   // 注：messages 是 computed(() => chat.messages)，必须操作 chat.messages 本身
   const newMsg: UIMessage = {
-    id: crypto.randomUUID(),
+    id: generateId(),
     role: 'assistant',
     parts: [{ type: 'text', text: result.markdown }]
   }
@@ -676,6 +684,10 @@ function submitEditing(index: number) {
   const newContent = editingText.value.trim()
   if (!newContent) return
 
+  // 编辑即替换：截断点之后（含被编辑那条）的库内历史由服务端删除，
+  // 否则重开会话会同时看到旧问答与重发后的新问答（归档长期记忆也会吸入废弃轮次）
+  pendingEditingMessageId.value = messages.value[index]?.id ?? null
+
   const truncatedMessages = messages.value.slice(0, index)
   setMessages(truncatedMessages)
 
@@ -879,14 +891,13 @@ watch(
 )
 
 async function copyMessage(content: string, msgId: string) {
-  try {
-    await navigator.clipboard.writeText(content)
+  if (await copyToClipboard(content)) {
     copiedMessageId.value = msgId
     toast.success('已复制到剪贴板')
     setTimeout(() => {
       copiedMessageId.value = ''
     }, 2000)
-  } catch {
+  } else {
     toast.error('复制失败')
   }
 }
