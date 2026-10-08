@@ -187,6 +187,19 @@ describe('renderMarkdown', () => {
     expect(html).toContain('<blockquote')
   })
 
+  it('嵌套列表项内的代码块应正常渲染（占位符缩进不得叠加）', () => {
+    // 嵌套有序列表内容列 = 6 空格，围栏缩进 6。若恢复时占位符缩进与 block 缩进叠加成 12，
+    // 超出围栏可识别的相对缩进上限（≤3）→ 源码泄漏为文本 + 空 <pre>。
+    const md = '1. 有序列表：\n   1. 第一项\n      ```python\n      def f():\n          return 1\n      ```\n   2. 第二项'
+    const html = renderMarkdown(md)
+    expect(html).toContain('language-python')
+    expect(html).toContain('def f():')
+    expect(html).toContain('return 1')
+    expect(html).not.toContain('```')
+    // 代码块应落在嵌套列表项内，第二项仍在同一嵌套列表
+    expect(html).toContain('第二项')
+  })
+
   it('多个列表项内代码块应全部识别，后续引用块不被吞并', () => {
     const md = [
       '1. 第一步',

@@ -143,10 +143,17 @@ export function renderMarkdown(rawText: string, options?: MarkdownOptions): stri
     return `%%MATHINLINE${index}%%`
   })
 
-  /** 恢复代码块占位符，让 marked 正确解析代码块 */
+  /**
+   * 恢复代码块占位符，让 marked 正确解析代码块
+   *
+   * 必须吃掉占位符所在行的前导空白：占位符创建时带 `${indent}`（见第零步），
+   * 恢复出的 block 也自带 `${indent}` 缩进。若只替换 token 本身，两处缩进叠加
+   * 会让嵌套列表项内的代码块缩进翻倍（超出列表内容列），marked 无法识别为代码块
+   * → 围栏源码泄漏成文本。用 `[ \t]*` 匹配并丢弃占位符前导空白，只保留 block 的缩进。
+   */
   codeBlocks.forEach((block, index) => {
     // 必须用函数替换，不能用字符串：字符串替换中 $$ 会被解释为单个 $
-    processedText = processedText.replace(`%%CODEBLOCK${index}%%`, () => block)
+    processedText = processedText.replace(new RegExp(`[ \\t]*%%CODEBLOCK${index}%%`), () => block)
   })
 
   /**
