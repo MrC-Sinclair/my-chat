@@ -1,0 +1,19 @@
+# 线上只有公网 IP（122.51.97.106），ACME 不给 IP 签发证书，只能用自签证书（含 IP SAN）。
+# 目的不是"证书可信"，而是把站点搬到 HTTPS：crypto.randomUUID / navigator.clipboard /
+# navigator.mediaDevices 只在安全上下文存在，http://IP 直连时全部为 undefined，
+# 图片附件、复制按钮、语音录制会整片失效。证书告警点「继续访问」后即为安全上下文。
+{
+	admin off
+}
+
+# 只按端口建站点（不写域名/IP 名）：客户端按 IP 建 TLS 连接时 ClientHello 里没有 SNI
+# （IP 不允许进 SNI），具名站点匹配不到就报 "no certificate available for SNI"。
+:443 {
+	tls /etc/caddy/certs/site.crt /etc/caddy/certs/site.key
+	reverse_proxy app:3000
+}
+
+# 明文访问统一跳 HTTPS，避免有人停留在非安全上下文里用不了图片/复制/语音
+:80 {
+	redir https://{host}{uri} permanent
+}

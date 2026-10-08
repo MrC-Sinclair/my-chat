@@ -4,6 +4,10 @@ FROM node:24-alpine
 
 WORKDIR /app
 
+# ffmpeg/ffprobe 是语音转写（/api/audio/transcribe）的硬依赖：WebM→16k mono WAV 转码、实测时长。
+# 缺失时该路由直接 500「服务端未安装 ffmpeg」
+RUN apk add --no-cache ffmpeg
+
 # 版本必须与 package.json 锁定一致：MCP SDK 1.x 的 schema 转换依赖 zod v3 的 .validate，
 # 不固定版本会装到 zod v4 / SDK 2.x，天气工具调用报 "Cannot read properties of undefined (reading 'validate')"
 RUN npm install --no-audit --no-fund -g tsx \

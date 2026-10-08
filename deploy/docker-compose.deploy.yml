@@ -25,11 +25,37 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
-    ports:
-      - '80:3000'
+    # 不再对公网直接暴露 80：站点统一由 caddy 前置（443 提供 HTTPS，80 跳 HTTPS）。
+    # 只有 expose 时端口仅存在于 compose 内部网络，外部扫描不到明文 HTTP。
+    expose:
+      - '3000'
+    # 语音消息音频落盘目录（server/uploads/audio）：挂卷避免重建容器后历史语音消息 404
+    volumes:
+      - audio_uploads:/app/server/uploads/audio
     depends_on:
       postgres:
         condition: service_healthy
 
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # 自签证书（含 IP SAN）只在服务器上生成，不入库：
+      # openssl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes \
+      #   -keyout certs/site.key -out certs/site.crt -subj "/CN=my-chat-cvm" \
+      #   -addext "subjectAltName=IP:122.51.97.106,DNS:localhost"
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
 volumes:
   pgdata:
+  audio_uploads:
+  caddy_data:
+  caddy_config:
