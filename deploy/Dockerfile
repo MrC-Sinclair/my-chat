@@ -4,8 +4,10 @@ FROM node:24-alpine
 
 WORKDIR /app
 
+# 版本必须与 package.json 锁定一致：MCP SDK 1.x 的 schema 转换依赖 zod v3 的 .validate，
+# 不固定版本会装到 zod v4 / SDK 2.x，天气工具调用报 "Cannot read properties of undefined (reading 'validate')"
 RUN npm install --no-audit --no-fund -g tsx \
-  && npm install --no-audit --no-fund @modelcontextprotocol/sdk zod
+  && npm install --no-audit --no-fund @modelcontextprotocol/sdk@^1.29.0 zod@^3.25.76
 
 COPY .output /app/.output
 COPY server/mcp/weather-server.ts /app/server/mcp/
