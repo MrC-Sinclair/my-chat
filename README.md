@@ -49,7 +49,7 @@ ENABLE_THINKING=true
 # 数据库
 DATABASE_URL=postgresql://user:password@localhost:5434/dbname
 
-# 可选：图片对话（ImgBB 图床，硅基流动不支持 base64 图片）
+# 可选：图片对话（ImgBB 图床，用于消息落库与 OCR 引用；视觉模型请求体仍走 base64）
 IMGBB_API_KEY=your-api-key
 
 # 可选：联网搜索（Tavily）

@@ -236,22 +236,22 @@
 - **AND** SHALL 在最后一条用户消息文本末尾注入 `[附图片N: URL]` 引用
 - **AND** SHALL 调用 `streamText()` 传入文本形式的 `llmMessages`
 
-### Requirement: 硅基流动不支持 base64 图片
+### Requirement: 硅基流动视觉模型只接受 base64 图片
 
-系统 SHALL 通过 ImgBB 上传机制规避硅基流动 API 不支持 base64 图片的限制。
+系统 SHALL 在视觉模型路径中把客户端原始 data URL 拆成 base64 载荷传给模型；ImgBB 公网 URL 仅用于消息落库展示与非视觉模型的 OCR 引用。
 
-- 硅基流动 SHALL NOT 接收 base64 data URL 作为 `{ type: 'image', image: ... }` 的 image 字段
-- 系统 SHALL 在视觉模型路径中将公网 URL 包装为 `new URL(url)` 传入 `streamText`（[chat.post.ts#L394](file:///d:/code/codeWork/my-chat/server/api/chat.post.ts#L394)）
+- 硅基流动对 `{ type: 'image', image: <外部 URL> }`（含 ImgBB 直链）返回 400 `code 20040`，实测唯一可用形式是 base64 载荷 + `mimeType`
+- 系统 SHALL 通过 `server/utils/vision-images.ts` 的 `buildVisionImageParts(uploadedUrls, sourceImages)` 构造视觉 parts：优先取 `body.images` 中的原始 data URL，经 `parseBase64Meta` 拆出 base64 + mimeType
+- 客户端直接传公网 URL（无 data URL 来源）时 SHALL 退回 `new URL(url)`
 - 系统 SHALL 在非视觉模型路径中将公网 URL 以文本引用 `[附图片N: URL]` 注入，由 LLM 调用 OCR 工具 fetch URL
-- **唯一例外**：ImgBB 上传失败时，视觉模型路径 SHALL 通过 `parseBase64Meta` 提取 base64 字符串（不是 data URL）传入 LLM，作为降级方案
-- **关键约束**：在 `.env` 中配置 `IMGBB_API_KEY`，免费注册 <https://api.imgbb.com/> 获取
+- **关键约束**：在 `.env` 中配置 `IMGBB_API_KEY`（落库与 OCR 路径仍依赖），免费注册 <https://api.imgbb.com/> 获取
 
-#### Scenario: 视觉模型正常路径下传入公网 URL
+#### Scenario: 视觉模型即使 ImgBB 上传成功也传 base64
 
 - **WHEN** 请求的 `model` 为视觉模型
-- **AND** ImgBB 上传成功
-- **THEN** 系统 SHALL 构造 `{ type: 'image', image: new URL('https://i.ibb.co/xxx.png') }`
-- **AND** SHALL NOT 传入 `data:image/...;base64,...` 字符串
+- **AND** 图片已上传 ImgBB 并拿到公网 URL
+- **THEN** 系统 SHALL 构造 `{ type: 'image', image: '<base64-string>', mimeType: 'image/png' }`
+- **AND** SHALL NOT 传入 `new URL('https://i.ibb.co/xxx.png')`
 
 #### Scenario: 非视觉模型通过文本引用让 LLM fetch URL
 
@@ -260,13 +260,12 @@
 - **THEN** 系统 SHALL 注入 `[附图片N: https://i.ibb.co/xxx.png]` 文本引用
 - **AND** LLM SHALL 通过 `extractTextFromImage` 工具 fetch 公网 URL（由 prompt 引导）
 
-#### Scenario: ImgBB 失败时视觉模型降级使用 base64 字符串
+#### Scenario: ImgBB 上传失败时仍走 base64
 
 - **WHEN** 请求的 `model` 为视觉模型
-- **AND** ImgBB 上传失败
+- **AND** ImgBB 上传失败，`uploadedUrls` 降级为原始 data URL
 - **THEN** 系统 SHALL 通过 `parseBase64Meta` 提取 base64 字符串（不含 `data:` 前缀）
 - **AND** SHALL 构造 `{ type: 'image', image: '<base64-string>', mimeType: 'image/png' }`
-- **AND** SHALL NOT 传入完整 `data:image/png;base64,...` 字符串
 
 ### Requirement: 视觉/非视觉模型能力分流
 

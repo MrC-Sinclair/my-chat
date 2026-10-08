@@ -120,7 +120,7 @@ Nuxt 3 使用 SSR，服务端和客户端必须渲染出相同的 HTML，否则�
 - **消息持久化走 `server/utils/message-persistence.ts` 的 `persistChatTurn()`**（原 `chat.post.ts` 内联 `saveMessagesToDb`，为可单测抽出）：常规发送只保存最后一条用户消息（反向查找），避免重复插入历史消息；**「重新生成」请求（AI SDK 自带 `body.trigger === 'regenerate-message'`）必须不插入用户消息、并把既有助手回复行更新为新内容**，否则会重复入库（同一会话出现两条相同用户提问 + 新旧两条 AI 回复）
 - `dompurify`、`highlight.js`、`katex`、`marked` 在 devDependencies 中但运行时使用，不要误删
 - 模型白名单在 `server/config/models.ts`（`AVAILABLE_MODELS` 数组）。`chat.post.ts` 通过 `ALLOWED_MODEL_VALUES`（由 `AVAILABLE_MODELS` 自动派生）校验，**前端模型列表由 `GET /api/models` 返回 `AVAILABLE_MODELS`**。新增模型只需在 `AVAILABLE_MODELS` 中添加一条，校验与前端列表自动同步，无需手动维护多处
-- **图片对话使用 ImgBB 图床**：硅基流动不支持 base64 图片，需先上传到 ImgBB 获取公网 URL。在 `.env` 中配置 `IMGBB_API_KEY`，免费注册 <https://api.imgbb.com/> 获取
+- **图片对话使用 ImgBB 图床（仅用于落库与 OCR 引用）**：硅基流动视觉模型**只接受 base64 图片**，传外部 URL（含 ImgBB 直链）会返回 400 code 20040，故视觉分支用客户端原始 data URL 拆出的 base64（`server/utils/vision-images.ts`）；ImgBB 公网 URL 用于消息落库、历史展示，以及非视觉模型注入给 OCR 工具下载（`IMGBB_API_KEY` 仍必填，免费注册 <https://api.imgbb.com/> 获取）
 - **`enable_thinking` 参数的注入由 `getModelCapabilities()` 的 `toggleableThinking` 能力决定**：`caps.toggleableThinking === true` 时才在请求体注入 `enable_thinking`（经 `reasoning-provider` 的 customFetch 注入）。强制思考模型（如 R1 / GLM-Z1，`toggleableThinking: false`）与不可思考模型**不传**该参数，否则 GLM-Z1 会返回 400。注意：**视觉模型 Qwen3.5-4B 因 `toggleableThinking: true` 同样支持 `enable_thinking`**，并非"视觉/推理模型不支持"。新增模型需在 `server/config/models.ts` 正确配置四个能力标志：`vision` / `deepThinking` / `toggleableThinking` / `toolCalling`
 - **图片对话统一使用 streamText()**：纯文本和图片均通过 `streamText()` 处理，图片先上传 ImgBB 获取公网 URL 后作为多模态 content parts 传入
 
