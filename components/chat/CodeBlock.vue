@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { hljs } from '~/utils/highlight'
+import { copyToClipboard } from '~/utils/clipboard'
 
 const props = defineProps<{
   code: string
@@ -62,7 +63,7 @@ onUnmounted(() => {
 
 async function handleCopy() {
   try {
-    await navigator.clipboard.writeText(props.code)
+    if (!(await copyToClipboard(props.code))) throw new Error('execCommand copy 返回 false')
     copied.value = true
     setTimeout(() => {
       copied.value = false

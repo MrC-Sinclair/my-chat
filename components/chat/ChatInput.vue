@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ModelCapabilities, ModelConfig } from '~/composables/useChatConfig'
 import { IMAGE_SIZES, type ImageSize } from '~/utils/image-sizes'
+import { generateId } from '~/utils/uuid'
 
 export interface UploadedImage {
   id: string
@@ -137,7 +138,7 @@ function handleImageUpload(e: Event) {
     const reader = new FileReader()
     reader.onload = () => {
       const newImage: UploadedImage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         dataUrl: reader.result as string,
         filename: file.name
       }

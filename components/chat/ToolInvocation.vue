@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { copyToClipboard } from '~/utils/clipboard'
+
 interface WeatherResult {
   error?: string
   city?: string
@@ -226,17 +228,12 @@ const copiedOcr = ref(false)
 let copyOcrTimer: ReturnType<typeof setTimeout> | null = null
 
 async function copyOcrText(text: string) {
-  if (!text) return
-  try {
-    await navigator.clipboard.writeText(text)
-    copiedOcr.value = true
-    if (copyOcrTimer) clearTimeout(copyOcrTimer)
-    copyOcrTimer = setTimeout(() => {
-      copiedOcr.value = false
-    }, 1500)
-  } catch {
-    // 剪贴板 API 不可用时静默失败（与项目其他复制按钮行为一致）
-  }
+  if (!(await copyToClipboard(text))) return
+  copiedOcr.value = true
+  if (copyOcrTimer) clearTimeout(copyOcrTimer)
+  copyOcrTimer = setTimeout(() => {
+    copiedOcr.value = false
+  }, 1500)
 }
 
 /**
@@ -258,17 +255,12 @@ const copiedImageLink = ref(false)
 let copyImageLinkTimer: ReturnType<typeof setTimeout> | null = null
 
 async function copyImageLink(url: string) {
-  if (!url) return
-  try {
-    await navigator.clipboard.writeText(url)
-    copiedImageLink.value = true
-    if (copyImageLinkTimer) clearTimeout(copyImageLinkTimer)
-    copyImageLinkTimer = setTimeout(() => {
-      copiedImageLink.value = false
-    }, 1500)
-  } catch {
-    // 剪贴板 API 不可用时静默失败
-  }
+  if (!(await copyToClipboard(url))) return
+  copiedImageLink.value = true
+  if (copyImageLinkTimer) clearTimeout(copyImageLinkTimer)
+  copyImageLinkTimer = setTimeout(() => {
+    copiedImageLink.value = false
+  }, 1500)
 }
 
 /** generateImage 图片放大模态框 */
