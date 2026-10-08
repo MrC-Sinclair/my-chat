@@ -32,7 +32,7 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@ai-sdk/mcp": "^1.0.45",
+    "@ai-sdk/mcp": "^0.0.39",
     "@ai-sdk/openai": "^2.0.106",
     "@ai-sdk/vue": "^2.0.195",
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -1,5 +1,8 @@
 import { streamText, stepCountIs, createUIMessageStream, createUIMessageStreamResponse } from 'ai'
-import { createMCPClient } from '@ai-sdk/mcp'
+// 必须锁 @ai-sdk/mcp 0.0.x：1.0.x 依赖 provider-utils v4，其 jsonSchema() 缺少
+// ai@5（provider-utils v3）校验路径依赖的 validator 标记，工具入参校验会抛
+// "Cannot read properties of undefined (reading 'validate')"
+import { experimental_createMCPClient as createMCPClient } from '@ai-sdk/mcp'
 import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio'
 import { db } from '~/server/db'
 import { sessions } from '~/server/db/schema'
