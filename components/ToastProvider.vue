@@ -34,32 +34,35 @@ provide('toast', { show, success, error, info, warning })
 
 <template>
   <slot />
-  <Teleport to="body">
-    <div class="fixed top-4 right-4 z-semi-notification flex flex-col gap-2 pointer-events-none">
-      <TransitionGroup name="toast">
-        <div
-          v-for="toast in toasts"
-          :key="toast.id"
-          class="pointer-events-auto px-4 py-3 rounded-lg shadow-semi-popover text-sm font-medium flex items-center gap-2 min-w-[200px] max-w-[360px]"
-          :class="{
-            'bg-semi-success-light text-semi-success border border-semi-success/30':
-              toast.type === 'success',
-            'bg-semi-danger-light text-semi-danger border border-semi-danger/30':
-              toast.type === 'error',
-            'bg-semi-info-light text-semi-info border border-semi-info/30': toast.type === 'info',
-            'bg-semi-warning-light text-semi-warning border border-semi-warning/30':
-              toast.type === 'warning'
-          }"
-        >
-          <span v-if="toast.type === 'success'">✓</span>
-          <span v-else-if="toast.type === 'error'">✕</span>
-          <span v-else-if="toast.type === 'warning'">⚠</span>
-          <span v-else>ℹ</span>
-          <span>{{ toast.message }}</span>
-        </div>
-      </TransitionGroup>
-    </div>
-  </Teleport>
+  <!-- Teleport 在 SSR 只留注释占位，客户端首帧已是真实节点，不包 ClientOnly 会报 hydration node mismatch -->
+  <ClientOnly>
+    <Teleport to="body">
+      <div class="fixed top-4 right-4 z-semi-notification flex flex-col gap-2 pointer-events-none">
+        <TransitionGroup name="toast">
+          <div
+            v-for="toast in toasts"
+            :key="toast.id"
+            class="pointer-events-auto px-4 py-3 rounded-lg shadow-semi-popover text-sm font-medium flex items-center gap-2 min-w-[200px] max-w-[360px]"
+            :class="{
+              'bg-semi-success-light text-semi-success border border-semi-success/30':
+                toast.type === 'success',
+              'bg-semi-danger-light text-semi-danger border border-semi-danger/30':
+                toast.type === 'error',
+              'bg-semi-info-light text-semi-info border border-semi-info/30': toast.type === 'info',
+              'bg-semi-warning-light text-semi-warning border border-semi-warning/30':
+                toast.type === 'warning'
+            }"
+          >
+            <span v-if="toast.type === 'success'">✓</span>
+            <span v-else-if="toast.type === 'error'">✕</span>
+            <span v-else-if="toast.type === 'warning'">⚠</span>
+            <span v-else>ℹ</span>
+            <span>{{ toast.message }}</span>
+          </div>
+        </TransitionGroup>
+      </div>
+    </Teleport>
+  </ClientOnly>
 </template>
 
 <style>

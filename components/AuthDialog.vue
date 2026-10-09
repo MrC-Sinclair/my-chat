@@ -69,93 +69,110 @@ async function submit() {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition
-      enter-active-class="transition duration-200 ease-out"
-      enter-from-class="opacity-0"
-      enter-to-class="opacity-100"
-      leave-active-class="transition duration-150 ease-in"
-      leave-from-class="opacity-100"
-      leave-to-class="opacity-0"
-    >
-      <div
-        v-if="open"
-        class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+  <!-- Teleport 在 SSR 只留注释占位，客户端首帧是真实节点，直接水合会报 node mismatch -->
+  <ClientOnly>
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition duration-200 ease-out"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition duration-150 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
       >
-        <div
-          class="absolute inset-0 bg-black/50"
-          aria-hidden="true"
-          @click="emit('update:open', false)"
-        />
-        <div
-          class="relative w-full sm:max-w-sm bg-semi-bg-1 rounded-t-2xl sm:rounded-2xl p-5 shadow-semi-elevated"
-          role="dialog"
-          aria-label="登录或注册"
-        >
-          <!-- 手机端拖拽指示条 -->
-          <div class="sm:hidden w-10 h-1 rounded-full bg-semi-border mx-auto mb-3" />
+        <div v-if="open" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div
+            class="absolute inset-0 bg-black/50"
+            aria-hidden="true"
+            @click="emit('update:open', false)"
+          />
+          <div
+            class="relative w-full sm:max-w-sm bg-semi-bg-1 rounded-t-2xl sm:rounded-2xl p-5 shadow-semi-elevated"
+            role="dialog"
+            aria-label="登录或注册"
+          >
+            <!-- 手机端拖拽指示条 -->
+            <div class="sm:hidden w-10 h-1 rounded-full bg-semi-border mx-auto mb-3" />
 
-          <!-- 登录 / 注册 Tab -->
-          <div class="flex gap-1 p-1 bg-semi-fill-1 rounded-xl mb-4">
-            <button
-              type="button"
-              class="flex-1 min-h-[44px] rounded-lg text-sm font-medium transition-all active:scale-[0.98]"
-              :class="mode === 'login' ? 'bg-semi-bg-1 text-semi-text-0 shadow-sm' : 'text-semi-text-3'"
-              @click="mode = 'login'"
-            >
-              登录
-            </button>
-            <button
-              type="button"
-              class="flex-1 min-h-[44px] rounded-lg text-sm font-medium transition-all active:scale-[0.98]"
-              :class="mode === 'register' ? 'bg-semi-bg-1 text-semi-text-0 shadow-sm' : 'text-semi-text-3'"
-              @click="mode = 'register'"
-            >
-              注册
-            </button>
+            <!-- 登录 / 注册 Tab -->
+            <div class="flex gap-1 p-1 bg-semi-fill-1 rounded-xl mb-4">
+              <button
+                type="button"
+                class="flex-1 min-h-[44px] rounded-lg text-sm font-medium transition-all active:scale-[0.98]"
+                :class="
+                  mode === 'login' ? 'bg-semi-bg-1 text-semi-text-0 shadow-sm' : 'text-semi-text-3'
+                "
+                @click="mode = 'login'"
+              >
+                登录
+              </button>
+              <button
+                type="button"
+                class="flex-1 min-h-[44px] rounded-lg text-sm font-medium transition-all active:scale-[0.98]"
+                :class="
+                  mode === 'register'
+                    ? 'bg-semi-bg-1 text-semi-text-0 shadow-sm'
+                    : 'text-semi-text-3'
+                "
+                @click="mode = 'register'"
+              >
+                注册
+              </button>
+            </div>
+
+            <form @submit.prevent="submit">
+              <input
+                v-model="email"
+                type="email"
+                required
+                autocomplete="email"
+                placeholder="邮箱"
+                class="w-full min-h-[44px] px-3 py-2 mb-3 rounded-xl border border-semi-divider bg-semi-bg-0 text-semi-text-0 placeholder:text-semi-text-3 focus:outline-none focus:border-semi-primary transition-colors"
+              />
+              <input
+                v-model="password"
+                type="password"
+                required
+                :minlength="mode === 'register' ? 8 : 1"
+                autocomplete="current-password"
+                :placeholder="mode === 'register' ? '密码（至少 8 位）' : '密码'"
+                class="w-full min-h-[44px] px-3 py-2 mb-2 rounded-xl border border-semi-divider bg-semi-bg-0 text-semi-text-0 placeholder:text-semi-text-3 focus:outline-none focus:border-semi-primary transition-colors"
+              />
+              <p v-if="registerHint" class="text-xs text-semi-text-3 mb-3">{{ registerHint }}</p>
+              <button
+                type="submit"
+                :disabled="submitting"
+                class="w-full min-h-[44px] rounded-xl bg-semi-primary text-white text-sm font-medium hover:bg-semi-primary-hover active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <span v-if="submitting" class="inline-flex items-center gap-2">
+                  <svg
+                    class="animate-spin w-4 h-4"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      class="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      stroke-width="4"
+                    />
+                    <path
+                      class="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                  处理中…
+                </span>
+                <span v-else>{{ mode === 'login' ? '登录' : '注册' }}</span>
+              </button>
+            </form>
           </div>
-
-          <form @submit.prevent="submit">
-            <input
-              v-model="email"
-              type="email"
-              required
-              autocomplete="email"
-              placeholder="邮箱"
-              class="w-full min-h-[44px] px-3 py-2 mb-3 rounded-xl border border-semi-divider bg-semi-bg-0 text-semi-text-0 placeholder:text-semi-text-3 focus:outline-none focus:border-semi-primary transition-colors"
-            />
-            <input
-              v-model="password"
-              type="password"
-              required
-              :minlength="mode === 'register' ? 8 : 1"
-              autocomplete="current-password"
-              :placeholder="mode === 'register' ? '密码（至少 8 位）' : '密码'"
-              class="w-full min-h-[44px] px-3 py-2 mb-2 rounded-xl border border-semi-divider bg-semi-bg-0 text-semi-text-0 placeholder:text-semi-text-3 focus:outline-none focus:border-semi-primary transition-colors"
-            />
-            <p v-if="registerHint" class="text-xs text-semi-text-3 mb-3">{{ registerHint }}</p>
-            <button
-              type="submit"
-              :disabled="submitting"
-              class="w-full min-h-[44px] rounded-xl bg-semi-primary text-white text-sm font-medium hover:bg-semi-primary-hover active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              <span v-if="submitting" class="inline-flex items-center gap-2">
-                <svg
-                  class="animate-spin w-4 h-4"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                处理中…
-              </span>
-              <span v-else>{{ mode === 'login' ? '登录' : '注册' }}</span>
-            </button>
-          </form>
         </div>
-      </div>
-    </Transition>
-  </Teleport>
+      </Transition>
+    </Teleport>
+  </ClientOnly>
 </template>
