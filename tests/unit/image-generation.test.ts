@@ -183,7 +183,7 @@ describe('image-generation.ts', () => {
 
       expect(result).toHaveProperty('imageUrl', persistentUrl)
       expect(result).toHaveProperty('seed', 12345)
-      expect(result).toHaveProperty('inferenceTime', 1.5)
+      expect(result).toHaveProperty('inferenceTime', 1500)
       expect(result).toHaveProperty('markdown')
       expect((result as any).markdown).toBe(`![a cat](${persistentUrl})`)
       // 不应有 warning
@@ -386,7 +386,7 @@ describe('image-generation.ts', () => {
 
       expect(result).toHaveProperty('imageUrl', tempUrl)
       expect(result).toHaveProperty('seed', 999)
-      expect(result).toHaveProperty('inferenceTime', 2.0)
+      expect(result).toHaveProperty('inferenceTime', 2000)
       expect(result).toHaveProperty('warning', '图片链接 1 小时后失效，请及时保存')
       // markdown 中 URL 应是原始临时 URL
       expect((result as any).markdown).toBe(`![test](${tempUrl})`)
@@ -542,6 +542,22 @@ describe('image-generation.ts', () => {
       const result = await generateImageWithPersistence({ prompt: 'test' })
 
       expect(result).toHaveProperty('seed', 0)
+    })
+
+    it('timings.inference 是秒，inferenceTime 应换算成毫秒', async () => {
+      // 硅基流动实测返回 {"timings":{"inference":4.283}}，单位是秒；
+      // 不换算的话前端 `/1000` 后恒显示「耗时 0.0 秒」
+      globalThis.fetch = vi.fn().mockResolvedValueOnce(
+        buildOkResponse({
+          images: [{ url: 'url' }],
+          timings: { inference: 4.283 },
+          seed: 1
+        })
+      ) as any
+
+      const result = await generateImageWithPersistence({ prompt: 'test' })
+
+      expect(result).toHaveProperty('inferenceTime', 4283)
     })
 
     it('timings.inference 缺失时 inferenceTime 应为 0', async () => {

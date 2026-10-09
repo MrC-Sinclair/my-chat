@@ -44,6 +44,7 @@ export interface GenerateImageSuccess {
   imageUrl: string
   markdown: string
   seed: number
+  /** 推理耗时，单位毫秒（供应商给的是秒，见 generateImageWithPersistence 内的换算）；0 表示未返回 */
   inferenceTime: number
   warning?: string
   error?: never
@@ -163,8 +164,10 @@ async function callSiliconFlowImageApi(
 
   // seed/inferenceTime 优先用 API 返回值，缺失时降级
   const seed = typeof data?.seed === 'number' ? data.seed : (params.seed ?? 0)
+  // 硅基流动的 timings.inference 单位是「秒」（实测返回 4.283），这里统一换算成毫秒，
+  // 与工具卡片的 `inferenceTime / 1000` 展示口径对齐；不换算的话卡片恒显示「耗时 0.0 秒」
   const inferenceTime =
-    typeof data?.timings?.inference === 'number' ? data.timings.inference : 0
+    typeof data?.timings?.inference === 'number' ? Math.round(data.timings.inference * 1000) : 0
 
   return { imageUrl, seed, inferenceTime }
 }
