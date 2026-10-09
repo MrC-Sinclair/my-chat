@@ -20,6 +20,7 @@ import {
 import { archiveSessionMessages } from '~/server/utils/memory-archive'
 import { persistChatTurn } from '~/server/utils/message-persistence'
 import { withUnwrappedMcpResults } from '~/server/utils/mcp-tool-output'
+import { prepareFinalStep } from '~/server/utils/agent-loop'
 import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/models'
 import { getAuthUser } from '~/server/utils/auth'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
@@ -138,7 +139,12 @@ function getClientIp(event: any): string {
   // 1. x-forwarded-for：逗号分隔的链路，可能含多个 IP
   const xff = headers['x-forwarded-for'] as string | undefined
   if (xff) {
-    ipCandidates.push(...xff.split(',').map((s) => s.trim()).filter(Boolean))
+    ipCandidates.push(
+      ...xff
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
   }
 
   // 2. x-real-ip
@@ -386,18 +392,17 @@ export default defineEventHandler(async (event) => {
   // 语音消息 audio 字段提取（决策 3 + 5）
   // emotion 必须经 ALLOWED_EMOTIONS 白名单校验（防 prompt 注入），未通过校验落库为 null
   // audio 对象同时供 saveMessagesToDb 落库 metadata.audio + finalSystemPrompt 注入情感提示
-  const audio: { url: string; emotion: string | null; duration: number } | undefined =
-    body?.audio?.url
-      ? {
-          url: String(body.audio.url),
-          emotion:
-            typeof body.audio.emotion === 'string' &&
-            ALLOWED_EMOTIONS.has(body.audio.emotion)
-              ? body.audio.emotion
-              : null,
-          duration: Number(body.audio.duration) || 0
-        }
-      : undefined
+  const audio: { url: string; emotion: string | null; duration: number } | undefined = body?.audio
+    ?.url
+    ? {
+        url: String(body.audio.url),
+        emotion:
+          typeof body.audio.emotion === 'string' && ALLOWED_EMOTIONS.has(body.audio.emotion)
+            ? body.audio.emotion
+            : null,
+        duration: Number(body.audio.duration) || 0
+      }
+    : undefined
 
   if (!messages || !Array.isArray(messages)) {
     throw createError({
@@ -523,9 +528,7 @@ export default defineEventHandler(async (event) => {
   // 不支持思考的模型不传
   // 注：@ai-sdk/openai v2 的 providerOptions 不支持透传 enable_thinking（zod schema 严格校验），
   // 必须在 reasoning-provider.ts 的 customFetch 层注入请求体顶层字段
-  const thinkingOptions = caps.toggleableThinking
-    ? { enableThinking: thinkingEnabled }
-    : undefined
+  const thinkingOptions = caps.toggleableThinking ? { enableThinking: thinkingEnabled } : undefined
 
   const webSearchEnabled = enable_web_search !== false
 
@@ -666,13 +669,20 @@ export default defineEventHandler(async (event) => {
     // 原逻辑导致 Qwen3-8B/Qwen3.5-4B 启用工具时 maxSteps=1，工具调用失效（LLM 调工具后无法基于结果生成回答）
     // 修复后：有工具时 maxSteps=5 允许多步循环，无工具时 maxSteps=1（纯对话/纯视觉/纯推理）
     const hasActiveTools = caps.toolCalling && Object.keys(toolsConfig).length > 0
-    const stopWhen = stepCountIs(hasActiveTools ? 5 : 1)
+    const maxStepCount = hasActiveTools ? 5 : 1
+    const stopWhen = stepCountIs(maxStepCount)
 
     const result = streamText({
       model: llmProvider(useModel, thinkingOptions),
       system: finalSystemPrompt,
       messages: llmMessages as any,
       stopWhen,
+      // 最后一步收回所有工具，强制模型基于已有工具结果产出文本
+      // 否则步数被失败的调用耗尽时整轮无文本，空文本不落库，用户重开会话只看到提问
+      ...(hasActiveTools && {
+        prepareStep: ({ stepNumber }: { stepNumber: number }) =>
+          prepareFinalStep(stepNumber, maxStepCount)
+      }),
       ...(caps.toolCalling &&
         Object.keys(toolsConfig).length > 0 && {
           tools: toolsConfig as Parameters<typeof streamText>[0]['tools']
@@ -706,7 +716,9 @@ export default defineEventHandler(async (event) => {
           // 重开会话会同时看到被替换的旧问答与新一轮（详见 message-persistence.ts）
           const pruneFromMessageId =
             typeof editingMessageId === 'string' && editingMessageId ? editingMessageId : undefined
-          const lastUserMessage = [...messages].reverse().find((msg: { role: string }) => msg.role === 'user')
+          const lastUserMessage = [...messages]
+            .reverse()
+            .find((msg: { role: string }) => msg.role === 'user')
           await persistChatTurn({
             sessionId,
             userText: lastUserMessage ? extractTextFromMessage(lastUserMessage) : null,
@@ -725,11 +737,7 @@ export default defineEventHandler(async (event) => {
         // 覆盖浏览器关闭/刷新场景：前端 fire-and-forget 可能因网络抖动失败，服务端兜底补齐
         // 注：archiveSessionMessages 内置进程内并发锁，重复请求直接返回不重复执行
         // 注：不 await 完成，不阻塞 onFinish 返回和流结束信号（详见 design.md 决策 6）
-        if (
-          lastSessionId &&
-          typeof lastSessionId === 'string' &&
-          lastSessionId !== sessionId
-        ) {
+        if (lastSessionId && typeof lastSessionId === 'string' && lastSessionId !== sessionId) {
           archiveSessionMessages(lastSessionId).catch((err) => {
             console.error(`[chat.post] 服务端归档兜底失败（会话 ${lastSessionId}）:`, err)
           })
