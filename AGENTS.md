@@ -100,6 +100,8 @@ my-chat — 基于 Nuxt 3 + Vercel AI SDK 的 AI 对话应用，支持 Markdown 
 - **异步写操作必须防重复提交**：任何修改数据的异步操作（API 路由、HTTP 请求、数据库写入），入口必须有守卫阻止并发重复调用，异步完成后（success + fail 分支）必须重置守卫。实现方式因场景而异：标志位 / disabled 属性 / debounce 均可
 - **服务端数据库避免 Read-Modify-Write**：先查后改的模式存在竞态窗口。优先使用原子操作（如 `UPDATE ... WHERE`、Drizzle 的 `db.update().set().where()`、`INSERT ... ON CONFLICT`），除非业务逻辑必须基于旧值做判断
 - **多数据源同步注意一致性**：同一数据写入多个存储时，确保所有路径以相同顺序写入，避免旧数据覆盖新数据
+- **会话归属不一致一律 404 而非 403**：`sessions/[id]`、`archive-memory`、`messages.post`、`chat.post` 的归属校验都用 `and(eq(sessions.id), eq(sessions.userId, user.id))` 查不到 → 404，避免通过状态码差异泄露他人会话是否存在。改动这些路由时保持 404 语义（线上已实测六个跨用户入口全部 404，写路径也进不去）
+- **无有效 Cookie 的请求会即时铸造一行游客**（`server/middleware/auth.ts` 铸造前不区分路径）：这会让 `users` 表随扫描流量线性增长，靠 `server/plugins/guest-ttl.ts` 每小时回收「超 7 天且名下无会话」的游客行。若要改成按需铸造，会同时影响前端游客态与一堆用例，属认证语义变更，需先量后再动
 
 #### SSR 水合规则
 
@@ -110,6 +112,7 @@ Nuxt 3 使用 SSR，服务端和客户端必须渲染出相同的 HTML，否则�
 - **客户端条件渲染用** **`<ClientOnly>`**：依赖浏览器 API 或客户端状态的组件（如地图、图表、富文本编辑器）必须用 `<ClientOnly>` 包裹，或使用 `client:only` 指令跳过 SSR
 - **ref 初始值必须 SSR 安全**：`ref()` 的初始值在 SSR 和客户端必须一致。需要客户端才能确定的值（如屏幕宽度、用户偏好），应在 `onMounted` 中延迟赋值，初始值用安全的默认值
 - **禁止 onMounted 后直接修改 SSR 渲染的 DOM**：`onMounted` 中直接操作 DOM（如 `createElement`、`replaceChild`）会破坏 Vue 的水合节点匹配。如需动态渲染，用 `<ClientOnly>` 包裹整个区域
+- **无条件渲染的 `<Teleport>` 必须包 `<ClientOnly>`**：Teleport 在 SSR 只留注释占位、客户端首帧是真实节点，直接水合会报 `Hydration node mismatch`（`ToastProvider` 的容器 div 就踩过）。内层本身是 `v-if`（两端都渲染占位）时可以不加——`ConfirmDialogProvider` 就是这种情形，未包也无水合不匹配
 
 #### 踩坑注意事项
 
@@ -163,7 +166,8 @@ utils/              → markdown.ts, katex.ts, highlight.ts, mermaid.ts, image-s
 server/api/         → chat.post.ts, sessions.ts, sessions/[id]/index.ts, sessions/[id]/archive-memory.post.ts, messages.post.ts, generate-image.post.ts, audio/transcribe.post.ts, audio/tts.post.ts, audio/[id].get.ts, auth/register.post.ts, auth/login.post.ts, auth/logout.post.ts, auth/me.get.ts, models.ts
 server/tools/       → web-search.ts, ocr-document.ts, generate-image.ts, recall-memory.ts, github-file.ts, agent-task.ts（chat.post.ts 中注册）；sensevoice.ts / telespeech.ts（ASR 转写，供 audio/transcribe 路由使用）；weather.ts（getCityByIp 等函数，供 server/mcp/weather-server.ts 复用）
 server/mcp/         → weather-server.ts（MCP stdio 传输，天气工具经 MCP 提供）
-server/utils/       → imgbb.ts, reasoning-provider.ts, embedding.ts, reranker.ts, image-generation.ts, memory-archive.ts, auth.ts
+server/utils/       → imgbb.ts, reasoning-provider.ts, embedding.ts, reranker.ts, image-generation.ts, memory-archive.ts, auth.ts, message-persistence.ts（persistChatTurn，会话级 advisory lock 在事务内）, vision-images.ts（视觉模型只吃 base64）, mcp-tool-output.ts（MCP 结果解包）, guest-ttl.ts（空游客回收）
+server/plugins/     → audio-ttl.ts（音频 7 天 TTL 扫描）、guest-ttl.ts（游客账号 7 天 TTL 且无会话才回收），两者都是 nitro setInterval + close 钩子清定时器，Vercel 下不启动
 server/db/          → schema.ts, index.ts
 server/config/      → models.ts
 server/middleware/   → security.ts, auth.ts
@@ -197,7 +201,7 @@ server/middleware/   → security.ts, auth.ts
 
 #### 执行循环
 
-实际代码基于「是否有工具实际注册」动态决定循环上限：有工具时 `stopWhen: stepCountIs(5)`，无工具时 `stepCountIs(1)`（AI SDK v5 已用 `stopWhen`/`stepCountIs` 取代 `maxSteps`）。`stopWhen` 是硬上限，LLM 可自主提前停止。复杂任务由 LLM 自主规划多次调用，代码不预编排。工具失败、Provider 失败（返回 500 + toast）不中断流，让 LLM 基于错误继续。消息通过 `onFinish` 异步落库，不阻塞主循环。
+实际代码基于「是否有工具实际注册」动态决定循环上限：有工具时 `stopWhen: stepCountIs(5)`，无工具时 `stepCountIs(1)`（AI SDK v5 已用 `stopWhen`/`stepCountIs` 取代 `maxSteps`）。`stopWhen` 是硬上限，LLM 可自主提前停止。**末步由 `prepareStep` 收回全部工具**（`server/utils/agent-loop.ts` 的 `prepareFinalStep` 返回 `{ activeTools: [] }`），因为步数被失败的调用耗尽时整轮没有文本，而空文本不落库会让用户重开会话后只看到提问。复杂任务由 LLM 自主规划多次调用，代码不预编排。工具失败、Provider 失败（返回 500 + toast）不中断流，让 LLM 基于错误继续。消息通过 `onFinish` 异步落库，不阻塞主循环。
 
 #### 记忆系统
 

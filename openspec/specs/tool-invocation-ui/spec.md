@@ -22,6 +22,25 @@
 - **THEN** 组件 SHALL 命中 `v-if="invocation.toolName === 'weather'"` 分支
 - **AND** SHALL NOT 命中兜底 `v-else` 分支
 
+### Requirement: `invocation.output` 形态约定
+
+组件 SHALL 始终把 `invocation.output` 当作**领域对象**读取（`output.city`、`output.error`、`output.results` 等），MCP 工具的协议包裹形态 SHALL 在服务端出流前被解包（见 `mcp-weather-tool` 的「MCP 工具输出解包为领域对象」），组件不做二次识别。
+
+- 历史消息重开时 SHALL NOT 出现工具卡片：会话载入只把 `messages.content` 映射为 `parts: [{ type: 'text' }]`（`composables/useChatSession.ts`），工具 part 不落库
+- 因此组件 SHALL NOT 为"库里存有旧包裹形态 output"做兼容分支——那种数据不存在
+
+#### Scenario: MCP 工具结果直接按对象读取
+
+- **WHEN** 渲染 MCP `getCityByIp` 的工具卡片
+- **THEN** 组件 SHALL 直接读 `output.city` / `output.isLocal` / `output.error`
+- **AND** 当 `isLocal === true` 时 SHALL 显示"本地网络环境"提示，而非兜底文案
+
+#### Scenario: 重开历史会话不渲染工具卡片
+
+- **WHEN** 用户切换到一条此前含工具调用的历史会话
+- **THEN** 消息 SHALL 只渲染文本部分
+- **AND** SHALL NOT 出现任何工具卡片
+
 ### Requirement: 加载中状态视觉规范
 
 `ToolInvocation.vue` SHALL 对所有工具分支统一加载中状态的视觉表现：脉冲点动画 + 紫色光晕背景 + 提示文字。

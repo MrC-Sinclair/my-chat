@@ -18,7 +18,7 @@
 - **THEN** LLM 调用 `generateImage` 工具，传入优化后的英文/中文 prompt
 - **AND** 工具调用硅基流动 `POST /v1/images/generations` API
 - **AND** 工具返回 `{ imageUrl, markdown, seed, inferenceTime }` 给 LLM（不含 base64）
-- **NOTE** 硅基流动 API 响应格式为 `{ images: [{ url }], timings: { inference }, seed }`，需从 `images[0].url` 提取图片 URL，从 `timings.inference` 提取耗时（秒）作为 `inferenceTime`
+- **NOTE** 硅基流动 API 响应格式为 `{ images: [{ url }], timings: { inference }, seed }`，需从 `images[0].url` 提取图片 URL；`timings.inference` 的单位是**秒**（实测返回 `4.283`），服务端统一换算成**毫秒**（`Math.round(inference * 1000)`）作为 `inferenceTime`，与 `tool-invocation-ui` 里 `inferenceTime / 1000` 的展示口径一致。不换算会让工具卡片恒显示「耗时 0.0 秒」
 - **AND** LLM 在最终回答中用 markdown 图片语法 `![描述](imageUrl)` 嵌入生成的图片
 
 #### Scenario: 工具调用失败降级
@@ -167,7 +167,7 @@
 - **WHEN** 工具返回 `imageUrl`（`state === 'output-available'` 且无 `error`）
 - **THEN** 显示图片缩略图（`max-w-[200px]` 限制宽度）
 - **AND** 点击图片可放大查看（用 `<ClientOnly>` 包裹图片预览组件）
-- **AND** 显示生成耗时（`inferenceTime`，秒）和 seed 值
+- **AND** 显示生成耗时（`inferenceTime` 单位为毫秒，展示时 `/ 1000` 保留 1 位小数）和 seed 值
 - **AND** 缩略图下方提供 3 个 icon 按钮（用 `v-tooltip` 提供文字提示）：
   1. **放大查看**：点击在 modal 中查看原图（`max-w-[90vw] max-h-[90vh]`，保留宽高比）
   2. **下载图片**：通过 `<a download>` 触发下载（`fetch(url).then(r => r.blob()).then(blob => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = \`kolors-\${seed}.png\`; a.click(); })`，避免直接跳转新标签）

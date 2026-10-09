@@ -43,6 +43,28 @@ Nuxt 服务端 SHALL 通过 `@ai-sdk/mcp` 的 `createMCPClient` 连接 MCP Weath
 - **WHEN** MCP Weather Server 进程未运行或无法连接
 - **THEN** AI SDK 返回工具调用失败，LLM 应告知用户"天气查询暂时不可用"
 
+### Requirement: MCP 工具输出解包为领域对象
+
+`@ai-sdk/mcp` 的 `MCPClient.tools()` 返回 `Tool<INPUT, CallToolResult>`，其 `execute` 原样透出 MCP 协议结果 `{ content: [{ type: 'text', text }], isError }`；而项目内非 MCP 工具返回的就是领域对象，`ToolInvocation.vue` 也按对象读取 `output.city` / `output.error`。`chat.post.ts` SHALL 在注册前用 `withUnwrappedMcpResults()`（`server/utils/mcp-tool-output.ts`）包装每个 MCP 工具的 `execute`，使两类工具的 `output` 形态一致。
+
+#### Scenario: 解包后的 tool-output 事件
+
+- **WHEN** LLM 调用 MCP `getCityByIp` 且定位成功
+- **THEN** SSE `tool-output-available` 的 `output` SHALL 是 `{ city, region, country, lat, lon, isLocal, error }` 对象
+- **AND** SHALL NOT 是 `{ content: [...], isError }` 包裹形态
+- **AND** 工具卡片 SHALL 渲染城市信息，而非兜底文案「IP 定位失败」
+
+#### Scenario: 文本非 JSON 时不做猜测
+
+- **WHEN** MCP 返回的文本块无法解析为 JSON 对象
+- **THEN** 若 `isError` 为真，SHALL 返回 `{ error: <原文> }`，让卡片显示真实原因
+- **AND** 否则 SHALL 原样返回该结果
+
+#### Scenario: 无 execute 的工具原样保留
+
+- **WHEN** MCP 工具集中某项没有 `execute`（仅声明 schema）
+- **THEN** 包装函数 SHALL 原样保留该项，不注入 execute
+
 ### Requirement: weather.ts 核心函数可被 MCP Server 复用
 
 `server/tools/weather.ts` SHALL 导出核心函数（`geocodeCity`、`fetchWeather`、`describeWeatherCode`、`describeWindDirection`），供 MCP Server 直接导入使用。

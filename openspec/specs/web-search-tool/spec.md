@@ -80,6 +80,22 @@
 - webSearch 工具 SHALL 与 `extractTextFromImage`、`recallMemory`、`generateImage`、weather MCP tools 共存于 `toolsConfig`
 - `maxSteps` SHALL 基于 `toolsConfig` 是否非空决定（`hasActiveTools = caps.toolCalling && Object.keys(toolsConfig).length > 0`）：有工具时 `maxSteps=5`，无工具时 `maxSteps=1`
 - `stopWhen` SHALL 为 `stepCountIs(hasActiveTools ? 5 : 1)`
+- 当 `hasActiveTools` 为真时，`streamText` SHALL 传入 `prepareStep`，在**最后一步**返回 `{ activeTools: [] }` 收回全部工具（判定函数 `prepareFinalStep`，`server/utils/agent-loop.ts`）
+  - 原因：步数上限是硬截断，小模型把步数耗在被拒绝的工具调用上时末步仍是工具调用、整轮无文本；空文本按设计不落库，用户重开会话只看到提问没有回应
+  - SHALL NOT 用 `toolChoice: 'none'` 替代：那仍会把工具 schema 发给供应商，兼容端点对该取值支持不一（本项目曾因多传参数被 400）
+
+#### Scenario: 末步收回工具强制产出文本
+
+- **WHEN** 循环进行到最后一步（`stepNumber === maxStepCount - 1`）
+- **THEN** `prepareStep` SHALL 返回 `{ activeTools: [] }`
+- **AND** 该步的模型调用 SHALL 不携带任何工具定义
+- **AND** 模型 SHALL 只能基于已有工具结果产出文本
+
+#### Scenario: 前几步不受影响
+
+- **WHEN** `stepNumber < maxStepCount - 1`
+- **THEN** `prepareStep` SHALL 返回 `undefined`，沿用外层工具配置
+- **AND** 无工具循环（`maxStepCount === 1`）时 SHALL 不做任何干预
 
 #### Scenario: webSearch 开启且模型支持工具调用
 
