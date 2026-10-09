@@ -5,15 +5,18 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // 固定单 worker：本机实测 `nuxi dev` 在并发下服务不过来（失败的都是依赖 mock 的用例，
-  // 报错统一是 waitForFunction 90s 超时）。同一份代码、同一个健康 dev server 下：
-  //   8 workers → 25 failed / 30 passed（3.6 min 后中止）
+  // 并发压到 2：本机实测失败主因不是并发而是 `nuxi dev` 在长轮次里逐步劣化（Vite 模块图/内存累积）
+  // —— 同一批用例单条跑、整文件跑、11 条小组跑都基本通过，跑满 102 条就成片 waitForFunction 超时。
+  // 同一份代码、健康 dev server 下的实测计数：
+  //   1 worker → 13 failed / 71 passed（20.2 min）
   //   2 workers → 12 failed / 51 passed（9.4 min）
-  //   1 worker  → 0 硬失败，6 条靠重试才过（20.2 min）
-  // 注意别用 `nuxi preview` 提速：mockChatAPI 靠替换 window.fetch 生效，只对 dev 有效
-  // （见 AGENTS.md 踩坑清单）。另外本地跑全量前确认 3000 端口没有僵尸 dev server，
-  // 否则 reuseExistingServer 会静默复用一个坏实例，让整轮结果失真。
-  workers: 1,
+  //   8 workers → 25 failed / 30 passed（3.6 min 后中止）
+  // 即 1 与 2 无差别、8 明显更差，所以取 2 换回一半时间。要真正修掉，得把 mockChatAPI 从
+  // 替换 window.fetch 改成 page.route 拦截，这样可改跑构建产物、也就没有 dev server 劣化问题
+  // （见 AGENTS.md 踩坑清单：preview 下 window.fetch 替换不生效）。
+  // 跑全量前先确认 3000 端口没有僵尸 dev server：reuseExistingServer 在本地恒为真，
+  // 会静默复用一个坏实例（我这边就因此误判过一次"零失败"）。
+  workers: 2,
   reporter: 'html',
   use: {
     baseURL: 'http://localhost:3000',
