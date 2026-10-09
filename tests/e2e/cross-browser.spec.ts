@@ -83,6 +83,10 @@ test.describe('跨浏览器兼容性', () => {
     await expect(page.getByTestId('send-btn')).toBeEnabled({ timeout: 5000 })
     await page.getByTestId('send-btn').click()
 
+    // 先等流式真正开始：点发送后仍要 await ensureSession()（POST /api/sessions），
+    // 那段时间 send-btn 依然可见，用它当「结束」判据会让第一次轮询就退出、采不到样本
+    await expect(page.getByTestId('stop-btn')).toBeVisible({ timeout: 15000 })
+
     const contentLengths: number[] = []
     const startTime = Date.now()
 
@@ -92,7 +96,7 @@ test.describe('跨浏览器兼容性', () => {
         const text = (await markdownEl.textContent()) || ''
         contentLengths.push(text.length)
       }
-      if (await page.locator('[data-testid="send-btn"]').isVisible()) break
+      if (!(await page.getByTestId('stop-btn').isVisible())) break
       await page.waitForTimeout(200)
     }
 

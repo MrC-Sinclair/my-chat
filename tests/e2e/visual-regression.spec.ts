@@ -13,6 +13,9 @@ test.setTimeout(120000)
 
 test.describe('视觉回归测试', () => {
   test.beforeEach(async ({ page }) => {
+    // 会话列表来自真实 DB，标题带创建时间、条数会变；不 stub 的话基线必然随时间过期
+    // （旧基线里就残留着 7 月的「新对话 2026/7/3 …」，diff 全是列表行）
+    await page.route('**/api/sessions', (route) => route.fulfill({ json: [] }))
     await page.goto('/ai-chat', { waitUntil: 'networkidle' })
   })
 
