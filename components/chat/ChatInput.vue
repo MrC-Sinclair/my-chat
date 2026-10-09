@@ -735,7 +735,7 @@ watch(
               :disabled="isGenerating"
               :aria-label="isGenerating ? '生图进行中，无法关闭' : '关闭生图面板'"
               v-tooltip="isGenerating ? '' : '关闭'"
-              class="p-1.5 rounded-lg text-semi-text-3 hover:text-semi-text-0 hover:bg-semi-fill-1 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              class="min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 flex items-center justify-center p-1.5 rounded-lg text-semi-text-3 hover:text-semi-text-0 hover:bg-semi-fill-1 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               @click="closeImagePanel"
             >
               <svg

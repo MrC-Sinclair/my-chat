@@ -1148,7 +1148,7 @@ function onDocumentClick(e: Event) {
         </h1>
         <div class="ml-auto flex items-center gap-1">
           <button
-            class="p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all active:scale-95"
+            class="min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 p-2 text-semi-text-3 hover:text-semi-primary hover:bg-semi-primary-light rounded-lg transition-all active:scale-95"
             aria-label="新建会话"
             v-tooltip="'新建会话'"
             @click="startNewSession"
