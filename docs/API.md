@@ -151,6 +151,10 @@ AI 对话核心接口，使用 Vercel AI SDK 的 `streamText` 流式生成回复
 | `finish`                | `finishReason`                    | 流结束                       |
 | `finish-step`           | —                                 | 单步结束                     |
 
+**工具结果（`tool-output-available` 的 `output`）形态**
+
+`output` 一律是领域对象（如 `weather` 的 `{ city, current, forecast }`、`getCityByIp` 的 `{ city, region, isLocal, error }`），前端 `ToolInvocation.vue` 按对象字段取值。走 MCP 的工具（`weather` / `getCityByIp`）本协议返回的是 MCP `CallToolResult`（`{ content: [{ type: 'text', text: '<JSON 字符串>' }], isError }`），由 `server/utils/mcp-tool-output.ts` 在出流前解包，使两类工具形态一致——否则工具卡片会读不到字段并退回兜底错误文案。
+
 **思考过程（reasoning）处理**
 
 硅基流动等兼容 API 在 SSE 的 `delta.reasoning_content` 中返回思考内容，但 `@ai-sdk/openai` v2 不解析该字段。`reasoning-provider.ts` 通过自定义 fetch 拦截 SSE 流，将 `reasoning_content` 映射为带 `\x00REASONING:` 前缀的 `content`，再由 `chat.post.ts` 拆分为 `reasoning-*` 事件推送到前端。
