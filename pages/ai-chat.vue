@@ -10,6 +10,7 @@ import QuickPromptIcon from '~/components/chat/QuickPromptIcon.vue'
 import { useChatSession } from '~/composables/useChatSession'
 import { generateId } from '~/utils/uuid'
 import { copyToClipboard } from '~/utils/clipboard'
+import { formatChatError } from '~/utils/chat-error'
 import { useChatConfig } from '~/composables/useChatConfig'
 import { useToast } from '~/composables/useToast'
 
@@ -146,7 +147,7 @@ const chat = new Chat({
       }
       pendingVoiceMessage.value = null
     }
-    toast.error(`AI 回复失败：${err.message || '未知错误'}`)
+    toast.error(`AI 回复失败：${formatChatError(err.message)}`)
   }
 })
 
