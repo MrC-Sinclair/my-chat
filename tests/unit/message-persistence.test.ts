@@ -11,7 +11,14 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockDb, mockMessages, mockSessions, selectQueue, deleteWhere } = vi.hoisted(() => {
+const {
+  mockDb,
+  mockMessages,
+  mockSessions,
+  selectQueue,
+  deleteWhere,
+  executedSql
+} = vi.hoisted(() => {
   /** 列 mock：仅需让 drizzle 操作符拿到对象即可，不校验生成的 SQL */
   const col = (name: string) => ({ name, table: {}, dataType: 'string' })
 
@@ -48,14 +55,23 @@ const { mockDb, mockMessages, mockSessions, selectQueue, deleteWhere } = vi.hois
     })
   }
 
+  /** 记录事务内执行的裸 SQL（用于断言会话级 advisory lock 已获取） */
+  const executedSql: unknown[][] = []
+
   const mockDb = {
     select,
     insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })) })),
-    delete: vi.fn(() => deleteChain)
+    delete: vi.fn(() => deleteChain),
+    execute: vi.fn((statement: unknown) => {
+      executedSql.push([statement])
+      return Promise.resolve()
+    }),
+    // 真实实现里 persistChatTurn 整体跑在事务中；mock 直接把同一个句柄交给回调
+    transaction: vi.fn((fn: (tx: unknown) => Promise<unknown>) => fn(mockDb))
   }
 
-  return { mockDb, mockMessages, mockSessions, selectQueue, deleteWhere }
+  return { mockDb, mockMessages, mockSessions, selectQueue, deleteWhere, executedSql }
 })
 
 vi.mock('~/server/db', () => ({ db: mockDb }))
@@ -77,11 +93,41 @@ function updatedSet(call = 0) {
   return updateResult.set.mock.calls[0][0] as Record<string, any>
 }
 
+/** 把 drizzle sql 模板的片段拼成可读文本（queryChunks 混合字面量与参数值） */
+function sqlText(statement: unknown): string {
+  const chunks = (statement as { queryChunks?: unknown[] })?.queryChunks ?? []
+  return chunks
+    .map((c) => (typeof c === 'string' ? c : String((c as { value?: unknown }).value ?? '')))
+    .join('')
+}
+
 describe('persistChatTurn', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     selectQueue.length = 0
     deleteWhere.length = 0
+    executedSql.length = 0
+  })
+
+  it('写入应在会话级 advisory lock 之后、同一事务内执行', async () => {
+    await persistChatTurn({
+      sessionId: 's-lock',
+      userText: '你好',
+      assistantText: '回答',
+      modelName: 'Qwen3-8B'
+    })
+
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+    expect(mockDb.execute).toHaveBeenCalledTimes(1)
+
+    const text = sqlText(executedSql[0][0])
+    expect(text).toContain('pg_advisory_xact_lock')
+    expect(text).toContain('s-lock')
+
+    // 先取锁再写：否则并发裁剪仍会互相删掉对方刚插入的行
+    expect(mockDb.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDb.insert.mock.invocationCallOrder[0]
+    )
   })
 
   it('常规发送应插入用户消息与助手回复，并更新会话 updatedAt', async () => {
@@ -225,6 +271,9 @@ describe('persistChatTurn', () => {
 
     expect(mockDb.insert).not.toHaveBeenCalled()
     expect(mockDb.update).not.toHaveBeenCalled()
+    // 早退发生在开事务之前：空 sessionId 不该占用事务连接或抢锁
+    expect(mockDb.transaction).not.toHaveBeenCalled()
+    expect(mockDb.execute).not.toHaveBeenCalled()
   })
 
   it('编辑重发：先裁剪锚点及其后的历史，再按常规插入新一轮', async () => {

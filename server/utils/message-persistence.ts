@@ -22,6 +22,14 @@ export interface PersistedAudioMeta {
   duration: number
 }
 
+/**
+ * 一轮写入所需的数据库句柄
+ *
+ * `db` 与其事务句柄 `tx` 都提供这几个方法；显式收窄成联合里公共的这部分，
+ * 让各步骤函数既能接收事务句柄也能接收 `db`（单测里 mock 的也是这一组方法）。
+ */
+type SessionWriter = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete' | 'execute'>
+
 export interface PersistChatTurnOptions {
   sessionId: string
   /** 本轮用户消息纯文本；无可保存的用户消息时为 null */
@@ -63,61 +71,70 @@ export async function persistChatTurn(options: PersistChatTurnOptions): Promise<
   } = options
   if (!sessionId) return
 
-  // 编辑重发：先删掉被替换的那一轮（含被编辑条自身），再按常规插入新一轮。
-  // 必须插在插入语句之前，否则会把自己刚写入的消息一起删掉。
-  if (pruneFromMessageId) {
-    await pruneMessagesFrom(sessionId, pruneFromMessageId)
-  }
+  // 同一会话的「裁剪 + 插入」必须串行：两个标签页各自编辑不同轮次并发提交时，
+  // 后提交的裁剪会把先提交那轮刚插入的消息整段删掉（实测一轮完整问答静默丢失）。
+  // 用会话级 pg_advisory_xact_lock 让同会话写入排队，锁随事务结束自动释放；
+  // 不同会话的 hashtext 不同，互不阻塞。
+  await db.transaction(async (tx) => {
+    const q: SessionWriter = tx
+    await q.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${sessionId})::bigint)`)
 
-  // 常规发送才插入用户消息。重新生成时该消息已存在于库中，重复插入会让
-  // 会话历史出现「两条相同用户提问」，AI 上下文与归档输入同步被污染。
-  if (userText !== null && !isRegenerate) {
-    const meta: Record<string, unknown> = {}
-    if (imageUrls && imageUrls.length > 0) {
-      meta.images = imageUrls.map((url, i) => ({ index: i, url }))
+    // 编辑重发：先删掉被替换的那一轮（含被编辑条自身），再按常规插入新一轮。
+    // 必须插在插入语句之前，否则会把自己刚写入的消息一起删掉。
+    if (pruneFromMessageId) {
+      await pruneMessagesFrom(q, sessionId, pruneFromMessageId)
     }
-    if (audio && audio.url) {
-      // 语音消息是单条消息的元信息快照（供 UI 展示情感标签），与「情感不作为长期状态注入」不矛盾
-      meta.audio = {
-        url: audio.url,
-        emotion: audio.emotion,
-        duration: audio.duration,
-        createdAt: new Date().toISOString()
+
+    // 常规发送才插入用户消息。重新生成时该消息已存在于库中，重复插入会让
+    // 会话历史出现「两条相同用户提问」，AI 上下文与归档输入同步被污染。
+    if (userText !== null && !isRegenerate) {
+      const meta: Record<string, unknown> = {}
+      if (imageUrls && imageUrls.length > 0) {
+        meta.images = imageUrls.map((url, i) => ({ index: i, url }))
       }
+      if (audio && audio.url) {
+        // 语音消息是单条消息的元信息快照（供 UI 展示情感标签），与「情感不作为长期状态注入」不矛盾
+        meta.audio = {
+          url: audio.url,
+          emotion: audio.emotion,
+          duration: audio.duration,
+          createdAt: new Date().toISOString()
+        }
+      }
+      await q.insert(messagesTable).values({
+        id: crypto.randomUUID(),
+        sessionId,
+        role: 'user',
+        content: userText,
+        metadata: Object.keys(meta).length > 0 ? meta : undefined,
+        createdAt: new Date()
+      })
     }
-    await db.insert(messagesTable).values({
-      id: crypto.randomUUID(),
-      sessionId,
-      role: 'user',
-      content: userText,
-      metadata: Object.keys(meta).length > 0 ? meta : undefined,
-      createdAt: new Date()
-    })
-  }
 
-  if (!assistantText.trim()) {
-    await touchSession(sessionId)
-    return
-  }
-
-  if (isRegenerate) {
-    const replaced = await replaceLatestAssistantReply(sessionId, assistantText, modelName)
-    if (replaced) {
-      await touchSession(sessionId)
+    if (!assistantText.trim()) {
+      await touchSession(q, sessionId)
       return
     }
-    // 无可替换的既有回复（首次发送失败未落库等）→ 退回常规插入
-  }
 
-  await db.insert(messagesTable).values({
-    id: crypto.randomUUID(),
-    sessionId,
-    role: 'assistant',
-    content: assistantText,
-    metadata: { model: modelName },
-    createdAt: new Date()
+    if (isRegenerate) {
+      const replaced = await replaceLatestAssistantReply(q, sessionId, assistantText, modelName)
+      if (replaced) {
+        await touchSession(q, sessionId)
+        return
+      }
+      // 无可替换的既有回复（首次发送失败未落库等）→ 退回常规插入
+    }
+
+    await q.insert(messagesTable).values({
+      id: crypto.randomUUID(),
+      sessionId,
+      role: 'assistant',
+      content: assistantText,
+      metadata: { model: modelName },
+      createdAt: new Date()
+    })
+    await touchSession(q, sessionId)
   })
-  await touchSession(sessionId)
 }
 
 /**
@@ -130,13 +147,14 @@ export async function persistChatTurn(options: PersistChatTurnOptions): Promise<
  * @returns 是否完成替换
  */
 async function replaceLatestAssistantReply(
+  q: SessionWriter,
   sessionId: string,
   assistantText: string,
   modelName: string
 ): Promise<boolean> {
   const sessionCondition = eq(messagesTable.sessionId, sessionId)
 
-  const [latestAssistant] = await db
+  const [latestAssistant] = await q
     .select({ id: messagesTable.id, createdAt: messagesTable.createdAt })
     .from(messagesTable)
     .where(and(sessionCondition, eq(messagesTable.role, 'assistant')))
@@ -145,7 +163,7 @@ async function replaceLatestAssistantReply(
 
   if (!latestAssistant) return false
 
-  const [latestUser] = await db
+  const [latestUser] = await q
     .select({ id: messagesTable.id, createdAt: messagesTable.createdAt })
     .from(messagesTable)
     .where(and(sessionCondition, eq(messagesTable.role, 'user')))
@@ -154,7 +172,7 @@ async function replaceLatestAssistantReply(
 
   if (latestUser && latestAssistant.createdAt < latestUser.createdAt) return false
 
-  await db
+  await q
     .update(messagesTable)
     .set({ content: assistantText, metadata: { model: modelName } })
     .where(eq(messagesTable.id, latestAssistant.id))
@@ -167,9 +185,14 @@ async function replaceLatestAssistantReply(
  *
  * 单条 DELETE + 子查询定位锚点，避免「先查 createdAt 再删」的竞态窗口。
  * 锚点 id 必须同时匹配 sessionId，跨会话传入他人 id 时子查询为 NULL → 一行都不删。
+ * 并发安全由调用方事务内的会话级 advisory lock 保证，本函数不自行加锁。
  */
-async function pruneMessagesFrom(sessionId: string, anchorMessageId: string): Promise<void> {
-  await db
+async function pruneMessagesFrom(
+  q: SessionWriter,
+  sessionId: string,
+  anchorMessageId: string
+): Promise<void> {
+  await q
     .delete(messagesTable)
     .where(
       and(
@@ -184,6 +207,6 @@ async function pruneMessagesFrom(sessionId: string, anchorMessageId: string): Pr
 }
 
 /** 更新会话 updatedAt，让会话列表按最近活跃排序 */
-async function touchSession(sessionId: string): Promise<void> {
-  await db.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))
+async function touchSession(q: SessionWriter, sessionId: string): Promise<void> {
+  await q.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId))
 }
