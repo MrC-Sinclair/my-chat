@@ -19,6 +19,7 @@ import {
 } from '~/server/tools/agent-task'
 import { archiveSessionMessages } from '~/server/utils/memory-archive'
 import { persistChatTurn } from '~/server/utils/message-persistence'
+import { withUnwrappedMcpResults } from '~/server/utils/mcp-tool-output'
 import { ALLOWED_MODEL_VALUES, getModelCapabilities } from '~/server/config/models'
 import { getAuthUser } from '~/server/utils/auth'
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
@@ -624,7 +625,9 @@ export default defineEventHandler(async (event) => {
             stderr: 'pipe'
           })
         })
-        mcpTools = await mcpClient.tools()
+        // 解包 MCP 协议结果，使工具 output 与非 MCP 工具同为领域对象
+        // （UI 工具卡片按 output.city / output.error 取值，见 server/utils/mcp-tool-output.ts）
+        mcpTools = withUnwrappedMcpResults(await mcpClient.tools())
       } catch (err) {
         console.error('MCP Weather Server 连接失败，天气工具不可用:', err)
         // 继续运行，只是没有天气工具
