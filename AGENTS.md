@@ -150,7 +150,7 @@ pnpm lint:fix         # ESLint 自动修复
 pnpm format           # Prettier 格式化
 pnpm test             # Vitest 单元测试
 pnpm test:unit        # 仅单元测试
-pnpm test:e2e         # Playwright E2E 测试
+pnpm test:e2e         # Playwright E2E 测试（自行起服务，端口是专用的 **3100**，不是 dev 的 3000；可用 E2E_PORT 覆盖）
 pnpm test:all         # 全部测试（unit + component + api + e2e）
 pnpm vitest run tests/unit/markdown.test.ts  # Markdown 渲染专项测试
 pnpm db:push          # 同步 Schema 到数据库（修改 schema.ts 后必须执行）
