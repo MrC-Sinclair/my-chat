@@ -1,5 +1,12 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// e2e 专用端口，不复用日常 dev 的 3000。
+// 原因：reuseExistingServer 在本地恒为真，而 Playwright 只检查"该端口有响应"就当 server 就绪。
+// 实测发生过 3000 被另一个项目占用（它把 /ai-chat 302 到 /my-personalWebsite/ai-chat），
+// 于是连「页面能加载标题和输入框」这种最基础的用例都全挂，整轮结果都是噪声。
+const E2E_PORT = Number(process.env.E2E_PORT || 3100)
+const E2E_BASE_URL = `http://localhost:${E2E_PORT}`
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
@@ -19,7 +26,7 @@ export default defineConfig({
   workers: 2,
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: E2E_BASE_URL,
     trace: 'on-first-retry'
   },
   projects: [
@@ -41,8 +48,8 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
+    command: `npm run dev -- --port ${E2E_PORT}`,
+    url: E2E_BASE_URL,
     // 冷启动 nuxi dev 在本机常超 60s，默认值会让整轮直接中止（报 "did not run" 而非真实失败）
     timeout: 180_000,
     reuseExistingServer: !process.env.CI
