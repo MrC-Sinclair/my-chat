@@ -20,3 +20,5 @@
 ## 自我修复能力
 
 长程 Agent 引入后，允许 LLM 识别失败并主动调整策略（反思→重规划）。
+
+已落地的护栏：工具失败返回 `{ error, detail }` 而不 throw，由 LLM 自行决定重试或换工具；循环最后一步收回全部工具（`server/utils/agent-loop.ts` 的 `prepareFinalStep`）强制产出文本，避免步数被失败调用耗尽时整轮无回答。尚未做的是跨轮次的策略学习（重规划目前只发生在同一次 `streamText` 循环内）。
