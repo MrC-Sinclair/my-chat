@@ -167,6 +167,10 @@ export default defineNuxtConfig({
     authSecret: process.env.AUTH_SECRET || 'dev-only-insecure-secret-change-me',
     systemPrompt: process.env.SYSTEM_PROMPT || '',
     databaseUrl: process.env.DATABASE_URL,
+    // /api 限流阈值（次/60 秒/IP）。做成可配是因为 e2e 会被它打到：
+    // 每条用例光页面加载就发 3-4 个 /api 请求，6 条就吃满 30 次窗口，
+    // 表现成"发送后连用户气泡都没有"的假失败。测试环境用 NUXT_RATE_LIMIT_MAX 抬高。
+    rateLimitMax: Number(process.env.RATE_LIMIT_MAX || 30),
     // 长期记忆系统模型配置（可选，有默认值）
     // embedding 模型：BAAI/bge-m3 输出 1024 维向量，与 schema.ts vector dimensions 对齐
     embeddingModel: process.env.EMBEDDING_MODEL || 'BAAI/bge-m3',

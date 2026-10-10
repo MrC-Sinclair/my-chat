@@ -58,7 +58,7 @@
 | CSP              | `default-src 'self'`；`script-src` 允许 `'unsafe-inline' 'unsafe-eval'`；`connect-src` 仅允许硅基流动 |
 | 安全响应头       | `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy`、`Permissions-Policy`   |
 | CORS             | 仅允许 `http://localhost:3000`，支持 `GET/POST/PATCH/DELETE/OPTIONS`                                  |
-| 限流             | 60 秒内最多 30 次/IP，超出返回 `429`，响应头 `X-RateLimit-Remaining` / `X-RateLimit-Limit`            |
+| 限流             | 60 秒窗口内每 IP 最多 `RATE_LIMIT_MAX` 次（默认 30），超出返回 `429`，响应头 `X-RateLimit-Remaining` / `X-RateLimit-Limit` / `Retry-After: 60` |
 | 会话 ID 格式校验 | `/api/sessions/:id` 路径必须匹配 UUID 正则                                                            |
 
 ---

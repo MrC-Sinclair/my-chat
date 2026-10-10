@@ -19,7 +19,8 @@ const CSP_DIRECTIVES = [
 
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 const RATE_LIMIT_WINDOW = 60_000
-const RATE_LIMIT_MAX = 30
+/** 阈值兜底值：runtimeConfig 未注入时使用（正常不会走到，nuxt.config 有默认 30） */
+const DEFAULT_RATE_LIMIT_MAX = 30
 
 function getClientIp(req: IncomingMessage): string {
   const forwarded = req.headers['x-forwarded-for']
@@ -27,21 +28,21 @@ function getClientIp(req: IncomingMessage): string {
   return req.socket?.remoteAddress || 'unknown'
 }
 
-function checkRateLimit(ip: string): { allowed: boolean; remaining: number } {
+function checkRateLimit(ip: string, max: number): { allowed: boolean; remaining: number } {
   const now = Date.now()
   const entry = rateLimitMap.get(ip)
 
   if (!entry || now > entry.resetTime) {
     rateLimitMap.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW })
-    return { allowed: true, remaining: RATE_LIMIT_MAX - 1 }
+    return { allowed: true, remaining: max - 1 }
   }
 
-  if (entry.count >= RATE_LIMIT_MAX) {
+  if (entry.count >= max) {
     return { allowed: false, remaining: 0 }
   }
 
   entry.count++
-  return { allowed: true, remaining: RATE_LIMIT_MAX - entry.count }
+  return { allowed: true, remaining: max - entry.count }
 }
 
 export default defineEventHandler(async (event) => {
@@ -74,9 +75,10 @@ export default defineEventHandler(async (event) => {
   const url = getRequestURL(event)
   if (url.pathname.startsWith('/api/')) {
     const ip = getClientIp(event.node.req)
-    const { allowed, remaining } = checkRateLimit(ip)
+    const max = useRuntimeConfig(event).rateLimitMax || DEFAULT_RATE_LIMIT_MAX
+    const { allowed, remaining } = checkRateLimit(ip, max)
     res.setHeader('X-RateLimit-Remaining', String(remaining))
-    res.setHeader('X-RateLimit-Limit', String(RATE_LIMIT_MAX))
+    res.setHeader('X-RateLimit-Limit', String(max))
 
     if (!allowed) {
       res.setHeader('Retry-After', '60')
