@@ -12,18 +12,11 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // 并发压到 2：本机实测失败主因不是并发而是 `nuxi dev` 在长轮次里逐步劣化（Vite 模块图/内存累积）
-  // —— 同一批用例单条跑、整文件跑、11 条小组跑都基本通过，跑满 102 条就成片 waitForFunction 超时。
-  // 同一份代码、健康 dev server 下的实测计数：
-  //   1 worker → 13 failed / 71 passed（20.2 min）
-  //   2 workers → 12 failed / 51 passed（9.4 min）
-  //   8 workers → 25 failed / 30 passed（3.6 min 后中止）
-  // 即 1 与 2 无差别、8 明显更差，所以取 2 换回一半时间。要真正修掉，得把 mockChatAPI 从
-  // 替换 window.fetch 改成 page.route 拦截，这样可改跑构建产物、也就没有 dev server 劣化问题
-  // （见 AGENTS.md 踩坑清单：preview 下 window.fetch 替换不生效）。
-  // 跑全量前先确认 3000 端口没有僵尸 dev server：reuseExistingServer 在本地恒为真，
-  // 会静默复用一个坏实例（我这边就因此误判过一次"零失败"）。
-  workers: 2,
+  // 并发不设限（CI 才收敛到 1）：e2e 批量失败的真正原因是应用自身的 /api 限流被打满，
+  // 与并发、dev server 吞吐、mock 实现方式都无关。抬高阈值（见下方 webServer.env）后实测：
+  //   2 workers → 102 passed / 3.2 min；8 workers → 102 passed / 1.7 min
+  // 修复前的对照数据（同一份用例，仅限流不同）：1w 13 failed、2w 12 failed、8w 25 failed。
+  workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
     baseURL: E2E_BASE_URL,
@@ -50,6 +43,10 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --port ${E2E_PORT}`,
     url: E2E_BASE_URL,
+    // 关键：抬高 /api 限流阈值。默认 30 次/60 秒/IP 会被 e2e 自己吃满——每条用例光
+    // 页面加载就发 3-4 个 /api 请求，第 7 条左右开始 POST /api/sessions 返回 429，
+    // 前端 ensureSession 失败即中止发送，表现成"气泡都没渲染"的假失败（实测确认）。
+    env: { RATE_LIMIT_MAX: '100000' },
     // 冷启动 nuxi dev 在本机常超 60s，默认值会让整轮直接中止（报 "did not run" 而非真实失败）
     timeout: 180_000,
     reuseExistingServer: !process.env.CI
