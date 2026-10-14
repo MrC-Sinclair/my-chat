@@ -127,7 +127,6 @@ my-chat/
 │   └── models.ts               # 模型白名单与能力定义
 ├── server/middleware/
 │   └── security.ts             # CSP / 限流 / 参数校验
-├── openspec/                   # 功能提案与规范（含 Agent 演进路线）
 ├── docs/                       # API / 数据库 / 模型文档
 ├── .env.example                # 环境变量模板
 ├── docker-compose.yml          # PostgreSQL 容器

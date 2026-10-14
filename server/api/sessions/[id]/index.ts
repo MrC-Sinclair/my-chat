@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 503, statusMessage: '服务暂时不可用，请稍后重试' })
   }
 
-  // 归属校验（design.md 决策 4）：非本人会话一律 404，不泄露会话存在性
+  // 归属校验：非本人会话一律 404，不泄露会话存在性
   const owned = await db
     .select({ id: sessions.id })
     .from(sessions)

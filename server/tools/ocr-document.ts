@@ -5,7 +5,7 @@ import dns from 'node:dns/promises'
 /**
  * PaddleOCR-VL-1.5 工具：作为通用对话模型可调用的 OCR 能力
  *
- * 设计要点（详见 openspec/changes/add-ocr-tool/design.md）：
+ * 设计要点：
  * - 不在模型选择器中暴露，完全隐入后端工具层
  * - 调用 PaddlePaddle/PaddleOCR-VL-1.5（硅基流动提供，复用 OPENAI_API_KEY）
  * - 单图处理（多图 API 报 400），固定 OCR 指令（空 prompt 触发 raw token）

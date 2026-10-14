@@ -1,7 +1,7 @@
 /**
  * @file 重要度筛选入库（归档）— 会话结束时 LLM 判断哪些消息值得长期记住
  *
- * 设计要点（详见 openspec/changes/add-long-term-memory/design.md 决策 5/6/7/11）：
+ * 设计要点：
  *   - 复用 createReasoningProvider() + AI SDK v5 generateText()（非流式）调用 LLM
  *   - 通过 llmProvider(modelId, { enableThinking: false }) 创建 provider
  *     enable_thinking: false 由 customFetch 层注入（非请求体直接传）
@@ -51,7 +51,7 @@ const SENSITIVE_PATTERNS = [
  * 进程内并发锁：同一会话归档进行中时，重复请求直接返回不重复执行
  *
  * 注意：Map 是进程内变量，仅适用当前 docker 单进程部署；
- * 多进程部署需升级为 DB 行锁或 Redis 分布式锁（见 design.md Risks）
+ * 多进程部署需升级为 DB 行锁或 Redis 分布式锁
  */
 const archivingSessions = new Map<string, Promise<void>>()
 

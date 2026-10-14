@@ -1,9 +1,9 @@
 /**
  * @file 音频文件 TTL 自动清理 plugin
  *
- * 任务 2.6：定期扫描 server/uploads/audio/，删除超过 7 天的音频文件。
+ * 定期扫描 server/uploads/audio/，删除超过 7 天的音频文件。
  *
- * 设计要点（详见 openspec/changes/add-voice-message-asr/design.md 决策 2）：
+ * 设计要点：
  *   - 使用文件名中的时间戳（`<timestamp>-<uuid>.webm`）判断过期，不使用 mtime
  *     原因：文件系统操作（备份、杀毒扫描）可能更新 mtime 导致文件永不过期
  *   - 文件名格式严格校验（与 /api/audio/[id].get.ts 一致），避免误删

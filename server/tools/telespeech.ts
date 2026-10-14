@@ -5,7 +5,7 @@
  * 仅在 SenseVoiceSmall 检测到方言语种标签且端点可用性探测通过时由 Workflow 调用，
  * 不独立暴露给 LLM。
  *
- * 设计要点（详见 openspec/changes/add-voice-message-asr/design.md 决策 4）：
+ * 设计要点：
  *   - SiliconFlow 官方 API 文档**未列出** TeleAI/TeleSpeechASR 模型，需运行时探测端点可用性
  *   - 探测样本：模块加载时用 ffmpeg 生成 1 秒静音 WAV，缓存到模块级变量
  *   - 探测结果缓存到 teleSpeechAvailable，避免每次请求重复探测
@@ -21,7 +21,7 @@ import { isFfmpegAvailable } from './sensevoice'
 const TELESPEECH_MODEL = 'TeleAI/TeleSpeechASR'
 
 // ============================================================================
-// 端点可用性探测（任务 2.4.1）
+// 端点可用性探测
 // ============================================================================
 
 /**

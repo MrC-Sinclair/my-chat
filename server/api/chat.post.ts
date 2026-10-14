@@ -71,7 +71,7 @@ const MAX_IMAGES_PER_MESSAGE = 5
 const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads')
 
 /**
- * 情感白名单（防 prompt 注入，详见 add-voice-message-asr/design.md 决策 3）
+ * 情感白名单（防 prompt 注入）
  *
  * SenseVoiceSmall 仅 HAPPY/SAD/ANGRY/NEUTRAL 映射到白名单值，其他情感标签归为 null。
  * chat.post.ts 收到 body.audio.emotion 时必须用此集合校验，未通过校验的值
@@ -366,7 +366,7 @@ export default defineEventHandler(async (event) => {
     editing_message_id: editingMessageId
   } = body ?? {}
 
-  // 会话归属校验（add-user-auth design.md 决策 4）：客户端传入 sessionId 时必须是本人会话，
+  // 会话归属校验：客户端传入 sessionId 时必须是本人会话，
   // 否则 404（不泄露存在性）。无 sessionId 时走「新会话」流程，onFinish 持久化同样归属发起用户
   const authUser = getAuthUser(event)
   if (typeof sessionId === 'string' && sessionId) {
@@ -390,7 +390,7 @@ export default defineEventHandler(async (event) => {
   // 前端通过 toggle chip 控制是否允许 LLM 自主调用 generateImage 工具
   const enableImageGeneration = enable_image_generation !== false
 
-  // 语音消息 audio 字段提取（决策 3 + 5）
+  // 语音消息 audio 字段提取
   // emotion 必须经 ALLOWED_EMOTIONS 白名单校验（防 prompt 注入），未通过校验落库为 null
   // audio 对象同时供 saveMessagesToDb 落库 metadata.audio + finalSystemPrompt 注入情感提示
   const audio: { url: string; emotion: string | null; duration: number } | undefined = body?.audio
@@ -576,7 +576,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // recall-memory 工具规则追加：模型支持工具调用时默认启用长期记忆检索
-  // 注：工具本体在 toolsConfig 中注册（任务 8.1），此处仅注入使用规则指导 LLM 调用时机
+  // 注：工具本体在 toolsConfig 中注册，此处仅注入使用规则指导 LLM 调用时机
   if (caps.toolCalling) {
     finalSystemPrompt += `\n\n${RECALL_MEMORY_TOOL_RULES}`
   }
@@ -590,9 +590,9 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // 检查点恢复注入（add-agent-task-system design.md 决策 6）：会话存在进行中的规划任务时，
+  // 检查点恢复注入：会话存在进行中的规划任务时，
   // 将任务状态注入 prompt，LLM 基于结构化状态自主续作（对话内恢复，非进程级断点续跑）。
-  // 必须位于情感注入之前（决策 3 硬约束：情感提示保持 finalSystemPrompt 最末位）
+  // 必须位于情感注入之前（硬约束：情感提示保持 finalSystemPrompt 最末位）
   if (hasValidSessionId && caps.toolCalling) {
     const taskContext = await getActiveTaskContext(sessionId)
     if (taskContext) {
@@ -600,7 +600,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // 情感提示注入（决策 3 硬约束：必须位于 finalSystemPrompt 拼接的最末位）
+  // 情感提示注入（硬约束：必须位于 finalSystemPrompt 拼接的最末位）
   // 注入位置在所有工具规则、位置上下文之后，确保情感提示不被后续任何工具规则冲淡
   // emotion 已在 body 解析阶段经 ALLOWED_EMOTIONS 白名单校验，未通过校验为 null（不注入）
   // 仅注入本次 streamText 调用，不写入 messages 表（情感是瞬时信号，跨会话保留意义不大）
@@ -737,7 +737,7 @@ export default defineEventHandler(async (event) => {
         // 服务端归档兜底：若 lastSessionId 存在且不等于当前 sessionId，fire-and-forget 触发归档
         // 覆盖浏览器关闭/刷新场景：前端 fire-and-forget 可能因网络抖动失败，服务端兜底补齐
         // 注：archiveSessionMessages 内置进程内并发锁，重复请求直接返回不重复执行
-        // 注：不 await 完成，不阻塞 onFinish 返回和流结束信号（详见 design.md 决策 6）
+        // 注：不 await 完成，不阻塞 onFinish 返回和流结束信号
         if (lastSessionId && typeof lastSessionId === 'string' && lastSessionId !== sessionId) {
           archiveSessionMessages(lastSessionId).catch((err) => {
             console.error(`[chat.post] 服务端归档兜底失败（会话 ${lastSessionId}）:`, err)

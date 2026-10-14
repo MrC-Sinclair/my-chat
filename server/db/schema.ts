@@ -34,7 +34,7 @@ import { sql } from 'drizzle-orm'
 /**
  * 用户表 — 承载认证身份与游客身份
  *
- * 设计要点（详见 openspec/changes/add-user-auth/design.md 决策 1、3）：
+ * 设计要点：
  *   - 游客也是一行 users（is_guest=true，email/password_hash 为空），保证「不登录也能用」
  *     且数据隔离逻辑对所有身份统一
  *   - 游客注册 = 就地升级本行（写入 email/password_hash + is_guest=false），数据无感保留
@@ -134,7 +134,7 @@ export const feedbacks = pgTable('feedbacks', {
 /**
  * 长期记忆向量表 — 存储跨会话长期记忆的向量数据
  *
- * 设计要点（详见 openspec/changes/add-long-term-memory/design.md 决策 1）：
+ * 设计要点：
  *   - 使用 Drizzle ORM 原生 vector({ dimensions: 1024 }) 类型（drizzle-orm ^0.36.0 支持 pgvector）
  *   - content 字段冗余存储消息文本快照，避免检索时 JOIN messages 表
  *   - created_at 从 messages.created_at 复制（消息原始创建时间），便于按时间检索历史记忆
@@ -175,7 +175,7 @@ export const memoryVectors = pgTable(
 )
 
 /**
- * Agent 任务表 — LLM 显式规划的长程任务（openspec/changes/add-agent-task-system）
+ * Agent 任务表 — LLM 显式规划的长程任务
  *
  * 任务状态独立于 messages 表（不混入对话历史）。归属 = session 归属（用户已在
  * chat.post.ts 校验），不冗余 user_id。status 语义：

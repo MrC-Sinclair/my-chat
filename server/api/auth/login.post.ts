@@ -2,7 +2,7 @@
  * @file 登录 — POST /api/auth/login
  *
  * 失败统一 401「邮箱或密码错误」：不区分邮箱不存在与密码错误，防账号枚举。
- * 成功：下发目标用户签名 Cookie（此前游客数据留在游客行，不做合并——design.md 决策 3）。
+ * 成功：下发目标用户签名 Cookie（此前游客数据留在游客行，不做合并）。
  */
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'

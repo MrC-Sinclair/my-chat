@@ -1,7 +1,7 @@
 /**
  * @file recall-memory 工具 — 检索跨会话长期记忆
  *
- * 设计要点（详见 openspec/changes/add-long-term-memory/design.md 决策 4/8/12）：
+ * 设计要点：
  *   - Agentic RAG 路径 A：作为 Agent 工具，由 LLM 自主决定调用时机
  *   - 两阶段检索：embedding 召回 top-20 → reranker 精排 top-5
  *   - reranker 失败降级为仅 embedding 检索（score 用 1 - distance/2 映射到 0-1）
@@ -23,7 +23,7 @@ const RECALL_TOP_K = 20
 /** 精排阶段：reranker 返回的 top-N */
 const RERANK_TOP_N = 5
 
-/** reranker 相关度阈值，低于此值视为无相关记忆（design.md 决策 12，可根据实测调整） */
+/** reranker 相关度阈值，低于此值视为无相关记忆（可根据实测调整） */
 const RERANK_THRESHOLD = 0.3
 
 /**
@@ -141,7 +141,7 @@ export const recallMemoryTool = tool({
 
       // 5. reranker 失败降级：取 embedding 召回的 top-5
       //    score 用 1 - distance/2 映射到 0-1 区间（1=最相似，0=最不相似）
-      //    降级时不设阈值过滤，仅做数量截断（design.md 决策 12）
+      //    降级时不设阈值过滤，仅做数量截断
       const fallbackMemories = recallResults.slice(0, RERANK_TOP_N).map((r) => ({
         content: r.content,
         message_id: r.messageId,

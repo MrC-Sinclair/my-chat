@@ -2,17 +2,17 @@
 /**
  * 语音消息气泡组件
  *
- * 展示内容（design.md 决策 10 + 任务 5.1-5.3）：
+ * 展示内容：
  *   1. 音频播放控件（播放/暂停 + 进度条 + 时长 mm:ss）
  *   2. 情感标签（柔和配色：暖黄=开心 / 柔和蓝=悲伤 / 柔和红=愤怒 / 灰色=中性）
  *   3. 「转文字」折叠面板（默认折叠，max-height + transition 平滑展开，禁止 v-if 硬切）
  *
- * 降级处理（任务 5.2）：
+ * 降级处理：
  *   - 音频 URL 404 时（TTL 过期或文件丢失），<audio> 触发 error 事件
  *   - 静默降级：隐藏播放控件 + 自动展开转文字面板 + 保留情感标签
  *   - 不显示错误 toast（TTL 7 天过期是预期行为，非异常）
  *
- * 气泡宽度（任务 5.3）：
+ * 气泡宽度：
  *   - 用户消息语境下使用 max-w-[92%] sm:max-w-[85%]
  *   - 移动端播放控件与情感标签不溢出
  *
@@ -62,7 +62,7 @@ onUnmounted(() => {
 })
 
 /**
- * 音频加载错误处理（任务 5.2：404 静默降级）
+ * 音频加载错误处理（404 静默降级）
  *
  * 触发场景：
  *   - TTL 7 天过期，文件已被 audio-ttl plugin 清理
@@ -162,7 +162,7 @@ const progressPercent = computed(() => {
 })
 
 /**
- * 情感标签配置（design.md 决策 10）
+ * 情感标签配置
  *
  * 配色原则：柔和（light bg + 深色文字），避免刺眼
  *   - happy（开心）：暖黄/橙色 → amber
@@ -218,7 +218,7 @@ watch(audioRef, (el) => {
     <!-- 顶部行：情感标签 + 转文字切换按钮 -->
     <div class="flex items-center justify-between gap-2 mb-1.5">
       <div class="flex items-center gap-1.5 min-w-0">
-        <!-- 情感标签（emotion === null 时不展示，design.md 决策 10） -->
+        <!-- 情感标签（emotion === null 时不展示） -->
         <span
           v-if="emotionDisplay"
           :class="[
@@ -292,7 +292,7 @@ watch(audioRef, (el) => {
       </button>
     </div>
 
-    <!-- 音频播放控件（audioAvailable=false 时隐藏，任务 5.2 降级） -->
+    <!-- 音频播放控件（audioAvailable=false 时隐藏） -->
     <div
       v-if="audioAvailable && isMounted"
       class="flex items-center gap-2 sm:gap-2.5 bg-semi-bg-1 rounded-xl px-2 py-1.5"

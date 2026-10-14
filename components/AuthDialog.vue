@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * 登录/注册对话框（openspec/changes/add-user-auth）
+ * 登录/注册对话框
  *
- * 布局适配（design.md UI 章节）：手机端底部全宽弹出（items-end），平板居中模态（sm:items-center）。
+ * 布局适配：手机端底部全宽弹出（items-end），平板居中模态（sm:items-center）。
  * 交互：登录/注册 Tab 切换共享邮箱/密码输入；submitting 守卫防重复提交；
  * 错误统一 useToast 展示（后端 statusMessage 已脱敏，不泄露账号存在性细节）。
  * 成功后 applyUser 回写全局身份，会话列表刷新由父组件 watch(authUser) 触发。
@@ -34,7 +34,7 @@ const submitting = ref(false)
 const toast = useToast()
 const { applyUser } = useAuth()
 
-/** 游客注册场景的提示语（design.md 决策 3：就地升级，数据无感保留） */
+/** 游客注册场景的提示语（就地升级，数据无感保留） */
 const registerHint = computed(() =>
   mode.value === 'register' ? '注册后当前浏览器的会话与消息将保留到该账号下' : ''
 )

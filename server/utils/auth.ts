@@ -1,5 +1,5 @@
 /**
- * @file 认证工具层（openspec/changes/add-user-auth/design.md 决策 1、2）
+ * @file 认证工具层
  *
  * - 密码哈希：node:crypto scrypt（零依赖），格式 `scrypt$N$r$p$salt$hash`
  * - 会话 Cookie：`<userId>.<expiresAtMs>.<hmacSHA256>`，HttpOnly + SameSite=Lax

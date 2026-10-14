@@ -157,7 +157,7 @@ function removeImage(id: string) {
   )
 }
 
-// ===== 语音入口（合并 Web Speech API 语音输入 + MediaRecorder 语音消息，决策 12）=====
+// ===== 语音入口（合并 Web Speech API 语音输入 + MediaRecorder 语音消息）=====
 // SSR 安全初始值：所有 ref 初始值不依赖浏览器 API
 const speechSupported = ref(false) // 浏览器支持 SpeechRecognition
 const mediaRecorderSupported = ref(false) // 浏览器支持 MediaRecorder
@@ -167,10 +167,10 @@ const showVoiceMenu = ref(false) // 语音入口菜单展开状态
 const isSpeechRecording = ref(false)
 const recognitionRef = ref<any>(null)
 
-// MediaRecorder 语音消息状态（决策 7、8、9）
-const MAX_RECORDING_DURATION = 60 // 录音最大时长 60 秒（决策 8）
+// MediaRecorder 语音消息状态
+const MAX_RECORDING_DURATION = 60 // 录音最大时长 60 秒
 const isVoiceRecording = ref(false) // 录音中
-const isStartingRecording = ref(false) // getUserMedia 异步等待期守卫（决策 9）
+const isStartingRecording = ref(false) // getUserMedia 异步等待期守卫
 const isUploadingVoice = ref(false) // 上传转写中
 const recordingDuration = ref(0) // 已录制秒数（用于 UI 计时）
 const mediaRecorderRef = ref<MediaRecorder | null>(null)
@@ -181,7 +181,7 @@ onMounted(() => {
   const SpeechRecognitionAPI =
     (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   speechSupported.value = !!SpeechRecognitionAPI
-  // MediaRecorder + getUserMedia 双重检测（决策 7）
+  // MediaRecorder + getUserMedia 双重检测
   mediaRecorderSupported.value =
     typeof window !== 'undefined' &&
     typeof window.MediaRecorder !== 'undefined' &&
@@ -266,7 +266,7 @@ function toggleSpeechRecognition() {
   showVoiceMenu.value = false // 选择后关闭菜单
 }
 
-// ===== MediaRecorder 语音消息录音（决策 7、8、9、11）=====
+// ===== MediaRecorder 语音消息录音 =====
 
 /**
  * 录音计时器启动：每秒更新 recordingDuration，到 MAX_RECORDING_DURATION 自动停止
@@ -276,7 +276,7 @@ function startRecordingTimer() {
   recordingTimerRef.value = setInterval(() => {
     recordingDuration.value++
     if (recordingDuration.value >= MAX_RECORDING_DURATION) {
-      // 超时自动停止（决策 8）
+      // 超时自动停止
       stopVoiceRecording()
       toast.info(`录音已超过 ${MAX_RECORDING_DURATION} 秒，已自动停止`)
     }
@@ -303,7 +303,7 @@ function formatDuration(seconds: number): string {
 }
 
 /**
- * 开始语音消息录音（决策 7、9）
+ * 开始语音消息录音
  *
  * 流程：
  *   1. isStartingRecording 守卫防并发点击（getUserMedia 异步等待期）
@@ -318,14 +318,14 @@ function formatDuration(seconds: number): string {
  *   - 其他异常 → toast 提示
  */
 async function startVoiceRecording() {
-  // 决策 9：并发守卫，阻止 getUserMedia 异步等待期的重复点击
+  // 并发守卫，阻止 getUserMedia 异步等待期的重复点击
   if (isStartingRecording.value || isVoiceRecording.value || isUploadingVoice.value) return
   if (props.isLoading) return
 
   // 关闭菜单
   showVoiceMenu.value = false
 
-  // 运行时检测（决策 7：不依赖 onMounted 的检测结果，事件处理函数内再次校验）
+  // 运行时检测（不依赖 onMounted 的检测结果，事件处理函数内再次校验）
   if (
     typeof window === 'undefined' ||
     typeof window.MediaRecorder === 'undefined' ||
@@ -349,7 +349,7 @@ async function startVoiceRecording() {
     }
 
     recorder.onstop = () => {
-      // 生成 WebM Blob（决策 11：MediaRecorder 原生支持 WebM/Opus）
+      // 生成 WebM Blob（MediaRecorder 原生支持 WebM/Opus）
       const blob = new Blob(voiceChunksRef.value, { type: 'audio/webm' })
       voiceChunksRef.value = []
 
@@ -407,7 +407,7 @@ function stopVoiceRecording() {
 }
 
 /**
- * 上传 WebM 音频到 /api/audio/transcribe 转写（决策 6 + 任务 4.4）
+ * 上传 WebM 音频到 /api/audio/transcribe 转写
  *
  * 上传中显示 loading + 禁用按钮，转写成功 emit 结果给父组件。
  * 失败 toast 提示，不阻塞主流程（用户可手动输入）。
@@ -510,7 +510,7 @@ function handleVoiceMenuSelect(option: 'message' | 'input') {
 }
 
 /**
- * 语音入口按钮可见性：至少支持一种能力时显示（决策 12）
+ * 语音入口按钮可见性：至少支持一种能力时显示
  */
 const voiceEntryVisible = computed(() => speechSupported.value || mediaRecorderSupported.value)
 
@@ -976,7 +976,7 @@ watch(
           />
         </div>
 
-        <!-- 语音入口按钮（决策 12：合并 Web Speech API 语音输入 + MediaRecorder 语音消息） -->
+        <!-- 语音入口按钮（合并 Web Speech API 语音输入 + MediaRecorder 语音消息） -->
         <div v-if="voiceEntryVisible" class="relative shrink-0">
           <button
             type="button"
@@ -1049,7 +1049,7 @@ watch(
               <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
               <line x1="12" y1="19" x2="12" y2="22" />
             </svg>
-            <!-- 录音中时长计时（决策 8：mm:ss 视觉反馈） -->
+            <!-- 录音中时长计时（mm:ss 视觉反馈） -->
             <span
               v-if="isVoiceRecording"
               class="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] font-mono font-medium text-semi-danger bg-semi-bg-0 px-1 rounded-full shadow-sm whitespace-nowrap"
@@ -1058,7 +1058,7 @@ watch(
             </span>
           </button>
 
-          <!-- 语音入口菜单（决策 12：根据浏览器支持情况显示选项） -->
+          <!-- 语音入口菜单（根据浏览器支持情况显示选项） -->
           <Transition
             enter-active-class="transition duration-150 ease-out"
             enter-from-class="opacity-0 scale-95 translate-y-1"

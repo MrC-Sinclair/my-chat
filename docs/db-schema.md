@@ -139,7 +139,7 @@ users (1) ──── (N) sessions (1) ──── (N) messages (1) ───�
 
 ### users（用户表）
 
-承载认证身份与游客身份（openspec/changes/add-user-auth）。游客也是一行 users（`is_guest=true`），保证「不登录也能用」且数据隔离逻辑对所有身份统一。
+承载认证身份与游客身份。游客也是一行 users（`is_guest=true`），保证「不登录也能用」且数据隔离逻辑对所有身份统一。
 
 | 列名            | 类型        | 约束                                   | 说明                                       |
 | --------------- | ----------- | -------------------------------------- | ------------------------------------------ |
@@ -153,7 +153,7 @@ users (1) ──── (N) sessions (1) ──── (N) messages (1) ───�
 
 ### agent_tasks / agent_task_steps / artifacts（Agent 任务系统）
 
-LLM 显式规划的长程任务（openspec/changes/add-agent-task-system）。任务状态独立于 messages，经 session 级联归属。
+LLM 显式规划的长程任务。任务状态独立于 messages，经 session 级联归属。
 
 **agent_tasks**
 

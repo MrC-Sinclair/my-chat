@@ -90,8 +90,8 @@ const chat = new Chat({
       lastSessionId: lastSessionId.value || undefined,
       images:
         uploadedImages.value.length > 0 ? uploadedImages.value.map((img) => img.dataUrl) : undefined,
-      // 语音消息音频元信息（design.md 决策 3+5：转写文本已在 input，audio 字段供 chat.post.ts
-      // 注入情感 system prompt + saveMessagesToDb 落库 metadata.audio）
+      // 语音消息音频元信息：转写文本已在 input，audio 字段供 chat.post.ts
+      // 注入情感 system prompt + saveMessagesToDb 落库 metadata.audio
       audio: pendingVoiceMessage.value || undefined,
       // 编辑重发：服务端据此删除被编辑的那条消息及其之后的历史，避免新旧两轮并存
       editing_message_id: pendingEditingMessageId.value || undefined
@@ -199,7 +199,7 @@ async function handleStop() {
 /**
  * 处理 Workflow 路径生图成功事件
  *
- * 两件事必须都做（design.md 决策 11）：
+ * 两件事必须都做：
  *   1. 持久化到 DB：通过 saveMessage 走 /api/messages 插入
  *   2. 同步到 useChat 状态机：直接 push 到 chat.messages，让前端立即显示
  *
@@ -253,9 +253,9 @@ function getMessageImages(msgId: string, index: number): UploadedImage[] {
 }
 
 /**
- * 处理语音消息转写成功事件（任务 6.1）
+ * 处理语音消息转写成功事件
  *
- * 流程（design.md 决策 6）：
+ * 流程：
  *   1. 转写文本填入 input（用户可在发送前编辑纠正）
  *   2. 音频元信息暂存到 pendingVoiceMessage（提交 /api/chat 时 body 读取）
  *   3. 自动触发提交（语音消息场景用户意图明确，无需手动点发送）
@@ -294,7 +294,7 @@ function handleVoiceTranscribed(result: VoiceTranscribedResult) {
 }
 
 /**
- * 获取指定消息的语音音频元信息（任务 6.2）
+ * 获取指定消息的语音音频元信息
  *
  * 查找优先级（与 getMessageImages 模式一致）：
  *   1. messageAudio Map（新消息 onFinish/onError 后关联）
@@ -573,7 +573,7 @@ onMounted(async () => {
   await loadSessions()
 })
 
-// ===== 用户身份（openspec/changes/add-user-auth）=====
+// ===== 用户身份 =====
 const { user: authUser, fetchMe } = useAuth()
 const authDialogOpen = ref(false)
 const authDialogMode = ref<'login' | 'register'>('login')
@@ -1340,7 +1340,7 @@ function onDocumentClick(e: Event) {
                     </div>
                   </div>
                   <div v-else class="group">
-                    <!-- 语音消息：渲染 VoiceMessageBubble 替代纯文本（任务 6.2） -->
+                    <!-- 语音消息：渲染 VoiceMessageBubble 替代纯文本 -->
                     <VoiceMessageBubble
                       v-if="getMessageAudio(messages[virtualRow.index], virtualRow.index)"
                       :audio-url="

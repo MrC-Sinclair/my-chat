@@ -24,7 +24,7 @@
 | `GET`    | `/api/auth/me`       | 当前身份                     | Cookie |
 | `GET`    | `/api/models`       | 获取可用模型列表               | 无   |
 
-> **身份模型**（openspec/changes/add-user-auth）：未登录访问自动创建游客（HttpOnly 签名 Cookie 绑定），
+> **身份模型**：未登录访问自动创建游客（HttpOnly 签名 Cookie 绑定），
 > 数据按游客隔离；游客注册 = 就地升级当前游客行（数据无感保留）。数据 API 均做归属校验，
 > 非本人资源一律 404。详见「接口详情 > 认证」。
 

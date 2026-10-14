@@ -1,7 +1,7 @@
 /**
  * @file 图片生成服务 — 调用硅基流动 Kwai-Kolors/Kolors 生成图片，并通过 ImgBB 转存获取持久化 URL
  *
- * 设计要点（详见 openspec/changes/add-image-generation/design.md）：
+ * 设计要点：
  *   - base URL、API Key、模型名均从 useRuntimeConfig() 读取，不硬编码
  *   - 使用 AbortSignal.timeout(60_000) 控制 60 秒超时（标准静态方法，MDN Baseline 2024，Node 17.3+ 支持）
  *     注：不用 AbortController.prototype.timeout，该 API 在 Node v22 中为 undefined

@@ -4,7 +4,7 @@
  * 语音消息音频文件存放在 server/uploads/audio/（不对外暴露），
  * 通过此路由代理访问，文件名格式 `<timestamp>-<uuid>.webm`。
  *
- * 安全设计（决策 2）：
+ * 安全设计：
  *   - 文件名 UUID 不可猜测，防御枚举攻击
  *   - 严格校验文件名格式（`<数字>-<uuid>.webm`），防路径遍历攻击
  *   - 文件不存在返回 404（不暴露内部目录结构）
@@ -48,7 +48,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 归属校验（add-user-auth design.md 决策 6）：文件名不携带归属信息，
+  // 归属校验：文件名不携带归属信息，
   // 通过 DB 反查「当前用户名下是否存在消息引用了该音频 URL」，否则 404
   const user = getAuthUser(event)
   if (!user) {
@@ -80,7 +80,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!existsSync(filePath)) {
-    // 文件已被 TTL 清理或不存在：返回 404，前端降级为纯文字气泡（决策 2）
+    // 文件已被 TTL 清理或不存在：返回 404，前端降级为纯文字气泡
     throw createError({
       statusCode: 404,
       statusMessage: '音频文件不存在或已过期'

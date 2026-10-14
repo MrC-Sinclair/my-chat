@@ -1,5 +1,5 @@
 /**
- * @file 全局身份状态 composable（openspec/changes/add-user-auth）
+ * @file 全局身份状态 composable
  *
  * 状态说明：
  *   - undefined = 尚未拉取（SSR 与客户端首帧一致渲染游客占位，避免水合不匹配）

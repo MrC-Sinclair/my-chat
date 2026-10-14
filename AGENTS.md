@@ -196,7 +196,7 @@ server/middleware/   → security.ts, auth.ts
 | RAG 检索、图片处理、任务分解 | ✅ | ❌ |
 | 消息持久化、图片上传、安全/合规 | — | ✅ |
 
-**红线**：若控制流由代码预编排（if/else 写死工具调用步骤），须在 openspec design 中说明理由，否则违规。
+**红线**：若控制流由代码预编排（if/else 写死工具调用步骤），须在设计文档中说明理由，否则违规。
 
 #### 工具系统
 
@@ -220,8 +220,6 @@ server/middleware/   → security.ts, auth.ts
 **检索走 Agent**（LLM 自主决策）：`recall-memory` 作为 `tool()` 注册，调用与否、何时调用全由 LLM 自主决定。两阶段检索（embedding top-20 → reranker top-5），失败降级不中断流。详见 `server/tools/recall-memory.ts`。
 
 禁止中间结果写全局变量。`streamText` 循环内的工具调用结果天然作为短期上下文。
-
-> 📋 远期演进方向详见 `openspec/agent-future-roadmap.md`。
 
 ### UI/UX 设计规范
 

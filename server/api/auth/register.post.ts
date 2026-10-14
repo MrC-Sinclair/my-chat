@@ -1,7 +1,7 @@
 /**
  * @file 注册 — POST /api/auth/register
  *
- * 双模式（design.md 决策 3）：
+ * 双模式：
  *   - 游客态注册：就地升级当前游客行（email/password_hash/is_guest），数据无感保留
  *   - 邮箱被占用：409（部分唯一索引兜底并发）
  *   - 已登录正式用户：409（防覆盖）

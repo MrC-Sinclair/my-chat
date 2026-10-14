@@ -1,7 +1,7 @@
 /**
  * @file 重排序服务 — 调用硅基流动 BAAI/bge-reranker-v2-m3 对 query-document 对做交叉编码精排
  *
- * 设计要点（详见 openspec/changes/add-long-term-memory/design.md 决策 3/10）：
+ * 设计要点：
  *   - 请求体必须包含 return_documents: true（否则响应不含文档文本）
  *   - 解析响应时使用 results[i].relevance_score（不是 score）
  *   - API 失败降级返回 null，调用方降级为仅 embedding 检索结果

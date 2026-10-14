@@ -1,5 +1,5 @@
 /**
- * @file 全局身份注入中间件（openspec/changes/add-user-auth/design.md 决策 5）
+ * @file 全局身份注入中间件
  *
  * 职责：
  *   1. 解析会话 Cookie → 校验签名 → 加载 users 行 → 挂 event.context.authUser

@@ -5,9 +5,9 @@ import { db } from '~/server/db'
 import { agentTasks, agentTaskSteps, artifacts } from '~/server/db/schema'
 
 /**
- * Agent 任务系统工具（openspec/changes/add-agent-task-system）
+ * Agent 任务系统工具
  *
- * 设计要点（design.md 决策 1、2、4、5）：
+ * 设计要点：
  *   - 是否规划、何时推进步骤全由 LLM 自主决策（Agent 路径，非 Workflow 预编排）
  *   - 工厂函数按请求绑定 sessionId：AI SDK 工具拿不到 HTTP 事件，
  *     sessionId 由已通过归属校验的 chat.post.ts 请求作用域闭包携带
@@ -24,7 +24,7 @@ const ARTIFACT_THRESHOLD = 2000
 /** 步骤结果摘要长度（字符） */
 const RESULT_SUMMARY_LEN = 200
 
-/** 合法的任务状态与步骤状态（决策 5 状态机） */
+/** 合法的任务状态与步骤状态 */
 const TASK_STATUSES = ['in_progress', 'completed', 'failed'] as const
 type TaskStatus = (typeof TASK_STATUSES)[number]
 
@@ -199,7 +199,7 @@ export function createUpdateTaskStepTool(sessionId: string) {
 }
 
 /**
- * 查询会话进行中的任务（检查点注入用，design.md 决策 6）
+ * 查询会话进行中的任务（检查点注入用）
  *
  * @returns 供 system prompt 注入的格式化文本；无进行中任务返回空串
  */

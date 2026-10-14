@@ -1,7 +1,7 @@
 /**
  * @file Embedding 服务 — 调用硅基流动 BAAI/bge-m3 把文本转为 1024 维向量
  *
- * 设计要点（详见 openspec/changes/add-long-term-memory/design.md 决策 2/10）：
+ * 设计要点：
  *   - base URL、API Key、模型名均从 useRuntimeConfig() 读取，不硬编码
  *   - 复用 OPENAI_API_KEY 鉴权（硅基流动 API 兼容 OpenAI 格式）
  *   - 不做客户端截断：直接传给 API，由硅基流动 API 自行处理超长输入

@@ -2,7 +2,7 @@
  * @file 会话归档 API — POST /api/sessions/:id/archive-memory
  *
  * 触发指定会话的重要度筛选入库（长期记忆归档）：
- *   1. 路由内校验 id 为标准 UUID v4 格式（不扩展 security.ts，详见 design.md 决策 6）
+ *   1. 路由内校验 id 为标准 UUID v4 格式（不扩展 security.ts）
  *   2. 校验会话存在（不存在返回 404）
  *   3. fire-and-forget 调用 archiveSessionMessages()，不 await 完成
  *   4. 立即返回 202 Accepted，归档在后台异步执行

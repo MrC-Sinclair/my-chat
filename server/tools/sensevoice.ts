@@ -4,7 +4,7 @@
  * 封装 FunAudioLLM/SenseVoiceSmall 模型调用，通过硅基流动 /v1/audio/transcriptions
  * 端点转写音频文件，并解析返回的富文本标签（情感/语种/事件），输出结构化结果。
  *
- * 设计要点（详见 openspec/changes/add-voice-message-asr/design.md 决策 10）：
+ * 设计要点：
  *   - 调用失败返回 { error, detail } 不 throw（由 Workflow 调用方决定降级策略）
  *   - 标签提取统一使用 /<\|\s*([A-Za-z0-9_]+)\s*\|>/g，情感/语种/事件标签大小写均可匹配
  *   - 纯文本清洗使用 /<\|[^|]+\|>/g 移除所有 <|...|> 标签
@@ -20,7 +20,7 @@ import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 
 // ============================================================================
-// ffmpeg 可用性探测（任务 0.4）
+// ffmpeg 可用性探测
 // ============================================================================
 
 /**

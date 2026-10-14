@@ -1,7 +1,7 @@
 /**
  * @file generate-image 工具 — 文生图 Agent 工具
  *
- * 设计要点（详见 openspec/changes/add-image-generation/design.md）：
+ * 设计要点：
  *   - 作为 Agent 工具注册到 chat.post.ts 的 toolsConfig
  *   - 由 LLM 自主决定调用时机（Agent 路径）
  *   - 复用 server/utils/image-generation.ts 的 generateImageWithPersistence

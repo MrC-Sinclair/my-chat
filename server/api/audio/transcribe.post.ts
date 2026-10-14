@@ -3,7 +3,7 @@
  *
  * Workflow 路径入口：前端录音结束后上传 WebM 音频，服务端转写为文本 + 情感 + 音频 URL
  *
- * 流程（详见 openspec/changes/add-voice-message-asr/design.md 决策 1、13）：
+ * 流程：
  *   1. multipart/form-data 接收音频文件，zod 校验大小（≤10MB）与 MIME（audio/*）
  *   2. 服务端重命名为 tmp-<uuid>.webm（防命令注入），用 ffmpeg 转码为 wav-<uuid>.wav
  *      （16kHz/16bit/mono/PCM + 清除元数据），WAV 仅用于 API 调用不落盘
@@ -13,7 +13,7 @@
  *   6. 成功 → 200 + { text, emotion, audioUrl, duration }
  *   7. 失败 → 500 + createError（不暴露内部 detail）
  *
- * 安全设计（决策 13）：
+ * 安全设计：
  *   - 全程不直接使用客户端上传文件名，统一用 UUID 重命名
  *   - child_process.spawnSync 数组参数（不 shell=true），防命令注入
  *   - 每请求独立 UUID 文件名（tmp-<uuid>.webm / wav-<uuid>.wav），防并发串扰
@@ -56,7 +56,7 @@ const TMP_DIR = join(process.cwd(), 'tmp')
 let ffprobeAvailable: boolean | null = null
 
 // ============================================================================
-// 请求体 schema（任务 2.1）
+// 请求体 schema
 // ============================================================================
 
 /**
@@ -81,7 +81,7 @@ const fileFieldSchema = z.object({
 /**
  * 检测 ffprobe 是否可用（与 ffmpeg 同源安装）
  *
- * 任务 0.5：ffprobe 与 ffmpeg 同一安装包，用于实测音频时长（秒数）。
+ * ffprobe 与 ffmpeg 同一安装包，用于实测音频时长（秒数）。
  * 探测结果模块级缓存，避免每次请求重复 spawn。
  */
 function isFfprobeAvailable(): boolean {
@@ -102,7 +102,7 @@ function isFfprobeAvailable(): boolean {
 /**
  * 通过 ffprobe 获取音频时长（秒）
  *
- * 任务 0.5：不信任前端上报值，服务端实测音频时长用于 UI 展示和 metadata 落库。
+ * 不信任前端上报值，服务端实测音频时长用于 UI 展示和 metadata 落库。
  * ffprobe 不可用时降级使用 ffmpeg -i 解析 stderr 中的 Duration 行。
  *
  * @param audioFilePath - 音频文件绝对路径
@@ -189,7 +189,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 1. ffmpeg 可用性检查（决策 13）
+  // 1. ffmpeg 可用性检查
   if (!isFfmpegAvailable()) {
     throw createError({
       statusCode: 500,
@@ -214,7 +214,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 3. 字段校验（任务 2.1）
+  // 3. 字段校验
   const parsed = fileFieldSchema.safeParse(fileField)
   if (!parsed.success) {
     const firstError = parsed.error.issues[0]
@@ -249,20 +249,20 @@ export default defineEventHandler(async (event) => {
     mkdirSync(TMP_DIR, { recursive: true })
   }
 
-  // 5. 生成每请求独立 UUID 文件名（防并发串扰，决策 13）
+  // 5. 生成每请求独立 UUID 文件名（防并发串扰）
   const requestUuid = crypto.randomUUID()
   const timestamp = Date.now()
   const tmpWebmPath = join(TMP_DIR, `tmp-${requestUuid}.webm`)
   const tmpWavPath = join(TMP_DIR, `wav-${requestUuid}.wav`)
-  // 落盘文件名：<timestamp>-<uuid>.webm（TTL 清理依据文件名中的时间戳，决策 2）
+  // 落盘文件名：<timestamp>-<uuid>.webm（TTL 清理依据文件名中的时间戳）
   const persistentWebmName = `${timestamp}-${requestUuid}.webm`
   const persistentWebmPath = join(AUDIO_UPLOAD_DIR, persistentWebmName)
 
   try {
-    // 6. 保存原始 WebM 到 tmp 目录（任务 2.2 输入）
+    // 6. 保存原始 WebM 到 tmp 目录
     writeFileSync(tmpWebmPath, parsed.data.data)
 
-    // 7. ffmpeg 转码 WebM → WAV（任务 2.2）
+    // 7. ffmpeg 转码 WebM → WAV
     //    参数：-i 输入 / -acodec pcm_s16le 16bit PCM / -ar 16000 16kHz / -ac 1 mono
     //    / -map_metadata -1 清除元数据（防恶意元数据）
     //    spawnSync 数组参数（不 shell=true），防命令注入
@@ -297,7 +297,7 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // 8. ffmpeg 重新封装原始 WebM 落盘到 server/uploads/audio/（任务 2.3）
+    // 8. ffmpeg 重新封装原始 WebM 落盘到 server/uploads/audio/
     //    -c copy 保持原编码不重新编码（性能优）+ -map_metadata -1 清除元数据
     //    防御客户端上传伪装 audio/webm 的恶意文件（嵌入 JS/HTML 或恶意元数据）
     const remuxResult = spawnSync(
@@ -327,10 +327,10 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // 9. 实测音频时长（任务 0.5 + 2.4）
+    // 9. 实测音频时长
     const duration = getAudioDuration(persistentWebmPath)
 
-    // 10. 调用 SenseVoiceSmall 转写（任务 2.4 Workflow 第一步）
+    // 10. 调用 SenseVoiceSmall 转写（Workflow 第一步）
     const senseResult = await transcribeWithSenseVoice(tmpWavPath)
     if (!isSenseVoiceSuccess(senseResult)) {
       console.error('[audio/transcribe] SenseVoiceSmall 转写失败:', {
@@ -346,7 +346,7 @@ export default defineEventHandler(async (event) => {
     let finalText = senseResult.text
     const emotion = senseResult.emotion
 
-    // 11. 方言场景补强：检测语种标签命中 DIALECT_LANGUAGE_TAGS 时调 TeleSpeechASR（任务 2.4 + 决策 4）
+    // 11. 方言场景补强：检测语种标签命中 DIALECT_LANGUAGE_TAGS 时调 TeleSpeechASR
     const config = useRuntimeConfig()
     const dialectTagsRaw = config.dialectLanguageTags || 'yue'
     const dialectTags = new Set(
@@ -365,8 +365,8 @@ export default defineEventHandler(async (event) => {
       // TeleSpeechASR 失败时静默降级（已在 transcribeWithTeleSpeech 内部 console.warn）
     }
 
-    // 12. 返回转写结果（任务 2.4 + 决策 3）
-    //    audioUrl 为相对路径，前端通过 /api/audio/[id] 代理访问（决策 2）
+    // 12. 返回转写结果
+    //    audioUrl 为相对路径，前端通过 /api/audio/[id] 代理访问
     //    此处先用 /server/uploads/audio/<filename> 形式返回，后续可改为 API 路由代理
     return {
       text: finalText,
@@ -375,7 +375,7 @@ export default defineEventHandler(async (event) => {
       duration
     }
   } catch (err) {
-    // 任务 2.5：模型调用失败时 createError 500，console.error 记录原始错误，不暴露堆栈
+    // 模型调用失败时 createError 500，console.error 记录原始错误，不暴露堆栈
     // createError 抛出的错误直接 rethrow（保留 statusCode 和 statusMessage）
     if (err && typeof err === 'object' && 'statusCode' in err) {
       throw err
@@ -386,7 +386,7 @@ export default defineEventHandler(async (event) => {
       statusMessage: '语音转写失败，请重试'
     })
   } finally {
-    // 任务 2.2 + 决策 13：try/finally 无条件清理临时文件
+    // try/finally 无条件清理临时文件
     // WAV 仅用于 API 调用，调用结束后立即清理（不落盘）
     // tmpWebmPath 已被 ffmpeg 重新封装为 persistentWebmPath，也可清理
     safeUnlink(tmpWebmPath)
