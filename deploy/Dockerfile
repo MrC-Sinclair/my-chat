@@ -5,13 +5,17 @@ FROM node:24-alpine
 WORKDIR /app
 
 # ffmpeg/ffprobe 是语音转写（/api/audio/transcribe）的硬依赖：WebM→16k mono WAV 转码、实测时长。
-# 缺失时该路由直接 500「服务端未安装 ffmpeg」
-RUN apk add --no-cache ffmpeg
+# 缺失时该路由直接 500「服务端未安装 ffmpeg」。
+# 官方源 dl-cdn.alpinelinux.org 在境内下载 ffmpeg 及其依赖会长时间卡住，换阿里云镜像
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
+  && apk add --no-cache ffmpeg
 
 # 版本必须与 package.json 锁定一致：MCP SDK 1.x 的 schema 转换依赖 zod v3 的 .validate，
 # 不固定版本会装到 zod v4 / SDK 2.x，天气工具调用报 "Cannot read properties of undefined (reading 'validate')"
-RUN npm install --no-audit --no-fund -g tsx \
-  && npm install --no-audit --no-fund @modelcontextprotocol/sdk@^1.29.0 zod@^3.25.76
+# 走 npmmirror：服务器在境内，默认 registry.npmjs.org 会长时间卡住（实测 5 分钟以上无进展）
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+RUN npm install --no-audit --no-fund --registry=${NPM_REGISTRY} -g tsx \
+  && npm install --no-audit --no-fund --registry=${NPM_REGISTRY} @modelcontextprotocol/sdk@^1.29.0 zod@^3.25.76
 
 COPY .output /app/.output
 COPY server/mcp/weather-server.ts /app/server/mcp/

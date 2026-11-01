@@ -1,4 +1,4 @@
-# 线上只有公网 IP（122.51.97.106），ACME 不给 IP 签发证书，只能用自签证书（含 IP SAN）。
+# 线上只有公网 IP（43.139.238.226），ACME 不给 IP 签发证书，只能用自签证书（含 IP SAN）。
 # 目的不是"证书可信"，而是把站点搬到 HTTPS：crypto.randomUUID / navigator.clipboard /
 # navigator.mediaDevices 只在安全上下文存在，http://IP 直连时全部为 undefined，
 # 图片附件、复制按钮、语音录制会整片失效。证书告警点「继续访问」后即为安全上下文。
@@ -13,7 +13,8 @@
 	reverse_proxy app:3000
 }
 
-# 明文访问统一跳 HTTPS，避免有人停留在非安全上下文里用不了图片/复制/语音
-:80 {
-	redir https://{host}{uri} permanent
-}
+# 明文跳转暂不可用：宿主机的 80 端口被别的站点占用，容器无法发布 80。
+# 若将来 80 释放，在 compose 里补上 '80:80' 并取消下面的注释即可。
+# :80 {
+# 	redir https://{host}{uri} permanent
+# }

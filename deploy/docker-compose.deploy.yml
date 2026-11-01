@@ -1,7 +1,14 @@
+# 固定项目名：服务器上还跑着其他 compose 项目，不固定会按目录名生成同前缀容器/网络，
+# 出现 mychat 与既有服务的资源互相覆盖
+name: mychat
+
 services:
   postgres:
     image: pgvector/pgvector:pg18
     restart: unless-stopped
+    # 2C2G 机器：默认 shared_buffers 128MB 之外的内存留给 OS 与其他既有服务，
+    # 不限制时 pg 会按物理内存比例再申请 work_mem，与同机其他业务争抢导致 OOM
+    command: postgres -c shared_buffers=96MB -c work_mem=4MB -c max_connections=40
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -39,15 +46,16 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    # 只发布 443：这台轻量服务器的 80 已被宿主机上的 Caddy 占用（服务其他站点），
+    # 容器再绑 80 会直接起不来。HTTP→HTTPS 跳转因此不可用，需用 https:// 显式访问。
     ports:
-      - '80:80'
       - '443:443'
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # 自签证书（含 IP SAN）只在服务器上生成，不入库：
       # openssl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes \
-      #   -keyout certs/site.key -out certs/site.crt -subj "/CN=my-chat-cvm" \
-      #   -addext "subjectAltName=IP:122.51.97.106,DNS:localhost"
+      #   -keyout certs/site.key -out certs/site.crt -subj "/CN=my-chat-lhins" \
+      #   -addext "subjectAltName=IP:43.139.238.226,DNS:localhost"
       - ./certs:/etc/caddy/certs:ro
       - caddy_data:/data
       - caddy_config:/config
