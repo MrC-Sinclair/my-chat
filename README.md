@@ -35,6 +35,10 @@ pnpm dev
 
 访问 http://localhost:3000/ai-chat
 
+## 生产部署
+
+线上跑在腾讯云轻量服务器（Docker Compose：app + Caddy + PostgreSQL），构建产物在本地生成后上传，服务器只负责组装镜像。完整流程、环境变量、自签证书、Schema 变更与故障排查见 [docs/deploy.md](docs/deploy.md)。
+
 ## 环境配置
 
 ```env
@@ -127,9 +131,10 @@ my-chat/
 │   └── models.ts               # 模型白名单与能力定义
 ├── server/middleware/
 │   └── security.ts             # CSP / 限流 / 参数校验
-├── docs/                       # API / 数据库 / 模型文档
+├── docs/                       # API / 数据库 / 模型 / 部署文档
+├── deploy/                     # 生产部署配置（Caddyfile / Dockerfile / compose）
 ├── .env.example                # 环境变量模板
-├── docker-compose.yml          # PostgreSQL 容器
+├── docker-compose.yml          # 本地开发用 PostgreSQL 容器（生产见 deploy/）
 ├── drizzle.config.ts           # ORM 配置
 └── nuxt.config.ts              # Nuxt 配置
 ```
